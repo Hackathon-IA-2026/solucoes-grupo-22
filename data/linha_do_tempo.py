@@ -162,7 +162,8 @@ def eventos_dos_relatorios(documentos, achados, cnpj):
         if chave in por_pagina:
             por_pagina[chave]["temas"] = sorted(set(por_pagina[chave]["temas"]) | {tema})
             continue
-        url = d["url"] + (f"#page={pagina}" if d["url"].lower().endswith(".pdf") else "")
+        # a maior parte dos documentos do índice não tem url no documentos.csv; a aba já mostra o evento sem o link
+        url = d["url"] and d["url"] + (f"#page={pagina}" if d["url"].lower().endswith(".pdf") else "")
         por_pagina[chave] = {
             "ano": ano, "tipo": "relatorio", "titulo": TEMAS[tema][0], "descricao": curto(frase),
             "temas": sorted(set(temas_de(frase)) | {tema}), "pontos": pontos,
