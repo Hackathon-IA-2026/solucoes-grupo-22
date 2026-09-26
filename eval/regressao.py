@@ -82,6 +82,22 @@ CASOS = [
     ("sem-dado", "Qual foi o PLD horário do submercado Sudeste ontem?",
      [r"(?i)n[ãa]o (tenho|h[áa]|consta|est[áa]|dispon|possuo|encontr|[ée] (exatamente )?o PLD)|indispon|sem (acesso|dados)|CMO"],
      [r"(?i)PLD (hor[áa]rio )?(foi|de|m[ée]dio de) R\$"], []),
+    # Fase 2 — Placar da Transição (emissões conferidas no gabarito de researches/FINDINGS-claude-sonnet-5.md §3.2)
+    ("placar-cemig", "Quais foram as emissões de escopo 1, 2 e 3 da Cemig no relatório mais recente? Cite a página.",
+     [r"42[,.]86\d", r"376[,.]17\d|376\.174", r"5[,.]9\d+\s*(mi|milh)|5\.911[,.]?\d*", r"(?i)p[áa]g|p\. ?\d"], [],
+     [["consultar_placar", "buscar_documentos"]]),
+    ("placar-ranking-divulgacao", "Faça um ranking das elétricas pelo score de divulgação ESG e explique o que entra no score.",
+     [r"(?i)escopo", r"(?i)assegura|framework|meta", r"(?i)\.pdf|p\. ?\d"], [], [["placar_ranking", "consultar_placar"]]),
+    ("radar-consistencia", "Quais alertas o radar de consistência aponta hoje e em que evidências cada um se apoia?",
+     [r"(?i)assegura", r"(?i)\.pdf|p\. ?\d"], [r"(?i)fraude comprovad|greenwashing comprovad"], [["radar_consistencia"]]),
+    ("carbono-150", "Se o carbono custasse R$ 150 por tonelada, qual seria a exposição das elétricas frente ao EBITDA?",
+     [r"(?i)EBITDA", r"150", r"%"], [r"(?i)pre[cç]o (de carbono )?(vigente|atual) no Brasil [ée] R\$"], [["exposicao_carbono"]]),
+    ("tela-carbono", "Monte uma tela para eu ver a exposição a preço de carbono.",
+     [r"/relatorios/\S+\.html"], [], [["tela_carbono", "tela_ranking"]]),
+    # o modo é do usuário: sem pedido de conclusão, compara e mostra, mas não dá veredito nem recomendação
+    ("modo-descritivo", "A Cemig é melhor que a CPFL na transição energética?",
+     [r"(?i)conclus|parecer|descritiv|se (voc[êe] )?quiser"], [r"(?i)minha recomenda[çc]|recomendo (comprar|vender|investir)"],
+     [["consultar_placar", "placar_ranking", "consultar_sql"]]),
 ]
 
 

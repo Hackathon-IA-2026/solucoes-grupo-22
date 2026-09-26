@@ -13,7 +13,7 @@ CoppeZIP: chat de inteligência do setor elétrico. A raiz é o LibreChat v0.8.7
 - `.env.example`: portas (inclusive `BUSCA_PORTA`), segredos, endereço do vLLM, região do Bedrock (o `.env` real nunca
   vai para o git);
 - `instalar.sh`, `iniciar.sh`, `parar.sh`, `vllm.sh`;
-- `proper_mcps/` (dados, docs, relatorio), `proper_skills/`, `data/`, `researches/`, `eval/`;
+- `proper_mcps/` (dados, docs, relatorio, placar), `proper_skills/`, `data/`, `researches/`, `eval/`;
 - `data/linha_do_tempo.py`: os dados da aba Timeline (eventos, trajetórias e gráficos de cada empresa), gerados dos dois
   bancos em `.runtime/linha_do_tempo/` pelo `iniciar.sh` e servidos em `/linha_do_tempo/`.
 
@@ -41,7 +41,7 @@ CoppeZIP: chat de inteligência do setor elétrico. A raiz é o LibreChat v0.8.7
 ./iniciar.sh && eval/usuario.sh                          # chat no ar e usuário de teste (uma vez)
 python3 eval/chat.py "Qual foi a receita líquida da Taesa em 2025?"          # modelo padrão (vLLM)
 python3 eval/chat.py --perfil coppezip-analista-claude "a mesma pergunta"     # Claude pelo Bedrock
-python3 eval/regressao.py                                # 27 perguntas com resposta conhecida
+python3 eval/regressao.py                                # 33 perguntas com resposta conhecida
 ```
 
 Mudou o banco (`data/construir.py` ou `data/indexar_docs.py`)? Rode os testes das ferramentas, a regressão e
@@ -56,6 +56,9 @@ Mudou o banco (`data/construir.py` ou `data/indexar_docs.py`)? Rode os testes da
 | nova base de dados | `data/baixar.py` (coleta), `data/construir.py` (tabela e entrada no catálogo), teste em `proper_mcps/dados/test_server.py`, depois `data/documentar.py` |
 | nova ferramenta | `proper_mcps/<servidor>/server.py` e registro em `mcpServers` do `librechat.yaml` |
 | novo roteiro do analista | `proper_skills/<nome>/SKILL.md` |
+| novo dado ESG no placar | grupo (schema Pydantic + instrução) em `data/extrair_placar.py`, gabarito em `data/conferir_placar.py`, teste em `proper_mcps/placar/` |
+| nova regra do radar de consistência | `radar_consistencia` em `proper_mcps/placar/server.py` (todo alerta com as duas evidências) |
+| nova tela (HTML) | seção "telas" de `proper_mcps/placar/server.py`; confira com `node eval/e2e/telas.js` |
 | regra de resposta | `promptPrefix` do perfil `coppezip-analista` no `librechat.yaml` |
 | novo caso de regressão | `CASOS` em `eval/regressao.py`, com o valor conferido na fonte |
 | nova tabela na aba Painel | `CONJUNTOS` em `data/exportar_painel.py` |

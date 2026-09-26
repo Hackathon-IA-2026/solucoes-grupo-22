@@ -196,3 +196,4 @@ __pycache__/
 *.pyc
 data/build_*/
 proper_mcps/agentcore/cdk.out/
+data/build_*/
