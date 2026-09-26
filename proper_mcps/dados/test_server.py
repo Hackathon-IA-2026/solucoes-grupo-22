@@ -211,3 +211,122 @@ def test_debenture_snd_taesa():
 def test_expansao_geracao_ralie():
     linha = um("SELECT uf, tipo_geracao, potencia_outorgada_mw FROM expansao_geracao WHERE ceg = 'UHE.PH.RS.000324-7.1'")
     assert linha == {"uf": "RS", "tipo_geracao": "UHE", "potencia_outorgada_mw": pytest.approx(17.62)}
+
+
+# ---------------------------------------------------------------- correções da auditoria de 26/09/2026
+@pytest.mark.parametrize("valor, esperado", [
+    (2.0990909e-06, 2.09909e-06),       # razão pequena: round(v, 4) devolvia 0.0
+    (0.00012345678, 0.000123457),
+    (62.900912, 62.9009),
+    (111004.76, 111004.76),             # centavos de um valor grande não se perdem
+    (4624113000.0, 4624113000.0),
+    (0.0, 0.0),
+])
+def test_arredondamento_acompanha_a_grandeza(valor, esperado):
+    assert s._arredondar(valor) == pytest.approx(esperado)
+
+
+def test_razao_pequena_nao_vira_zero():
+    linha = um("""SELECT capex_brl / ativo_total_brl AS capex_sobre_ativo FROM kpis_financeiros
+                  WHERE capex_brl > 0 ORDER BY 1 LIMIT 1""")
+    assert 0 < linha["capex_sobre_ativo"] < 1e-5
+
+
+@pytest.mark.parametrize("sql", [
+    "-- receita da Taesa\nSELECT ano FROM kpis_financeiros LIMIT 1",
+    "/* nota */ SELECT ano FROM kpis_financeiros LIMIT 1",
+    "SELECT count(*) AS n FROM catalogo WHERE descricao LIKE '%;%'",
+    "(SELECT ano FROM kpis_financeiros LIMIT 1)",
+])
+def test_consultar_sql_aceita_comentario_e_ponto_e_virgula_em_literal(sql):
+    assert "erro" not in s.consultar_sql(sql)
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT 1 FROM catalogo; SELECT 2 FROM catalogo",
+    "CREATE TABLE x AS SELECT * FROM catalogo",
+    "-- disfarce\nCREATE TABLE x AS SELECT * FROM catalogo",
+])
+def test_consultar_sql_recusa_mais_de_uma_consulta_ou_escrita(sql):
+    assert "erro" in s.consultar_sql(sql)
+
+
+def test_trimestres_dizem_quantos_faltam_e_aceitam_pedido_maior():
+    r = s.indicadores_financeiros("Taesa")
+    assert len(r["trimestres_recentes"]) == 4
+    assert r["trimestres_na_base"] > 4
+    assert str(r["trimestres_na_base"]) in r["aviso_trimestres"]
+    inteiro = s.indicadores_financeiros("Taesa", trimestres=r["trimestres_na_base"])
+    assert len(inteiro["trimestres_recentes"]) == r["trimestres_na_base"]
+    assert "aviso_trimestres" not in inteiro
+
+
+def test_listar_tabelas_resume_e_diz_onde_ver_o_resto():
+    r = s.listar_tabelas()
+    assert r["tabelas"] == len(r["catalogo"]) > 50
+    assert set(r["catalogo"][0]) == {"tabela", "linhas", "resumo"}
+    assert "descrever_tabela" in r["como_usar"] and "detalhe=True" in r["como_usar"]
+    detalhe = s.listar_tabelas(detalhe=True)
+    assert set(detalhe["catalogo"][0]) == {"tabela", "descricao", "fonte", "ressalvas", "linhas"}
+
+
+def test_sigla_da_aneel_acha_a_concessao_e_nao_a_holding():
+    # "Light SESA" só existe como sigla no cadastro da ANEEL; antes vinha a holding Light S.A.
+    r = s.buscar_empresa("Light SESA")
+    assert r["resultados"][0]["cnpj"] == "60.444.437/0001-46"
+    assert r["resultados"][0]["confianca"] == "exata"
+
+
+def test_holding_encontrada_por_aproximacao_lista_as_empresas_do_grupo():
+    r = s.buscar_empresa("Grupo Light")
+    assert r["resultados"][0]["cnpj"] == "03.378.521/0001-75"
+    assert "60.444.437/0001-46" in r["aviso_holding"]
+
+
+# ---------------------------------------------------------------- coerência das contas da CVM
+def test_custo_positivo_e_bruto_acima_da_receita_sao_apontados():
+    # Equatorial Pará 2025: a empresa enviou 3.02 positiva, então 3.03 = 3.01 + 3.02 FECHA e a soma não pega o erro
+    contas = {"3.01": 12_223_744_000.0, "3.02": 8_846_555_000.0, "3.03": 21_070_299_000.0,
+              "3.04": -1_042_090_000.0, "3.05": 20_028_209_000.0}
+    assert abs(contas["3.03"] - (contas["3.01"] + contas["3.02"])) < 1  # a identidade de soma fecha
+    problemas = s._incoerencias_dre(contas)
+    assert any("3.02" in p and "positiva" in p for p in problemas)
+    assert any("passa a receita" in p for p in problemas)
+    assert any("2335099000" in p for p in problemas)  # EBIT com o sinal certo, 19% de margem
+
+
+def test_soma_que_nao_fecha_e_apontada():
+    # CESP 2022 consolidado: a empresa não enviou 3.02 nem 3.04
+    problemas = s._incoerencias_dre({"3.01": 2_255_353_000.0, "3.02": 0.0, "3.03": 756_723_000.0,
+                                     "3.04": 0.0, "3.05": 972_475_000.0})
+    assert any("3.03" in p and "não fecha" in p for p in problemas)
+    assert any("3.05" in p and "não fecha" in p for p in problemas)
+
+
+@pytest.mark.parametrize("contas", [
+    {"3.01": 100.0, "3.02": -60.0, "3.03": 40.0, "3.04": -10.0, "3.05": 30.0},              # DRE normal
+    {"3.01": 2_981_000.0, "3.02": 0.0, "3.03": 2_981_000.0, "3.04": 2_226_579_000.0,
+     "3.05": 2_229_560_000.0},                                                              # holding: EBIT >> receita
+    {"3.01": None, "3.02": None, "3.03": None, "3.04": None, "3.05": None},                 # período sem DRE
+])
+def test_dre_coerente_nao_gera_ressalva(contas):
+    assert s._incoerencias_dre(contas) == []
+
+
+def test_indicadores_da_equatorial_para_trazem_a_ressalva_de_2025():
+    r = s.indicadores_financeiros("Equatorial Pará")
+    assert any(a["ano"] == 2025 and a["margem_ebit_pct"] > 100 for a in r["anos"])
+    assert any("2025" in x and "3.02" in x for x in r["ressalvas_cvm"])
+
+
+def test_a_checagem_pega_todo_periodo_suspeito_da_base():
+    # toda a base: nenhum período com custo positivo ou bruto acima da receita escapa da checagem
+    r = s.consultar_sql("""WITH d AS (SELECT cnpj, ano, escopo,
+            max(valor_brl) FILTER (cd_conta = '3.01') AS c301, max(valor_brl) FILTER (cd_conta = '3.02') AS c302,
+            max(valor_brl) FILTER (cd_conta = '3.03') AS c303, max(valor_brl) FILTER (cd_conta = '3.04') AS c304,
+            max(valor_brl) FILTER (cd_conta = '3.05') AS c305 FROM contas_cvm GROUP BY ALL)
+        SELECT * FROM d WHERE c302 > 0 OR c303 > c301""")
+    assert r["linhas"], "a base deveria ter o caso conhecido da Equatorial Pará 2025"
+    for linha in r["linhas"]:
+        contas = {c: linha["c" + c.replace(".", "")] for c in s.CONTAS_DRE}
+        assert s._incoerencias_dre(contas), linha

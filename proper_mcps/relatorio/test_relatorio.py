@@ -70,3 +70,54 @@ def test_coluna_fonte_por_linha_vale_como_fonte(s):
 ])
 def test_o_que_conta_como_numero(s, texto, tem):
     assert bool(s._numeros(texto)) is tem
+
+# ---------------------------------------------------------------- correções da auditoria de 26/09/2026
+def test_conta_os_numeros_das_tabelas_e_das_lacunas(s):
+    sec = [{"titulo": "Receita", "texto": "O quadro está na tabela [F1].",
+            "tabelas": [{"titulo": "Receita líquida 2025, R$ bi", "colunas": ["Empresa", "Receita", "Margem"],
+                         "linhas": [["Taesa", "4,62", "38,7%"], ["Alupar", "3,19", "41,2%"]], "fontes": ["F1"]}]}]
+    r = s.gerar_relatorio("Transmissoras em 2025", sec, FONTES, sumario="O quadro está na tabela abaixo [F1].",
+                          lacunas=["Falta a receita de 2026, que sai em 12 meses [F1]."])
+    assert r["gravado"], r
+    # antes a conta era só do texto: um relatório com os números em tabela devolvia zero
+    assert r["numeros_com_fonte"] == {"total": 5, "no_texto": 0, "em_tabelas": 4, "em_lacunas": 1}
+    assert "não foi conferido" in r["conferencia"]
+
+
+def test_relatorio_sem_lacunas_recebe_aviso(s):
+    r = s.gerar_relatorio("Taesa em 2025", secao(), FONTES, sumario="Receita de R$ 4,62 bi [F1]; RAP na p. 22 [F2].")
+    assert r["gravado"]
+    assert any("não tem lacunas" in a for a in r["avisos"])
+
+
+@pytest.mark.parametrize("texto, cortado", [
+    ("A receita foi de R$ 4,62 bi em 2025 [F1].", False),
+    ("A receita foi de R$ 4,62 bi [F1]...", True),
+    ("A receita foi de R$ 4,62 bi [F1] […]", True),
+    ("A receita cresceu [F1]. " + "Detalhe do período com números de 4,62 e 3,19 [F1]. " * 4 + "e o resto vem", True),
+])
+def test_texto_cortado_e_apontado(s, texto, cortado):
+    assert s._cortado(texto) is cortado
+
+
+def test_secao_cortada_gera_aviso(s):
+    r = s.gerar_relatorio("Taesa em 2025", secao("A receita foi de R$ 4,62 bi em 2025 [F1]..."), FONTES,
+                          sumario="Receita de R$ 4,62 bi [F1]; RAP na p. 22 [F2].",
+                          lacunas=["Sem cronograma de dívida na base."])
+    assert r["gravado"]
+    assert any("termina no meio" in a for a in r["avisos"])
+
+
+def test_fonte_sem_localizador_gera_aviso(s):
+    fontes = [{"id": "F1", "descricao": "dados da empresa"}]
+    r = s.gerar_relatorio("X", secao("Receita de R$ 4,62 bi em 2025 [F1]."), fontes,
+                          lacunas=["Sem comparação com 2024."])
+    assert r["gravado"]
+    assert any("não diz onde achar o número" in a for a in r["avisos"])
+
+
+def test_fonte_com_tabela_pagina_ou_link_nao_gera_aviso(s):
+    r = s.gerar_relatorio("X", secao("Receita de R$ 4,62 bi em 2025 [F1]."), FONTES,
+                          lacunas=["Sem comparação com 2024."])
+    assert r["gravado"]
+    assert not any("não diz onde achar" in a for a in r.get("avisos", []))

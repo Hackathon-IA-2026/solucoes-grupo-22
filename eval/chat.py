@@ -6,8 +6,9 @@
   eval/chat.py --conversa ID "pergunta"         continua a conversa ID
   eval/chat.py --aguardar ID                    espera a resposta que ainda está sendo gerada na conversa ID
 
-Cada conversa fica em <saida>/conversas/<ID>.json (mensagens brutas) e <ID>.md (transcrição com as ferramentas, SQL
-e resultados); cada pergunta vira uma linha de <saida>/log.jsonl. O usuário é teste-<persona>@coppezip.local, criado
+Cada conversa fica em <saida>/<ID>.json (mensagens brutas) e <saida>/<ID>.md (transcrição com as ferramentas, SQL e
+resultados); cada pergunta vira uma linha de <saida>/log.jsonl. Com --conversa, o perfil é o mesmo da conversa (o
+modelo que respondeu até aqui), a menos que --perfil diga outro. O usuário é teste-<persona>@coppezip.local, criado
 por eval/usuario.sh, com a senha de .runtime/run/usuarios.json.
 """
 import argparse
@@ -143,11 +144,21 @@ def mensagens(sessao, cid):
     return r
 
 
-def perfil(sessao, nome):
-    """Perfil (modelSpec) do librechat.yaml: prompt de sistema, endpoint, modelo e servidores MCP. Sem nome, o padrão."""
+def perfil(sessao, nome, modelo=None, endpoint=None):
+    """Perfil (modelSpec) do librechat.yaml: prompt de sistema, endpoint, modelo e servidores MCP. Sem nome, o perfil do
+    modelo informado (o da conversa que está sendo continuada); sem nome e sem modelo, o padrão."""
     st, r, _ = api("GET", "/api/config", token=sessao.token())  # sem login o LibreChat não devolve os perfis
     perfis = ((r.get("modelSpecs") or {}).get("list") or []) if st == 200 and isinstance(r, dict) else []
-    achados = [p for p in perfis if (p.get("name") == nome if nome else p.get("default"))]
+    if nome:
+        achados = [p for p in perfis if p.get("name") == nome]
+    elif modelo:
+        achados = [p for p in perfis if (p.get("preset") or {}).get("model") == modelo
+                   and (p.get("preset") or {}).get("endpoint") == endpoint]
+        if not achados:
+            falhar(f"a conversa foi feita com o modelo {modelo} no endpoint {endpoint}, que não é de nenhum perfil do "
+                   "librechat.yaml; diga em qual perfil continuar com --perfil")
+    else:
+        achados = [p for p in perfis if p.get("default")]
     if not achados:
         falhar(f"perfil {nome or 'padrão'} não existe no librechat.yaml")
     return achados[0]
@@ -237,7 +248,7 @@ def transcricao(msgs, persona, cid):
 
 
 def salvar(saida, persona, cid, msgs):
-    pasta = os.path.join(saida, "conversas")
+    pasta = saida  # --saida já é a pasta das transcrições: outro "conversas" dentro dela separava do log.jsonl
     os.makedirs(pasta, exist_ok=True)
     with open(os.path.join(pasta, f"{cid}.json"), "w") as f:
         json.dump(msgs, f, ensure_ascii=False, indent=1)
@@ -291,11 +302,7 @@ def main():
 
     if not a.pergunta:
         falhar("faltou a pergunta")
-    esc = perfil(sessao, a.perfil)
-    modelo, endpoint = esc["preset"]["model"], esc["preset"]["endpoint"]
-    tipo = "custom" if endpoint == ENDPOINT_VLLM else endpoint   # "CoppeZIP" é o vLLM; "bedrock" é o Claude na AWS
-    mcps = esc["mcpServers"]
-    pai, antes = RAIZ, set()
+    pai, antes, anterior = RAIZ, set(), {}
     if a.conversa:
         anteriores = mensagens(sessao, a.conversa)
         if not anteriores:
@@ -303,6 +310,15 @@ def main():
         if anteriores[-1].get("isCreatedByUser"):
             falhar(f"a última pergunta desta conversa ainda não tem resposta; rode eval/chat.py --aguardar {a.conversa}")
         pai, antes = anteriores[-1]["messageId"], {m.get("messageId") for m in anteriores}
+        # continuar não pode trocar o modelo em silêncio: o perfil sai de quem respondeu até aqui, não do padrão
+        anterior = next(({"modelo": m["model"], "endpoint": m.get("endpoint")} for m in reversed(anteriores)
+                         if not m.get("isCreatedByUser") and m.get("model")), {})
+    esc = perfil(sessao, a.perfil, anterior.get("modelo"), anterior.get("endpoint"))
+    modelo, endpoint = esc["preset"]["model"], esc["preset"]["endpoint"]
+    tipo = "custom" if endpoint == ENDPOINT_VLLM else endpoint   # "CoppeZIP" é o vLLM; "bedrock" é o Claude na AWS
+    mcps = esc["mcpServers"]
+    if anterior and not a.perfil:
+        print(f"Perfil {esc['name']} ({modelo}), o mesmo da conversa {a.conversa}.")
     mid = str(uuid.uuid4())
     corpo = {
         "text": a.pergunta, "sender": "User", "isCreatedByUser": True, "parentMessageId": pai,
@@ -310,6 +326,9 @@ def main():
         "model": modelo, "isContinued": False,
         # o LibreChat aplica do lado do servidor o prompt de sistema do perfil (ele não aparece em /api/config)
         "spec": esc["name"],
+        # com modelSpecs.enforce: false o servidor só aplica o promptPrefix do perfil: sem estes campos a conversa roda
+        # com o padrão do endpoint (o Claude gravou maxContextTokens 95.000 e 4.096 de saída), não com o do librechat.yaml
+        **{k: esc["preset"][k] for k in ("maxContextTokens", "maxOutputTokens") if esc["preset"].get(k)},
         "ephemeralAgent": {"mcp": mcps, **({"web_search": True} if a.busca_web else {})},
     }
     inicio = time.time()

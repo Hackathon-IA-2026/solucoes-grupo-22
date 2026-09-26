@@ -6,6 +6,7 @@ O banco (data/coppezip.duckdb) é montado por data/construir.py; as descrições
 import datetime
 import decimal
 import json
+import math
 import os
 import re
 import threading
@@ -18,6 +19,7 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 DB = os.path.join(RAIZ, "data", "coppezip.duckdb")
 LIMITE_LINHAS = 200
+MAX_TRIMESTRES = 40  # 10 anos de ITR
 TEMPO_MAXIMO_S = 30
 
 INSTRUCOES = """Você responde sobre empresas do setor elétrico brasileiro com os dados desta base. Regras:
@@ -32,7 +34,18 @@ INSTRUCOES = """Você responde sobre empresas do setor elétrico brasileiro com 
    filtro antes de concluir que o dado não existe. Leia as ressalvas de descrever_tabela.
 5. Cite a fonte (coluna fonte, ou tabela e conta) e o ano de cada número. Se a base não tiver o dado, diga isso com
    clareza e aponte de onde ele poderia vir.
-6. Prefira poucas consultas agregadas a muitas pequenas."""
+6. Prefira poucas consultas agregadas a muitas pequenas.
+7. Aviso é para ler: quando a resposta traz aviso, aviso_trimestres, aviso_holding, ressalvas_cvm ou como_usar, resolva
+   o que ele diz (peça o resto, troque o CNPJ) ou conte ao usuário o que ficou de fora. Nenhuma resposta corta dado em
+   silêncio: se veio cortada, ela diz quanto e como pedir o que falta.
+8. Holding não é concessão: DEC, FEC, tarifa e mercado ficam no CNPJ da distribuidora; receita e dívida consolidadas
+   ficam na holding. Diga sempre de qual das duas é o número.
+9. ressalvas_cvm aponta período em que a própria empresa enviou a DRE com sinal trocado ou conta faltando. Nesse
+   período não apresente EBIT, EBITDA nem margem sem repetir a ressalva ao usuário.
+10. Grupo econômico: nunca monte o perímetro com LIKE no nome. '%neoenergia%' em distribuidora acha 2 das 5
+   distribuidoras do grupo (Coelba, Cosern e Elektro não têm a marca no nome) e '%RGE %' acha FOTONS DE SAO GEORGE.
+   Use grupos_economicos (cnpj, agente, holding_cvm, cnpj_holding_cvm), diga quantos CNPJs entraram e quais. Só as 151
+   companhias da CVM estão em kpis_financeiros; as demais do grupo aparecem nas tabelas da ANEEL, do BNDES e do SND."""
 
 mcp = MCPServer("coppezip-dados", instructions=INSTRUCOES)
 
@@ -52,13 +65,25 @@ def _ident(nome: str, validos: list[str]) -> str:
     return '"' + nome.replace('"', '""') + '"'
 
 
+DIGITOS = 6  # dígitos significativos: o arredondamento acompanha a ordem de grandeza do número
+CASAS_MINIMAS = 2  # em reais os centavos ficam (R$ 111.004,76 não pode virar R$ 111.005)
+
+
+def _arredondar(v: float) -> float:
+    """Arredonda por dígitos significativos. Casas fixas (round(v, 4)) zeravam razões pequenas: capex/ativo de
+    2,1e-6 virava 0.0 e o modelo lia "zero"."""
+    if v == 0 or not math.isfinite(v):
+        return v
+    return round(v, max(CASAS_MINIMAS, DIGITOS - 1 - math.floor(math.log10(abs(v)))))
+
+
 def _json(v):
     if isinstance(v, (datetime.date, datetime.datetime)):
         return v.isoformat()
     if isinstance(v, decimal.Decimal):
         return float(v)
     if isinstance(v, float):
-        return round(v, 4)
+        return _arredondar(v)
     return v
 
 
@@ -111,7 +136,19 @@ def _buscar(con, termo: str, limite: int) -> list[dict]:
         juntar(con.execute(f"""WITH b AS ({BUSCA}) SELECT {cols} FROM b WHERE {conds}
             ORDER BY (b.anos_com_demonstracoes <> 'não') DESC, (b.situacao = 'ATIVO') DESC, length(b.nome_social)
             LIMIT ?""", palavras + [limite]).fetchall(), "nome", lambda r: "palavras do nome")
-    # 4. termo que contém um apelido inteiro ("Neoenergia Coelba" -> Coelba): subsidiária antes da holding, depois o mais longo
+    # 4. sigla ou razão social do cadastro da ANEEL ("Light SESA", "Equatorial PA"): acha a concessão que não tem
+    #    apelido de mercado, antes de o passo 5 cair na holding do grupo
+    if not achados:
+        juntar(con.execute(f"""WITH b AS ({BUSCA}) SELECT ag.cnpj, coalesce(b.nome_social, ag.razao_social),
+                   b.nome_comercial, coalesce(b.situacao, CASE WHEN ag.ativo THEN 'ATIVO na ANEEL' ELSE 'INATIVO na ANEEL' END),
+                   b.tickers, coalesce(b.anos_com_demonstracoes, 'não'), ag.sigla, b.nome_social IS NOT NULL
+            FROM agentes_aneel ag LEFT JOIN b USING (cnpj)
+            WHERE strip_accents(lower(coalesce(ag.sigla, ''))) = strip_accents(lower(?))
+               OR strip_accents(lower(ag.razao_social)) = strip_accents(lower(?))
+            ORDER BY b.nome_social IS NULL, ag.ativo DESC LIMIT ?""", [termo, termo, limite]).fetchall(),
+               "exata", lambda r: f"sigla '{r[6]}' do cadastro da ANEEL"
+                                  + ("" if r[7] else "; agente sem registro na CVM, não tem demonstrações"))
+    # 5. termo que contém um apelido inteiro ("Neoenergia Coelba" -> Coelba): subsidiária antes da holding, depois o mais longo
     if not achados:
         juntar(con.execute(f"""WITH b AS ({BUSCA}) SELECT {cols}, ap.tipo, ap.apelido, ap.observacao
             FROM empresas_apelidos ap JOIN b USING (cnpj)
@@ -119,12 +156,20 @@ def _buscar(con, termo: str, limite: int) -> list[dict]:
                   '[^a-z0-9]' || regexp_escape(strip_accents(lower(ap.apelido))) || '[^a-z0-9]')
             ORDER BY coalesce(ap.observacao, '') LIKE 'holding%', length(ap.apelido) DESC LIMIT ?""", [termo, limite]).fetchall(),
                "nome", lambda r: f"o termo contém o {r[6]} '{r[7]}'" + (f" ({r[8]})" if r[8] else ""))
-    # 5. nada encontrado: nomes parecidos, marcados como aproximados
+    # 6. nada encontrado: nomes parecidos, marcados como aproximados
     if not achados:
         juntar(con.execute(f"""WITH b AS ({BUSCA}) SELECT {cols} FROM b
             ORDER BY jaro_winkler_similarity(b.busca, strip_accents(lower(?))) DESC LIMIT 3""", [termo]).fetchall(),
                "aproximada", lambda r: "nome parecido; NÃO confirmado")
     return achados[:limite]
+
+
+def _controladas(con, cnpj: str) -> list[str]:
+    """Empresas do grupo cuja holding na CVM é esse CNPJ. Sem isso, um termo que só contém o apelido da holding
+    ("Light SESA" -> apelido "Light") devolvia a holding calada, e os números da concessão ficavam em outro CNPJ."""
+    return [f"{nome} ({c})" for c, nome in con.execute(
+        """SELECT cnpj, any_value(agente) FROM grupos_economicos WHERE cnpj_holding_cvm = ? AND cnpj <> ?
+           GROUP BY cnpj ORDER BY 2""", [cnpj, cnpj]).fetchall()]
 
 
 @mcp.tool()
@@ -135,9 +180,15 @@ def buscar_empresa(termo: str, limite: int = 8) -> dict:
     con = _con()
     try:
         achados = _buscar(con, termo, limite)
+        # o termo não bateu exato: se o que veio é a holding de um grupo, diga quais são as empresas dele
+        do_grupo = _controladas(con, achados[0]["cnpj"]) if achados and achados[0]["confianca"] != "exata" else []
     finally:
         con.close()
     resposta = {"resultados": achados}
+    if do_grupo:
+        resposta["aviso_holding"] = (f"{achados[0]['nome_social']} é a holding do grupo na CVM; a concessão tem CNPJ "
+                                     f"próprio. Empresas do grupo na base: {'; '.join(do_grupo[:10])}"
+                                     + (f" (e outras {len(do_grupo) - 10})" if len(do_grupo) > 10 else ""))
     if achados and achados[0]["confianca"] == "aproximada":
         resposta["aviso"] = (f"Nenhuma empresa com '{termo}' no nome, apelido ou ticker. Os resultados são só nomes "
                              "parecidos: não use sem confirmar com o usuário.")
@@ -146,12 +197,55 @@ def buscar_empresa(termo: str, limite: int = 8) -> dict:
     return resposta
 
 
+CONTAS_DRE = ("3.01", "3.02", "3.03", "3.04", "3.05")
+TOLERANCIA_DRE = 0.005  # 0,5% da receita: abaixo disso a diferença é arredondamento da própria demonstração
+
+
+def _incoerencias_dre(contas: dict[str, float]) -> list[str]:
+    """Incoerências na DRE da CVM de um período (contas: {cd_conta: valor}). Duas famílias:
+    - sinal: a convenção da CVM é custo negativo. Com 3.02 positivo o erro sobe para o resultado bruto e para o EBIT e
+      as somas continuam fechando (Equatorial Pará 2025: 12.223.744 + 8.846.555 = 21.070.299), ou seja, checar a soma
+      não pega o caso; o que pega é 3.02 > 0 e o resultado bruto acima da receita.
+    - soma: 3.03 = 3.01 + 3.02 e 3.05 = 3.03 + 3.04, que quebram quando a empresa não envia uma das contas.
+    EBIT acima da receita de propósito não entra: em holding é o normal (equivalência patrimonial em 3.04.06)."""
+    receita, custo, bruto, oper, ebit = (contas.get(c) for c in CONTAS_DRE)
+    folga = TOLERANCIA_DRE * max(abs(receita or 0), 1)
+    problemas = []
+    if custo is not None and custo > 0:
+        problemas.append(f"a conta 3.02 (custo dos bens e serviços) veio positiva ({custo:.0f}); na CVM custo é negativo")
+    if None not in (receita, bruto) and bruto > receita:
+        problemas.append(f"o resultado bruto 3.03 ({bruto:.0f}) passa a receita 3.01 ({receita:.0f})")
+    if None not in (receita, custo, bruto) and abs(bruto - (receita + custo)) > folga:
+        problemas.append(f"3.03 ({bruto:.0f}) não fecha com 3.01 + 3.02 ({receita + custo:.0f})")
+    if None not in (bruto, oper, ebit) and abs(ebit - (bruto + oper)) > folga:
+        problemas.append(f"3.05 ({ebit:.0f}) não fecha com 3.03 + 3.04 ({bruto + oper:.0f})")
+    if problemas:
+        if custo is not None and custo > 0 and receita is not None:
+            problemas.append(f"com 3.02 negativo o EBIT do período seria {receita - abs(custo) + (oper or 0):.0f}")
+        problemas.append("não use o EBIT, o EBITDA nem as margens deste período sem conferir na demonstração original")
+    return problemas
+
+
+def _ressalvas_dre(con, cnpj: str, periodos: list[tuple[int, str]]) -> list[str]:
+    """Roda a checagem de sinal nas contas da CVM dos períodos que alimentam os indicadores devolvidos."""
+    contas: dict[tuple, dict] = {}
+    for ano, escopo, conta, valor in con.execute(
+            f"""SELECT ano, escopo, cd_conta, valor_brl FROM contas_cvm WHERE cnpj = ?
+                AND cd_conta IN ({', '.join('?' * len(CONTAS_DRE))}) ORDER BY versao""",
+            [cnpj, *CONTAS_DRE]).fetchall():
+        contas.setdefault((ano, escopo), {})[conta] = valor
+    return [f"{ano} ({escopo}): {p}" for ano, escopo in sorted(set(periodos))
+            for p in _incoerencias_dre(contas.get((ano, escopo), {}))]
+
+
 @mcp.tool()
-def indicadores_financeiros(empresa: str, ano_inicial: int | None = None, ano_final: int | None = None) -> dict:
+def indicadores_financeiros(empresa: str, ano_inicial: int | None = None, ano_final: int | None = None,
+                            trimestres: int = 4) -> dict:
     """Indicadores financeiros de uma empresa direto das demonstrações da CVM, em reais: os anuais (DFP, 2020 em
     diante: receita, EBIT, EBITDA calculado, lucro, dívida bruta e líquida, caixa, investimento, dividendos, margens,
-    dívida líquida/EBITDA, cobertura de juros, ROE) e os 4 trimestres mais recentes (ITR: trimestre, acumulado no ano e
-    últimos 12 meses), com a fonte de cada período. empresa aceita nome, apelido, ticker ou CNPJ."""
+    dívida líquida/EBITDA, cobertura de juros, ROE) e os trimestres mais recentes (ITR: trimestre, acumulado no ano e
+    últimos 12 meses), com a fonte de cada período. empresa aceita nome, apelido, ticker ou CNPJ; trimestres é quantos
+    ITR devolver, do mais recente para o mais antigo (4 por padrão, até 40)."""
     con = _con()
     try:
         achados = _buscar(con, empresa, 5)
@@ -163,17 +257,24 @@ def indicadores_financeiros(empresa: str, ano_inicial: int | None = None, ano_fi
         cur = con.execute("""SELECT * EXCLUDE (cnpj) FROM kpis_financeiros WHERE cnpj = ?
             AND ano BETWEEN coalesce(?, 0) AND coalesce(?, 9999) ORDER BY ano""", [alvo["cnpj"], ano_inicial, ano_final])
         anos = _linhas(cur)
-        trimestres = _linhas(con.execute("""SELECT ano, trimestre, data_referencia, receita_liquida_trimestre_brl,
+        pedidos = max(1, min(int(trimestres), MAX_TRIMESTRES))
+        itr = _linhas(con.execute("""SELECT ano, trimestre, data_referencia, receita_liquida_trimestre_brl,
             lucro_trimestre_brl, receita_liquida_12m_brl, ebitda_12m_brl, lucro_12m_brl, divida_bruta_brl, divida_liquida_brl,
             divida_liquida_ebitda_12m, investimento_acumulado_brl, fonte
-            FROM kpis_trimestrais WHERE cnpj = ? ORDER BY data_referencia DESC LIMIT 4""", [alvo["cnpj"]]))
+            FROM kpis_trimestrais WHERE cnpj = ? ORDER BY data_referencia DESC LIMIT ?""", [alvo["cnpj"], pedidos]))
+        na_base = con.execute("SELECT count(*) FROM kpis_trimestrais WHERE cnpj = ?", [alvo["cnpj"]]).fetchone()[0]
+        ressalvas = _ressalvas_dre(con, alvo["cnpj"], [(a["ano"], a["escopo"]) for a in anos])
     finally:
         con.close()
     return {
         "empresa": {k: alvo[k] for k in ("cnpj", "nome_social", "tickers", "como_encontrou")},
         "unidade": "R$ (reais); *_pct em %; divida_liquida_ebitda e cobertura_juros_ebitda em vezes",
         "anos": anos or "sem demonstrações na base para esses anos",
-        "trimestres_recentes": trimestres or "sem ITR na base para esta empresa",
+        "trimestres_recentes": itr or "sem ITR na base para esta empresa",
+        "trimestres_na_base": na_base,
+        **({"ressalvas_cvm": ressalvas} if ressalvas else {}),
+        **({"aviso_trimestres": f"mostrando os {len(itr)} ITR mais recentes de {na_base}; para os outros chame de novo "
+                                f"com trimestres={min(na_base, MAX_TRIMESTRES)}"} if na_base > len(itr) else {}),
         "observacoes": ["EBITDA = EBIT (conta 3.05) + depreciação e amortização da DFC; pode diferir do EBITDA ajustado "
                         "divulgado pela empresa",
                         "Dívida bruta = empréstimos, financiamentos e debêntures (2.01.04 + 2.02.01), sem arrendamentos",
@@ -185,14 +286,36 @@ def indicadores_financeiros(empresa: str, ano_inicial: int | None = None, ano_fi
 
 
 # ------------------------------------------------------------------------------------------------ catálogo
+PRIMEIRA_FRASE = re.compile(r"(?s)^.{0,180}?[.;](?=\s|$)")
+
+
+def _resumo(texto: str) -> str:
+    """Primeira frase da descrição; o resto fica em descrever_tabela. Se a frase não couber, o corte é marcado."""
+    t = " ".join((texto or "").split())
+    m = PRIMEIRA_FRASE.match(t)
+    if m:
+        return m.group(0)
+    return (t[:180].rsplit(" ", 1)[0] + " [...]") if len(t) > 180 else t
+
+
 @mcp.tool()
-def listar_tabelas() -> list[dict]:
-    """Lista as tabelas da base com descrição, fonte, ressalvas e número de linhas."""
+def listar_tabelas(detalhe: bool = False) -> dict:
+    """Índice das tabelas da base: nome, número de linhas e a primeira frase da descrição. Com detalhe=True devolve a
+    descrição, a fonte e as ressalvas inteiras de todas as tabelas (resposta longa); descrever_tabela traz isso de uma
+    tabela só, com as colunas."""
     con = _con()
     try:
-        return _linhas(con.execute("SELECT tabela, descricao, fonte, ressalvas, linhas FROM catalogo ORDER BY tabela"))
+        linhas = _linhas(con.execute("SELECT tabela, descricao, fonte, ressalvas, linhas FROM catalogo ORDER BY tabela"))
     finally:
         con.close()
+    if detalhe:
+        return {"tabelas": len(linhas), "catalogo": linhas}
+    return {"tabelas": len(linhas),
+            "catalogo": [{"tabela": t["tabela"], "linhas": t["linhas"], "resumo": _resumo(t["descricao"])}
+                         for t in linhas],
+            "como_usar": "resumo é só a primeira frase da descrição: a fonte, as ressalvas e as colunas de uma tabela "
+                         "vêm de descrever_tabela('nome'), e as de todas de listar_tabelas(detalhe=True). Leia as "
+                         "ressalvas antes de usar os números."}
 
 
 @mcp.tool()
@@ -230,7 +353,15 @@ def valores_distintos(tabela: str, coluna: str, contem: str | None = None, limit
 
 
 # ------------------------------------------------------------------------------------------------ SQL
-NUMERICOS = {"TINYINT", "SMALLINT", "INTEGER", "BIGINT", "HUGEINT", "UTINYINT", "USMALLINT", "UINTEGER", "UBIGINT",
+RUIDO = re.compile(r"(?s)('(?:[^']|'')*')|(\$\$.*?\$\$)|(/\*.*?\*/)|(--[^\n]*)")
+
+
+def _sem_ruido(sql: str) -> str:
+    """SQL sem comentários, com os literais vazios. Uma varredura só, para um '--' dentro de aspas não comer a linha."""
+    return RUIDO.sub(lambda m: "''" if m.group(1) or m.group(2) else " ", sql)
+
+
+NUMERICOS = {"TINYINT","SMALLINT", "INTEGER", "BIGINT", "HUGEINT", "UTINYINT", "USMALLINT", "UINTEGER", "UBIGINT",
              "DECIMAL", "FLOAT", "DOUBLE"}
 
 
@@ -279,8 +410,11 @@ def consultar_sql(sql: str, limite: int = LIMITE_LINHAS) -> dict:
     pelo cnpj de buscar_empresa. Recusa consultas que não leem nenhuma tabela ou que digitam valores numéricos
     (os números precisam vir da base)."""
     texto = sql.strip().rstrip(";").strip()
-    if not re.match(r"(?is)^\s*(select|with|from)\b", texto) or ";" in texto:
-        return {"erro": "só uma consulta de leitura por vez (SELECT ou WITH)"}
+    # a checagem olha o SQL sem comentários nem literais: senão um "-- nota" antes do SELECT ou um ';' dentro de
+    # aspas derrubavam uma consulta válida
+    limpo = _sem_ruido(texto).strip().rstrip(";").strip()
+    if not re.match(r"(?is)^(select|with|from|\()", limpo) or ";" in limpo:
+        return {"erro": "só uma consulta de leitura por vez (SELECT ou WITH; comentários -- e /* */ são aceitos)"}
     con = _con()
     try:
         arvore = json.loads(con.execute("SELECT json_serialize_sql(?)", [texto]).fetchone()[0])
