@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bateria de regressão: perguntas com resposta conhecida feitas ao chat de verdade, corrigidas automaticamente.
 
-Uso: python3 eval/regressao.py [--perfil coppezip-analista-claude] [--so ID,ID] [--paralelo 2]
+Uso: python3 eval/regressao.py [--perfil energynexus-analista-claude] [--so ID,ID] [--paralelo 2]
 Cada caso confere a resposta com expressões regulares (o que precisa aparecer e o que não pode aparecer) e as
 ferramentas usadas. Resultado em avaliacoes/regressao_<data>/ (transcrições + resumo.md) e placar na tela.
 Os valores esperados vêm das DFP da CVM e dos relatórios indexados; mude aqui quando a base mudar.

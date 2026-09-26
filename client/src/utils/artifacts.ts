@@ -310,6 +310,18 @@ export function isToolArtifactType(type: unknown): type is ToolArtifactType {
 const lookupOwn = <T>(record: Record<string, T>, key: string): T | undefined =>
   Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined;
 
+/* EnergyNexus: the final report (MCP tool gerar_relatorio) is a PDF artifact whose content is the file path.
+ * It opens in the browser's own PDF viewer instead of Sandpack, whose sandboxed iframe cannot show PDFs.
+ * Only PDFs served by this app under /relatorios/ are accepted, so a message cannot embed other pages. */
+export const PDF_ARTIFACT_TYPE = 'application/pdf';
+
+export function pdfArtifactUrl(
+  artifact?: Pick<Artifact, 'type' | 'content'> | null,
+): string | null {
+  const url = artifact?.type === PDF_ARTIFACT_TYPE ? (artifact.content ?? '').trim() : '';
+  return /^\/relatorios\/[\w.-]+\.pdf$/.test(url) ? url : null;
+}
+
 /**
  * Artifact types whose preview is server-rendered HTML — there's no
  * source for a "code" view because the underlying file is binary, and
@@ -331,7 +343,7 @@ export function isPreviewOnlyArtifact(type: string | null | undefined): boolean 
   if (type == null) {
     return false;
   }
-  return PREVIEW_ONLY_ARTIFACT_TYPES.has(type as ToolArtifactType);
+  return type === PDF_ARTIFACT_TYPE || PREVIEW_ONLY_ARTIFACT_TYPES.has(type as ToolArtifactType);
 }
 
 /**

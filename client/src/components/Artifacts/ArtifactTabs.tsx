@@ -5,6 +5,7 @@ import type { editor } from 'monaco-editor';
 import type { Artifact } from '~/common';
 import { useGetSharedStartupConfig, useGetStartupConfig } from '~/data-provider';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
+import { PDF_ARTIFACT_TYPE, pdfArtifactUrl } from '~/utils/artifacts';
 import { ArtifactCodeEditor } from './ArtifactCodeEditor';
 import { useCodeState } from '~/Providers/EditorContext';
 import { ArtifactPreview } from './ArtifactPreview';
@@ -39,6 +40,7 @@ export default function ArtifactTabs({
   }, [setCurrentCode, artifact.id]);
 
   const { files, fileKey, template, sharedProps } = useArtifactProps({ artifact });
+  const pdfUrl = pdfArtifactUrl(artifact);
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -56,15 +58,21 @@ export default function ArtifactTabs({
         className="h-full w-full flex-grow overflow-hidden"
         tabIndex={-1}
       >
-        <ArtifactPreview
-          files={files}
-          fileKey={fileKey}
-          template={template}
-          previewRef={previewRef}
-          sharedProps={sharedProps}
-          currentCode={currentCode}
-          startupConfig={resolvedStartupConfig}
-        />
+        {artifact.type === PDF_ARTIFACT_TYPE ? (
+          pdfUrl != null && (
+            <iframe src={pdfUrl} title={artifact.title} className="h-full w-full border-0" />
+          )
+        ) : (
+          <ArtifactPreview
+            files={files}
+            fileKey={fileKey}
+            template={template}
+            previewRef={previewRef}
+            sharedProps={sharedProps}
+            currentCode={currentCode}
+            startupConfig={resolvedStartupConfig}
+          />
+        )}
       </Tabs.Content>
     </div>
   );

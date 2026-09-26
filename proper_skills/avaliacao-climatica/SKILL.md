@@ -40,4 +40,5 @@ relatório inclui escopo 3.
 4. **Lacunas**: o que a empresa não divulga ou não está na base (IFRS S1/S2, ISE e ICO2 da B3, títulos verdes,
    riscos físicos quantificados) e onde achar (relatório da empresa, B3, SBTi).
 
-Se o usuário pedir quadro para comitê ou documento, termine com `gerar_relatorio`.
+Se o usuário pedir quadro para comitê ou documento, carregue o roteiro `relatorio-energynexus` e termine com
+`gerar_relatorio`.

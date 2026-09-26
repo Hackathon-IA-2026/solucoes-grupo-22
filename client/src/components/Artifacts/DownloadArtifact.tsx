@@ -4,6 +4,7 @@ import type { Artifact } from '~/common';
 import { Button } from '@librechat/client';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
 import { useCodeState } from '~/Providers/EditorContext';
+import { pdfArtifactUrl } from '~/utils/artifacts';
 import { useLocalize } from '~/hooks';
 
 const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
@@ -18,15 +19,18 @@ const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
       if (!content) {
         return;
       }
-      const blob = new Blob([content], { type: 'text/plain' });
-      const url = window.URL.createObjectURL(blob);
+      /* the PDF report downloads the file itself, not the path stored as artifact content */
+      const pdfUrl = pdfArtifactUrl(artifact);
+      const url = pdfUrl ?? window.URL.createObjectURL(new Blob([content], { type: 'text/plain' }));
       const link = document.createElement('a');
       link.href = url;
-      link.download = fileName;
+      link.download = (pdfUrl != null ? artifact.title : undefined) ?? fileName;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      if (pdfUrl == null) {
+        window.URL.revokeObjectURL(url);
+      }
       setIsDownloaded(true);
       setTimeout(() => setIsDownloaded(false), 3000);
     } catch (error) {

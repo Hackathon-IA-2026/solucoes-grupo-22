@@ -39,4 +39,5 @@ Percentuais, somas e razões: calcule por SQL e confira que o total bate com as 
 4. **Riscos e leitura**, separando fato de avaliação.
 5. **Lacunas**: CAPEX verde por empresa, investimento proporcional, dados só do RI, participação de grupo em SPEs.
 
-Memorando de uma página: tese em 3 frases, a tabela, riscos, lacunas e fontes; termine com `gerar_relatorio`.
+Memorando: siga o roteiro `relatorio-energynexus` (tese no Sumário Executivo, a tabela em Resultados, riscos e
+lacunas em Discussão e Pontos de Atenção) e termine com `gerar_relatorio`.

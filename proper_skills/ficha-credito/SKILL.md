@@ -37,4 +37,5 @@ Calcule por SQL: caixa operacional − investimento total − dividendos (folga 
 4. **Riscos e pontos a monitorar**, cada um ligado a um número da tabela ou a um documento com página.
 5. **Lacunas**: vencimentos por ano, covenants, rating, RAP por concessão, o que só o RI tem.
 
-Se o usuário pedir nota para comitê ou documento, termine com `gerar_relatorio`.
+Se o usuário pedir nota para comitê ou documento, carregue o roteiro `relatorio-energynexus` e termine com
+`gerar_relatorio`.

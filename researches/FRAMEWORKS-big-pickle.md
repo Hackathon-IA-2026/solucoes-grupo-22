@@ -1,6 +1,6 @@
 # FRAMEWORKS & REGULAÇÕES DE DIVULGAÇÃO: Relatório de Pesquisa para Inteligência Comparativa da Transição Energética
 
-**Projeto:** CoppeZIP (Equipe ZIP)
+**Projeto:** EnergyNexus (Equipe ZIP)
 **Data:** Setembro de 2026
 **Escopo:** Frameworks e regulamentações internacionais e brasileiras que governo/impositório de divulgação de dados financeiros e de sustentabilidade no setor elétrico, avaliando a **automatabilidade** de cada fonte para o motor de inteligência comparativa.
 
@@ -38,7 +38,7 @@
 - **Relevance:** É o núcleo do regime brasileiro (via CVM 193/CBPS) e do quadro global; em elétricas, é a fonte primária para riscos físicos (seca/hidrologia, tempestades) e de transição (preço de carbono, repowering, P&D renovável), capital alocado para transição, preço interno de carbono e remuneração atrelada a metas climáticas.
 - **Key metrics (IFRS S2, §29 e métricas cross-industry):** Emissões brutas GHG Scope 1, Scope 2 (métodos location e market) e Scope 3 (em tCO2e), intensidade de GHG; **métricas de transição (categoria a)**, incluindo % de receita/ativos/atividades vulneráveis à transição; **capital de deployment** para clima (CapEx/OpEx/financiamento); preço interno de carbono; % de remuneração de executivos vinculada a considerações climáticas; metas (base year, target year, KPI).
 - **Data format:** Normas em texto (HTML/PDF); associada à **IFRS Sustainability Disclosure Taxonomy** (XBRL) publicada em 30/04/2024, interoperável com a IFRS Accounting Taxonomy.
-- **Automatability:** ALTA — as métricas de IFRS S2 (GHG, alvos, CapEx climático, preço interno de carbono, remuneração) são taggeáveis em XBRL; os divulgadores publicam em PDF/HTML. Para o CoppeZIP: extração por documento (Docling + Instructor) com validação contra taxonomia; comparabilidade direta entre empresas que usam ISSB (padrão único de apresentação em 4 pilares).
+- **Automatability:** ALTA — as métricas de IFRS S2 (GHG, alvos, CapEx climático, preço interno de carbono, remuneração) são taggeáveis em XBRL; os divulgadores publicam em PDF/HTML. Para o EnergyNexus: extração por documento (Docling + Instructor) com validação contra taxonomia; comparabilidade direta entre empresas que usam ISSB (padrão único de apresentação em 4 pilares).
 
 ---
 
@@ -65,7 +65,7 @@
   - **Regime Fácil (Res. CVM 232/2025)** — isenção mantida para companhias menores.
 - **Data format:** Arquivamento eletrônico (documento). **XBRL não confirmado** para o relatório em si; a base estruturada disponível é o FRE (formulário) em **dados abertos** (CSV/ZIP) no portal `dados.cvm.gov.br` (dataset `cia_aberta-doc-fre`).
 - **Automatability:** MÉDIA a ALTA.
-  - **Risco de comparabilidade:** com o "pratique ou explique", o **universo de arquivantes deixa de ser exaustivo** (CFC, Ofício 920/2026, aponta risco de "universo autorreferenciado" e fragmentação). Para o CoppeZIP, o critério de inclusão de empresas deve considerar **quem divulga** + quem justifica a não divulgação (também informação de valor competitivo).
+  - **Risco de comparabilidade:** com o "pratique ou explique", o **universo de arquivantes deixa de ser exaustivo** (CFC, Ofício 920/2026, aponta risco de "universo autorreferenciado" e fragmentação). Para o EnergyNexus, o critério de inclusão de empresas deve considerar **quem divulga** + quem justifica a não divulgação (também informação de valor competitivo).
   - O MRV de prazos (mesma data do FRE; vínculo com DFs anuais) permite **automação de calendário** (datas-limite = FRE).
   - Assuntos "comprar/contratar" em 2027: justificativas devem ser capturadas como **textos livres** (NLP) nas comunicações ao mercado.
 
@@ -121,7 +121,7 @@
   - **End-Use Efficiency & Demand:** IF-EU-420a.1 (% da receita sujeita a rate structures decoupled/LRAM); IF-EU-420a.2 (% da carga em smart grid); IF-EU-420a.3 (economias de energia por medidas de eficiência, MWh).
   - **Grid Resiliency:** (incidents de compliance NERC-CIP).
   - **Activity metrics:** IF-EU-000.A (clientes res./com./ind.), IF-EU-000.B (energia entregue por segmento, MWh), IF-EU-000.C (extensão de linhas de transmissão/distribuição, km), IF-EU-000.D (geração total MWh, % por fonte, % em mercado regulado), IF-EU-000.E (energia comprada no atacado, MWh).
-- **Data format / Automatability:** **ALTA** — códigos fixos + unidades definidas; empresas publicam content indexes (tabelas) com esses códigos. Extração por regex/tabela dos content indexes (não precisa LLM para JSON via mapping table). Observação: o ISSB está **revisando o padrão** (FRC/TAC, jun/2026) — o CoppeZIP deve manter o mapeamento atualizável.
+- **Data format / Automatability:** **ALTA** — códigos fixos + unidades definidas; empresas publicam content indexes (tabelas) com esses códigos. Extração por regex/tabela dos content indexes (não precisa LLM para JSON via mapping table). Observação: o ISSB está **revisando o padrão** (FRC/TAC, jun/2026) — o EnergyNexus deve manter o mapeamento atualizável.
 
 ---
 
@@ -146,7 +146,7 @@
   - Padrão voluntário para empresas abaixo do limiar (base VSME) com **value-chain cap** também adotado em 03/07/2026.
   - **Datapoints e XBRL:** EFRAG publicou a **2026 Draft List of ESRS Datapoints** (28/08/2026) e prepara a **taxonomia XBRL revisada** para consulta — base digital para automação.
 - **Key metrics de clima (ESRS E1):** E1-5 (consumo e mix de energia: total, fóssil, nuclear, renováveis, em MWh/GWh e %); E1-6 (emissões brutas Scope 1/2/3 em tCO2e + **intensidade de GHG baseada na receita líquida**); E1-1 plano de transição; E1-3 alvos; E1-7 GHG removals. (Referência da versão 2023.)
-- **Data format / Automatability:** **ALTA** — ESRS tem **datapoints codificados** (datapoint list) + taxonomia XBRL (digital tagging mandatório na UE); o CoppeZIP pode espelhar o *ESRS datapoint model* para schema de extração estruturada do ISSB/CVM.
+- **Data format / Automatability:** **ALTA** — ESRS tem **datapoints codificados** (datapoint list) + taxonomia XBRL (digital tagging mandatório na UE); o EnergyNexus pode espelhar o *ESRS datapoint model* para schema de extração estruturada do ISSB/CVM.
 
 ---
 
@@ -156,7 +156,7 @@
 - **Authority:** European Commission.
 - **URL (verificadas):** Calculadora oficial e templates — https://ec.europa.eu/sustainable-finance-taxonomy/wizard ; Reg. 2021/2139 via EUR-Lex (CELEX 32021R2139).
 - **Relevance:** Única métrica **comparativa de transição** com definição binária de elegibilidade/alinhamento — o "share de CAPEX/Turnover/OpEx alinhado à taxonomia" permite ranquear empresas comparando os mesmos critérios (SBTi/EU-). Para elétricas: geração, transmissão (atividade habilitadora), armazenamento, renovação de redes, produção de hidrogênio verde, energia nuclear e gás fóssil (com critérios de phase-out).
-- **Key metrics / KPIs:** **Turnover alignment** (% da receita elegível+alinhada); **CapEx alignment** (% CAPEX em ativos verdes — chave para o KPI de "CAPEX transição" do CoppeZIP); **OpEx alignment**; relato separado de **eligible vs aligned**; anexo com templates de tabelas.
+- **Key metrics / KPIs:** **Turnover alignment** (% da receita elegível+alinhada); **CapEx alignment** (% CAPEX em ativos verdes — chave para o KPI de "CAPEX transição" do EnergyNexus); **OpEx alignment**; relato separado de **eligible vs aligned**; anexo com templates de tabelas.
 - **Data format / Automatability:** **ALTA/ALTA** — tabelas padronizadas de KPI + categorização obrigatória; permite mapeamento por atividade NACE + critérios. Observação: a "taxonomia" brasileira (TSB) está desenhada para interoperar conceitualmente.
 
 ---
@@ -177,7 +177,7 @@
 
 ## 9. Dados digitais e taxonomias XBRL
 
-| Item | O que é | Status / URL | Uso no CoppeZIP |
+| Item | O que é | Status / URL | Uso no EnergyNexus |
 | :-- | :-- | :-- | :-- |
 | **IFRS Sustainability Disclosure Taxonomy** | Taxonomia XBRL das normas ISSB S1/S2 | Publicada 30/04/2024 — https://www.ifrs.org/news-and-events/news/2024/04/issb-publishes-its-digital-sustainability-taxonomy | Schema de tipos de dados (GHG, alvos, CapEx climático) para extração e validação |
 | **ESRS XBRL Taxonomy + Datapoint List** | Tagging digital mandatório na UE | Datapoints revisados 28/08/2026 (EFRAG); taxonomia revisada em consulta — https://www.efrag.org/en/news-and-calendar/news/efrag-secretariat-releases-2026-draft-list-of-datapoints-for-revised-esrs | Modelo de datapoints normalize por framework |
@@ -188,7 +188,7 @@
 
 ---
 
-## 10. IMPLICAÇÕES E RECOMENDAÇÕES PARA O COPPEZIP
+## 10. IMPLICAÇÕES E RECOMENDAÇÕES PARA O ENERGYNEXUS
 
 1. **Regra de inclusão de empresas:** com a CVM 244/26, o universo de arquivantes é **voluntário**. O motor deve separar: (a) empresas que divulgam relatório ISSB; (b) empresas que justificaram a não divulgação (comunicado ao mercado) — ambas são sinais competitivos.
 2. **Unir a dupla CVM+CVM nacional:** mapear cada métrica do IFRS S2/CBPS 02 para o código SASB IF-EU (ex.: Scope 1 → IF-EU-110a.1; energia gerada por fonte → IF-EU-000.D; tarifa média → IF-EU-240a.1; RPS/renovável → IF-EU-110a.4) e para a Taxonomia UE/TSB (CapEx alinhado %). Isso dá a "camada comparável" trans-framework.

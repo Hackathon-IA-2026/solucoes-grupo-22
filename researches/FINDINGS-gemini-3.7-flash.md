@@ -1,6 +1,6 @@
 # FINDINGS: Base de Pesquisa Extensiva para Inteligência Comparativa e Transição Energética no Setor Elétrico Brasileiro
 
-**Projeto:** CoppeZIP (Equipe ZIP)  
+**Projeto:** EnergyNexus (Equipe ZIP)  
 **Branch:** `gemini-3.7-flash`  
 **Data:** Setembro de 2026  
 **Problema Central:** *Como transformar os relatórios financeiros e socioambientais que as empresas do setor elétrico são obrigadas a divulgar em inteligência comparativa, capaz de revelar, de forma rápida e rastreável, como cada companhia investe, se posiciona e avança na transição energética?*
@@ -34,7 +34,7 @@ flowchart TD
     end
 
     subgraph AGENT_TOOLS["4. Agente de IA com Ferramentas Determinísticas (Code-as-Compute)"]
-        AGENT["Agente Analítico de Decisão (CoppeZIP)"]
+        AGENT["Agente Analítico de Decisão (EnergyNexus)"]
         T_CVM["query_cvm_financials()"]
         T_ESG["extract_esg_metric()"]
         T_CALC["calculate_hybrid_kpi() -> Execução SQL no DuckDB"]
@@ -327,7 +327,7 @@ def get_source_citation(metric_id: str) -> dict:
 
 ---
 
-## 5. CONCLUSÕES E PRÓXIMOS PASSOS DO PROJETO COPPEZIP
+## 5. CONCLUSÕES E PRÓXIMOS PASSOS DO PROJETO ENERGYNEXUS
 
 1. **Pipeline Completo Mapeado:** Todos os endpoints da CVM, ANEEL, PB GHG Protocol, ONS e B3 estão catalogados com scripts de automação.
 2. **Auditabilidade Total:** A estrutura de Bounding Boxes e execução determinística no DuckDB elimina riscos de alucinações matemáticas ou contábeis.

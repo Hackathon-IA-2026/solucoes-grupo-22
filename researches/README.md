@@ -1,4 +1,4 @@
-# research/ — base de pesquisa consolidada (CoppeZIP)
+# research/ — base de pesquisa consolidada (EnergyNexus)
 
 Reúne, na `main`, os documentos de pesquisa produzidos em paralelo por cada agente/branch, **sem alterar o conteúdo original** (exceto onde marcado em "Errata"). Pergunta-guia comum a todos:
 

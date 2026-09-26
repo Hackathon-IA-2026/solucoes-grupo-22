@@ -5,6 +5,8 @@ import {
   isCodeOnlyArtifact,
   isPreviewOnlyArtifact,
   languageForFilename,
+  PDF_ARTIFACT_TYPE,
+  pdfArtifactUrl,
   TOOL_ARTIFACT_TYPES,
 } from '../artifacts';
 import type { ToolArtifactType } from '../artifacts';
@@ -913,12 +915,48 @@ describe('isPreviewOnlyArtifact', () => {
     expect(isPreviewOnlyArtifact(type)).toBe(expected);
   });
 
-  it.each([[null], [undefined], [''], ['application/pdf'], ['text/plain'], ['some/random-type']])(
+  it.each([[null], [undefined], [''], ['text/plain'], ['some/random-type']])(
     'returns false for non-artifact type %s',
     (type) => {
       expect(isPreviewOnlyArtifact(type)).toBe(false);
     },
   );
+
+  /* EnergyNexus: the PDF report has no source view either — `ArtifactTabs`
+   * shows it in the browser's PDF viewer, not in Sandpack. */
+  it('returns true for the PDF report', () => {
+    expect(isPreviewOnlyArtifact(PDF_ARTIFACT_TYPE)).toBe(true);
+  });
+});
+
+describe('pdfArtifactUrl', () => {
+  /* EnergyNexus: the report artifact's content is the path of a PDF this app
+   * serves under /relatorios/ (MCP tool gerar_relatorio). `ArtifactTabs` puts
+   * that path straight into an iframe `src`, so anything else must come back
+   * null — otherwise a message could embed an arbitrary page in the panel. */
+  it('accepts the path gerar_relatorio returns', () => {
+    const url = '/relatorios/20260926-180329-taesa-desempenho-financeiro-2025-65f668dc.pdf';
+    expect(pdfArtifactUrl({ type: PDF_ARTIFACT_TYPE, content: url })).toBe(url);
+    expect(pdfArtifactUrl({ type: PDF_ARTIFACT_TYPE, content: `\n${url}\n` })).toBe(url);
+  });
+
+  it.each([
+    ['another type', { type: TOOL_ARTIFACT_TYPES.HTML, content: '/relatorios/a.pdf' }],
+    ['another folder', { type: PDF_ARTIFACT_TYPE, content: '/images/a.pdf' }],
+    ['another host', { type: PDF_ARTIFACT_TYPE, content: '//evil.example/a.pdf' }],
+    ['absolute URL', { type: PDF_ARTIFACT_TYPE, content: 'http://evil.example/relatorios/a.pdf' }],
+    ['path traversal', { type: PDF_ARTIFACT_TYPE, content: '/relatorios/../../.env.pdf' }],
+    ['escaped traversal', { type: PDF_ARTIFACT_TYPE, content: '/relatorios/..%2F..%2Fx.pdf' }],
+    ['query string', { type: PDF_ARTIFACT_TYPE, content: '/relatorios/a.pdf?x=1' }],
+    ['subfolder', { type: PDF_ARTIFACT_TYPE, content: '/relatorios/x/a.pdf' }],
+    ['not a PDF', { type: PDF_ARTIFACT_TYPE, content: '/relatorios/a.html' }],
+    ['still streaming', { type: PDF_ARTIFACT_TYPE, content: '/relatorios/20260926-1803' }],
+    ['no content', { type: PDF_ARTIFACT_TYPE }],
+    ['no artifact', null],
+    ['undefined', undefined],
+  ])('rejects %s', (_caso, artifact) => {
+    expect(pdfArtifactUrl(artifact)).toBeNull();
+  });
 });
 
 describe('isCodeOnlyArtifact', () => {

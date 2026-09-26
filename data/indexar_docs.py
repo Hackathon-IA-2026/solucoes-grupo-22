@@ -1,4 +1,4 @@
-"""Indexa os PDFs de relatórios para o coppezip-docs: texto por página, trechos, índice de palavras (BM25) e embeddings.
+"""Indexa os PDFs de relatórios para o energynexus-docs: texto por página, trechos, índice de palavras (BM25) e embeddings.
 
 Uso: python data/indexar_docs.py [--threads N] [--tudo]
 Entrada: os PDFs de data/raw/pdfs_esg descritos em data/documentos.csv (empresa, cnpj, ano, tipo, título, url). PDF fora do CSV é ignorado.

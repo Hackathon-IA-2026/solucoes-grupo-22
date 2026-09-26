@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'react';
 import debounce from 'lodash/debounce';
 import { useLocation } from 'react-router-dom';
-import { useRecoilState, useSetRecoilState, useResetRecoilState } from 'recoil';
+import { useRecoilState, useRecoilCallback, useSetRecoilState, useResetRecoilState } from 'recoil';
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { cn, getFileType, logger, isArtifactRoute } from '~/utils';
+import { pdfArtifactUrl } from '~/utils/artifacts';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -47,6 +48,38 @@ const ArtifactButton = ({ artifact }: { artifact: Artifact | null }) => {
       debouncedSetVisible.cancel();
     };
   }, [artifact, location.pathname]);
+
+  /* EnergyNexus: the PDF report is the conversation's deliverable, so it opens the panel by
+   * itself, the way ToolArtifactCard already does for tool artifacts (nothing focuses an
+   * artifact that came from a `:::artifact` block, and `Presentation` only renders the panel
+   * once `currentArtifactId` is set). Gated on three things: the answer is still streaming, so
+   * a card rendered from history never steals focus; the path is already complete, since the
+   * regex only matches a whole `/relatorios/<file>.pdf`; and once per report, so closing the
+   * panel keeps it closed. */
+  const readInitialIsSubmitting = useRecoilCallback(
+    ({ snapshot }) =>
+      () =>
+        snapshot.getLoadable(store.isSubmittingFamily(0)).valueMaybe() ?? false,
+    [],
+  );
+  const mountedDuringStreamRef = useRef<boolean | null>(null);
+  if (mountedDuringStreamRef.current === null) {
+    mountedDuringStreamRef.current = readInitialIsSubmitting();
+  }
+  const autoOpenedIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (artifact == null || mountedDuringStreamRef.current !== true) {
+      return;
+    }
+    if (pdfArtifactUrl(artifact) == null || autoOpenedIdRef.current === artifact.id) {
+      return;
+    }
+    logger.log('artifacts_visibility', 'Opening the PDF report panel', artifact.id);
+    autoOpenedIdRef.current = artifact.id;
+    setCurrentArtifactId(artifact.id);
+    setVisible(true);
+  }, [artifact, setCurrentArtifactId, setVisible]);
 
   if (artifact === null || artifact === undefined) {
     return null;

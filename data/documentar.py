@@ -35,11 +35,11 @@ def tamanho(t, n):
     return f"{n:,}".replace(",", ".") if n is not None else "—"
 
 
-texto = ["# Dados do CoppeZIP", "",
+texto = ["# Dados do EnergyNexus", "",
          f"Tabelas e visões do `coppezip.duckdb` em {datetime.date.today():%d/%m/%Y}, geradas do catálogo por "
-         "`platform/documentar_banco.py`. Não edite à mão: descrição, fonte e ressalvas vêm do catálogo em "
-         "`platform/build_duckdb.py`, o mesmo texto que o modelo lê. O formato dos arquivos brutos de cada fonte está em "
-         "`research/DATA_DICTIONARY.md`.", "",
+         "`data/documentar.py`. Não edite à mão: descrição, fonte e ressalvas vêm do catálogo em "
+         "`data/construir.py`, o mesmo texto que o modelo lê. O formato dos arquivos brutos de cada fonte está em "
+         "`researches/DATA_DICTIONARY.md`.", "",
          "| Tabela | Linhas | Descrição | Fonte |", "|---|---:|---|---|"]
 texto += [f"| [`{t}`](#{t}) | {tamanho(t, n)} | {celula(d)} | {celula(f)} |" for t, d, f, _, n in catalogo]
 for t, d, f, r, n in catalogo:

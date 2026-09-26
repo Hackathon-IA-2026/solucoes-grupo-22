@@ -1,4 +1,4 @@
-"""Servidor MCP "coppezip-docs": busca nos relatórios das empresas (sustentabilidade, relato integrado, inventário de
+"""Servidor MCP "energynexus-docs": busca nos relatórios das empresas (sustentabilidade, relato integrado, inventário de
 emissões, TCFD, plano climático) e em documentos de referência (CVM, EPE, SEEG), com documento e página para citar.
 
 Busca híbrida: palavras (BM25 do DuckDB, português) + significado (multilingual-e5-large), fundidas por posição (RRF).
@@ -31,7 +31,7 @@ verde, P&D e inovação, estratégia, indicadores sociais e de governança; e pa
 4. Regulação e referências setoriais: filtre empresa="CVM" (Resoluções 193 e 244), "EPE" (BEN) ou "SEEG".
 5. listar_documentos mostra o que existe; se a empresa ou o ano não estiver na base, diga isso."""
 
-mcp = MCPServer("coppezip-docs", instructions=INSTRUCOES)
+mcp = MCPServer("energynexus-docs", instructions=INSTRUCOES)
 _modelo = None
 _trava = threading.Lock()
 
