@@ -14,8 +14,12 @@ export function mensagemDeErro(e: unknown): string {
   return erro.response?.data?.message || erro.message || String(e);
 }
 
-/** Abre numa aba nova um arquivo protegido (imagem da página, PDF), baixado com o token. */
-export async function abrirArquivo(caminho: string, params: Record<string, unknown>) {
+/** Abre numa aba nova um arquivo protegido (imagem da página, PDF), baixado com o token; o PDF, na página dada. */
+export async function abrirArquivo(
+  caminho: string,
+  params: Record<string, unknown>,
+  pagina?: number,
+) {
   const aba = window.open('', '_blank'); // aberta já no clique, para o navegador não bloquear
   try {
     const blob = await request.get<Blob>(`${apiBaseUrl()}${caminho}`, {
@@ -23,7 +27,7 @@ export async function abrirArquivo(caminho: string, params: Record<string, unkno
       responseType: 'blob',
     });
     if (aba) {
-      aba.location.href = URL.createObjectURL(blob);
+      aba.location.href = URL.createObjectURL(blob) + (pagina ? `#page=${pagina}` : '');
     }
   } catch (e) {
     aba?.close();

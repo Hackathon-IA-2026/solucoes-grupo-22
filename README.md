@@ -84,8 +84,10 @@ Os dados não vão para o git. Coloque em `data/`:
 | `data/painel.json` | `.runtime/venv/bin/python data/exportar_painel.py`, depois do `construir.py` |
 
 Os bancos prontos também estão no Drive, em `bancos/`. A aba Timeline lê os parágrafos dos relatórios da tabela `blocos`
-do `docs.duckdb`: um índice feito antes dela precisa ser refeito com `data/indexar_docs.py` (os embeddings são
-reaproveitados). O `iniciar.sh` monta a linha do tempo de cada empresa (`data/linha_do_tempo.py`) a cada início.
+do `docs_titan.duckdb`, que o `data/indexar_docs_titan.py` grava junto com os trechos (num índice de antes dela, a
+execução seguinte tira os parágrafos dos PDFs já indexados, sem chamar o Bedrock). A linha do tempo de cada empresa
+(`data/linha_do_tempo.py`) é refeita a cada início (`iniciar.sh`) e a cada publicação do índice, então a aba acompanha a
+indexação sem reiniciar o chat; relatório sem link público abre a cópia local do PDF, pela rota da aba Busca.
 
 ### Abas Painel, Busca e Grafo
 

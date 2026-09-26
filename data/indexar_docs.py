@@ -52,6 +52,12 @@ def trechos(texto: str) -> list[str]:
     return [p for p in partes if len(p) >= 80]
 
 
+def blocos_de(pagina) -> list[str]:
+    """Parágrafos da página na ordem do PDF, sem misturar colunas (tabela blocos, lida por data/linha_do_tempo.py)."""
+    # (x0, y0, x1, y1, texto, número, tipo): tipo 0 é texto
+    return [b[4].strip() for b in pagina.get_text("blocks") if b[6] == 0 and len(b[4].strip()) >= 80]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--threads", type=int, default=12, help="núcleos para os embeddings (o kolyma é compartilhado)")
@@ -92,9 +98,7 @@ def main():
                 paginas.append((d["arquivo"], n, texto))
                 for t in trechos(texto):
                     pedacos.append((d["arquivo"], n, t))
-                for b in pagina.get_text("blocks"):  # (x0, y0, x1, y1, texto, número, tipo): tipo 0 é texto
-                    if b[6] == 0 and len(b[4].strip()) >= 80:
-                        blocos.append((d["arquivo"], n, b[4].strip()))
+                blocos += [(d["arquivo"], n, t) for t in blocos_de(pagina)]
         print(f"{d['arquivo']}: {d['paginas']} páginas")
     print(f"{len(paginas)} páginas, {len(pedacos)} trechos; calculando embeddings ({MODELO})...")
 

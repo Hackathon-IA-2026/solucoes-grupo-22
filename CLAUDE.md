@@ -14,8 +14,9 @@ CoppeZIP: chat de inteligência do setor elétrico. A raiz é o LibreChat v0.8.7
   vai para o git);
 - `instalar.sh`, `iniciar.sh`, `parar.sh`, `vllm.sh`;
 - `proper_mcps/` (dados, docs, relatorio), `proper_skills/`, `data/`, `researches/`, `eval/`;
-- `data/linha_do_tempo.py`: os dados da aba Timeline (eventos, trajetórias e gráficos de cada empresa), gerados dos dois
-  bancos em `.runtime/linha_do_tempo/` pelo `iniciar.sh` e servidos em `/linha_do_tempo/`.
+- `data/linha_do_tempo.py`: os dados da aba Timeline (eventos, trajetórias e gráficos de cada empresa), gerados do
+  `coppezip.duckdb` e da tabela `blocos` do `docs_titan.duckdb` em `.runtime/linha_do_tempo/` pelo `iniciar.sh` e a cada
+  publicação do `indexar_docs_titan.py`, e servidos em `/linha_do_tempo/`.
 
 ## Regras
 
@@ -44,8 +45,8 @@ python3 eval/chat.py --perfil coppezip-analista-claude "a mesma pergunta"     # 
 python3 eval/regressao.py                                # 27 perguntas com resposta conhecida
 ```
 
-Mudou o banco (`data/construir.py` ou `data/indexar_docs.py`)? Rode os testes das ferramentas, a regressão e
-`data/exportar_painel.py`; a linha do tempo se refaz no próximo `./iniciar.sh` (ou com
+Mudou o banco (`data/construir.py` ou `data/indexar_docs_titan.py`)? Rode os testes das ferramentas, a regressão e
+`data/exportar_painel.py`; a linha do tempo se refaz no próximo `./iniciar.sh` e a cada publicação do indexador (ou com
 `.runtime/venv/bin/python data/linha_do_tempo.py`). Mudou o prompt ou o `librechat.yaml`? Reinicie
 (`./parar.sh && ./iniciar.sh`) e rode a regressão.
 

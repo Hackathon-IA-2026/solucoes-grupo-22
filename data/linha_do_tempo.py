@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Monta a linha do tempo de cada empresa (aba Timeline do chat) a partir de data/coppezip.duckdb e data/docs.duckdb.
+"""Monta a linha do tempo de cada empresa (aba Timeline do chat) a partir de data/coppezip.duckdb e do índice dos
+relatórios em uso, data/docs_titan.duckdb.
 
-Uso: python data/linha_do_tempo.py      (o iniciar.sh roda a cada início)
+Uso: python data/linha_do_tempo.py      (o iniciar.sh roda a cada início e o indexar_docs_titan.py a cada publicação)
 Saída: .runtime/linha_do_tempo/empresas.json (o seletor) e <CNPJ só com dígitos>.json por empresa, trocados de forma
 atômica; o iniciar.sh liga a pasta em client/public/assets e o site a serve em /linha_do_tempo/.
 
@@ -27,7 +28,7 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # raiz do re
 
 
 BANCO = os.path.join(RAIZ, "data", "coppezip.duckdb")
-DOCS = os.path.join(RAIZ, "data", "docs.duckdb")
+DOCS = os.path.join(RAIZ, "data", "docs_titan.duckdb")
 SAIDA = os.path.join(RAIZ, ".runtime", "linha_do_tempo")
 ANOS_ANTES = 2  # começa dois anos antes da primeira DFP da base, para mostrar o que antecede os números
 MAX_TRAJETORIAS = 8
@@ -162,7 +163,8 @@ def eventos_dos_relatorios(documentos, achados, cnpj):
         if chave in por_pagina:
             por_pagina[chave]["temas"] = sorted(set(por_pagina[chave]["temas"]) | {tema})
             continue
-        url = d["url"] + (f"#page={pagina}" if d["url"].lower().endswith(".pdf") else "")
+        # sem link público (a maior parte dos PDFs do documentos.csv), a tela abre a cópia local pela rota da Busca
+        url = d["url"] and d["url"] + (f"#page={pagina}" if d["url"].lower().endswith(".pdf") else "")
         por_pagina[chave] = {
             "ano": ano, "tipo": "relatorio", "titulo": TEMAS[tema][0], "descricao": curto(frase),
             "temas": sorted(set(temas_de(frase)) | {tema}), "pontos": pontos,
@@ -657,7 +659,8 @@ def main():
     docs = duckdb.connect(DOCS, read_only=True)
     docs.execute("LOAD fts")
     if not docs.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = 'blocos'").fetchone()[0]:
-        raise SystemExit("data/docs.duckdb não tem a tabela blocos: rode data/indexar_docs.py (reaproveita os embeddings)")
+        raise SystemExit("data/docs_titan.duckdb não tem a tabela blocos: rode data/indexar_docs_titan.py (os PDFs já "
+                         "indexados ganham os parágrafos sem chamar o Bedrock)")
     primeiro = con.execute("SELECT min(ano) FROM kpis_financeiros").fetchone()[0] - ANOS_ANTES
     ultimo = datetime.date.today().year
     catalogo = dict(con.execute("SELECT tabela, fonte FROM catalogo").fetchall())

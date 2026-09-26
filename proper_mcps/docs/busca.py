@@ -46,7 +46,7 @@ def _inteiro(p: dict, nome: str, padrao: int | None = None) -> int:
 
 def _conectar():
     if not os.path.exists(DB):
-        raise Erro(503, f"índice {DB} não existe; rode data/indexar_docs.py")
+        raise Erro(503, f"índice {DB} não existe; rode data/indexar_docs_titan.py")
     return _con()
 
 
