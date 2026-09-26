@@ -358,11 +358,15 @@ def exposicao_carbono(preco_por_t: float = 100.0, escopos: list[str] | None = No
             tco2e = sum(e["tco2e"] or 0 for e in usadas)
             fin = _fin_ano(con, cnpj, ano)
             exposicao = tco2e * preco_por_t
+            faltando = [k for k in escopos if k not in do_ano]
             item = {"empresa": nome, "cnpj": cnpj, "ano": ano, "escopos": escopos,
-                    "tco2e": round(tco2e, 1),
+                    "escopos_sem_valor": faltando, "tco2e": round(tco2e, 1),
                     "exposicao_brl": round(exposicao, 0),
                     "formula": f"{tco2e:.0f} tCO2e × R$ {preco_por_t:.0f}/t = R$ {exposicao/1e6:.1f} mi",
                     "fonte_emissoes": _fonte_paginas(usadas)}
+            if faltando:
+                item["aviso_escopo"] = (f"o relatório indexado não traz escopo {', '.join(faltando)}: o valor cobre "
+                                        f"só o escopo {', '.join(k for k in escopos if k not in faltando)}")
             if fin and fin["ebitda"]:
                 item["pct_ebitda"] = round(100 * exposicao / fin["ebitda"], 1)
                 item["pct_lucro"] = round(100 * exposicao / fin["lucro"], 1) if fin["lucro"] else None
@@ -590,7 +594,7 @@ document.getElementById('linhas').innerHTML=l.map(d=>`<tr><td>${d.empresa} ${d.a
 fx(d.tco2e,0)}</td><td class="n">${fx(d.exp/1e6,1)}</td><td class="n">${d.pct==null?'—':fx(d.pct,1)}</td>
 <td class="n">${d.lucro?fx(100*d.exp/d.lucro,1):'—'}</td><td class="f">${
 fx(d.tco2e,0)} tCO2e × R$ ${fx(p,0)}/t · ${d.fonte_emissoes}${d.fonte_financeiro?' · '+d.fonte_financeiro:
-' · sem financeiro na base'}</td></tr>`).join('');}
+' · sem financeiro na base'}${d.aviso?' · ⚠ '+d.aviso:''}</td></tr>`).join('');}
 document.getElementById('preco').addEventListener('input',desenhar);desenhar();
 """
 
@@ -607,7 +611,7 @@ def tela_carbono(preco_por_t: float = 100.0, escopos: list[str] | None = None) -
             fin = _fin_ano(con, i["cnpj"], i["ano"])
             linhas.append({"empresa": i["empresa"], "ano": i["ano"], "tco2e": i["tco2e"],
                            "ebitda": (fin or {}).get("ebitda"), "lucro": (fin or {}).get("lucro"),
-                           "fonte_emissoes": i["fonte_emissoes"],
+                           "fonte_emissoes": i["fonte_emissoes"], "aviso": i.get("aviso_escopo", ""),
                            "fonte_financeiro": i.get("fonte_financeiro", "")})
     finally:
         con.close()

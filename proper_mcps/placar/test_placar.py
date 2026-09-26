@@ -120,3 +120,16 @@ def test_escopo_2_nao_conta_duas_vezes():
     h = next(h for h in r["metricas_hibridas"] if h["escopo1_2_tco2e"])
     esperado = (e.get("1") or 0) + (e.get("2_mercado") or e.get("2") or 0)
     assert h["escopo1_2_tco2e"] == pytest.approx(esperado, rel=0.001)
+
+
+def test_exposicao_avisa_quando_falta_um_escopo():
+    """Somar só o escopo 1 porque o relatório não traz o 2 é legítimo, desde que a ferramenta diga."""
+    r = s.exposicao_carbono(100.0, ["1", "2"])
+    for item in r["ranking"]:
+        if item["escopos_sem_valor"]:
+            assert "não traz escopo" in item["aviso_escopo"]
+        else:
+            assert "aviso_escopo" not in item
+    html = open(os.path.join(s.PASTA, os.path.basename(s.tela_carbono(100.0)["tela"])), encoding="utf-8").read()
+    if any(i["escopos_sem_valor"] for i in r["ranking"]):
+        assert "não traz escopo" in html          # o aviso chega à tela
