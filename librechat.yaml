@@ -50,9 +50,10 @@ endpoints:
       # Janela de contexto do modelo para todo pedido (interface, eval/chat.py, agentes). Sem isto o LibreChat assume
       # 32 mil tokens quando o pedido não traz o preset (a API com enforce: false só aplica o promptPrefix do perfil):
       # ele poda o histórico no meio das chamadas de ferramenta, o modelo repete buscas e a sumarização automática
-      # apaga a pergunta ("400 No user query found in messages", resposta vazia). O vLLM serve 256 mil.
+      # apaga a pergunta ("400 No user query found in messages", resposta vazia). O vLLM serve 262.144 tokens
+      # (--max-model-len em vllm.sh): mude os dois juntos.
       tokenConfig:
-        "qwen3.8-27b": {prompt: 0, completion: 0, context: 256000}
+        "qwen3.8-27b": {prompt: 0, completion: 0, context: 262144}
   # recursionLimit conta passos do agente: cada chamada de ferramenta gasta 2, então 300 são cerca de 150 chamadas
   # (só uma trava contra laço infinito; o padrão do LibreChat, 25, corta análises longas)
   agents:
@@ -85,7 +86,7 @@ modelSpecs:
         model: "qwen3.8-27b"
         modelLabel: "CoppeZIP"
         # o LibreChat não conhece o modelo e assumiria 32 mil tokens: poda o histórico e perde a pergunta
-        maxContextTokens: 256000  # o vLLM aceita até 262.144 (--max-model-len no vllm.sh)
+        maxContextTokens: 262144  # o mesmo --max-model-len do vllm.sh
         promptPrefix: &prompt |
           Você é o CoppeZIP, analista de inteligência do setor elétrico brasileiro. Atende executivos, analistas de
           investimento, consultores e especialistas em clima que querem entender como cada empresa investe, se posiciona
@@ -176,8 +177,71 @@ modelSpecs:
         endpoint: "bedrock"
         model: "us.anthropic.claude-sonnet-5"
         modelLabel: "CoppeZIP (Claude)"
+        # Sonnet 5 no Bedrock roda sempre com 1 milhão (o mapa do LibreChat 0.8.7 não o conhece e daria 100 mil)
         maxContextTokens: 1000000
         promptPrefix: *prompt
+    # Modelos avulsos do Bedrock que o mapa do LibreChat 0.8.7 não conhece (daria 32 mil, ou 100 mil nos Claude 5).
+    # O endpoint bedrock não aceita tokenConfig, então a janela certa (model cards da AWS) vai num perfil por modelo.
+    - name: "claude-sonnet-5"
+      label: "Claude Sonnet 5"
+      group: "Bedrock"
+      iconURL: "bedrock"
+      preset: {endpoint: "bedrock", model: "us.anthropic.claude-sonnet-5", maxContextTokens: 1000000}
+    - name: "claude-opus-5"
+      label: "Claude Opus 5"
+      group: "Bedrock"
+      iconURL: "bedrock"
+      preset: {endpoint: "bedrock", model: "us.anthropic.claude-opus-5", maxContextTokens: 1000000}
+    - name: "gpt-5-4"
+      label: "GPT 5.4"
+      group: "Bedrock"
+      iconURL: "bedrock"
+      preset: {endpoint: "bedrock", model: "us.openai.gpt-5.4", maxContextTokens: 1000000}
+    - name: "gpt-5-5"
+      label: "GPT 5.5"
+      group: "Bedrock"
+      iconURL: "bedrock"
+      preset: {endpoint: "bedrock", model: "us.openai.gpt-5.5", maxContextTokens: 1000000}
+    - name: "gpt-5-6-luna"
+      label: "GPT 5.6 Luna"
+      group: "Bedrock"
+      iconURL: "bedrock"
+      preset: {endpoint: "bedrock", model: "us.openai.gpt-5.6-luna", maxContextTokens: 1000000}
+    - name: "gpt-5-6-sol"
+      label: "GPT 5.6 Sol"
+      group: "Bedrock"
+      iconURL: "bedrock"
+      preset: {endpoint: "bedrock", model: "us.openai.gpt-5.6-sol", maxContextTokens: 1000000}
+    - name: "gpt-5-6-terra"
+      label: "GPT 5.6 Terra"
+      group: "Bedrock"
+      iconURL: "bedrock"
+      preset: {endpoint: "bedrock", model: "us.openai.gpt-5.6-terra", maxContextTokens: 1000000}
+    - name: "grok-4-6"
+      label: "Grok 4.6"
+      group: "Bedrock"
+      iconURL: "bedrock"
+      preset: {endpoint: "bedrock", model: "us.xai.grok-4.6", maxContextTokens: 500000}
+    - name: "kimi-k3"
+      label: "Kimi K3"
+      group: "Bedrock"
+      iconURL: "bedrock"
+      preset: {endpoint: "bedrock", model: "us.moonshotai.kimi-k3", maxContextTokens: 1000000}
+    - name: "nova-2-lite"
+      label: "Nova 2 Lite"
+      group: "Bedrock"
+      iconURL: "bedrock"
+      preset: {endpoint: "bedrock", model: "us.amazon.nova-2-lite-v1:0", maxContextTokens: 1000000}
+    - name: "palmyra-x4"
+      label: "Palmyra X4"
+      group: "Bedrock"
+      iconURL: "bedrock"
+      preset: {endpoint: "bedrock", model: "us.writer.palmyra-x4-v1:0", maxContextTokens: 128000}
+    - name: "palmyra-x5"
+      label: "Palmyra X5"
+      group: "Bedrock"
+      iconURL: "bedrock"
+      preset: {endpoint: "bedrock", model: "us.writer.palmyra-x5-v1:0", maxContextTokens: 1000000}
 # Busca web nativa do LibreChat: Serper (resultados do Google) busca e lê as páginas; Jina reordena os trechos.
 # Chaves no .env (SERPER_API_KEY, JINA_API_KEY).
 webSearch:
