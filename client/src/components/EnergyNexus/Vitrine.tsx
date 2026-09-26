@@ -7,7 +7,7 @@ import TimelineIcon from '~/components/Timeline/TimelineIcon';
 // Sem backend não existe login, barra lateral nem chat, então esta casca só põe a navegação das abas que leem JSON.
 
 // Nome do produto num só lugar.
-const MARCA = 'CoppeZIP';
+const MARCA = 'EnergyNexus';
 
 // Só as props que a aba passa: SVGProps inteiro não serve porque o ref dos ícones do lucide é RefAttributes e não o
 // LegacyRef do SVGProps, e aí nenhum dos dois tipos de ícone (lucide e TimelineIcon) casa com o outro.

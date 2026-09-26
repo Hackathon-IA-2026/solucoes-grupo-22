@@ -2,9 +2,9 @@ import { LayoutDashboard, FileSearch, Waypoints } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { TooltipAnchor, Button } from '@librechat/client';
 
-// Atalhos para as abas de dados do CoppeZIP: /painel (data/exportar_painel.py), /busca (proper_mcps/docs/busca.py) e
+// Atalhos para as abas de dados do EnergyNexus: /painel (data/exportar_painel.py), /busca (proper_mcps/docs/busca.py) e
 // /grafo (grafo de conhecimento sobre os dados das outras duas).
-export default function CoppezipNavButtons() {
+export default function EnergyNexusNavButtons() {
   const navigate = useNavigate();
 
   return (

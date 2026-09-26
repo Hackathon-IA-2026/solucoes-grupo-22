@@ -180,11 +180,12 @@ CLAUDE.md
 .gsd
 codedb.snapshot
 
-# CoppeZIP
+# EnergyNexus
 .runtime
 client/public/assets/relatorios
 client/public/assets/linha_do_tempo
 data/raw
+data/raw.antes
 data/parquet
 data/modelos
 data/*.duckdb*

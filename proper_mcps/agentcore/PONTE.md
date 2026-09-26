@@ -1,7 +1,7 @@
 # Ponte stdio para os servidores MCP no Amazon Bedrock AgentCore
 
-`ponte.py` liga o LibreChat aos três servidores MCP do CoppeZIP publicados no AgentCore Runtime
-(`coppezip_dados`, `coppezip_docs`, `coppezip_relatorio`). Um processo por servidor: o LibreChat fala JSON-RPC pelo
+`ponte.py` liga o LibreChat aos três servidores MCP do EnergyNexus publicados no AgentCore Runtime
+(`energynexus_dados`, `energynexus_docs`, `energynexus_relatorio`). Um processo por servidor: o LibreChat fala JSON-RPC pelo
 stdio, a ponte repassa cada mensagem para o endpoint de invocação do runtime por HTTPS e cuida do token do Cognito.
 
 ```
@@ -29,14 +29,14 @@ No `.env` (nunca no git; a senha é credencial viva):
 
 ```
 MCP_INIT_TIMEOUT_MS=180000
-COPPEZIP_AGENTCORE_REGIAO=us-west-2
-COPPEZIP_ARN_DADOS=arn:aws:bedrock-agentcore:us-west-2:<conta>:runtime/coppezip_dados-XXXXXXXXXX
-COPPEZIP_ARN_DOCS=...
-COPPEZIP_ARN_RELATORIO=...
-COPPEZIP_COGNITO_REGIAO=us-east-1
-COPPEZIP_COGNITO_CLIENTE=<app client id do pool>
-COPPEZIP_COGNITO_USUARIO=<usuário do pool>
-COPPEZIP_COGNITO_SENHA=<senha do usuário>
+ENERGYNEXUS_AGENTCORE_REGIAO=us-west-2
+ENERGYNEXUS_ARN_DADOS=arn:aws:bedrock-agentcore:us-west-2:<conta>:runtime/energynexus_dados-XXXXXXXXXX
+ENERGYNEXUS_ARN_DOCS=...
+ENERGYNEXUS_ARN_RELATORIO=...
+ENERGYNEXUS_COGNITO_REGIAO=us-east-1
+ENERGYNEXUS_COGNITO_CLIENTE=<app client id do pool>
+ENERGYNEXUS_COGNITO_USUARIO=<usuário do pool>
+ENERGYNEXUS_COGNITO_SENHA=<senha do usuário>
 ```
 
 Os ARNs saem de `bedrock-agentcore-control.list_agent_runtimes` na região dos runtimes.
@@ -80,12 +80,12 @@ O custo é do AgentCore; a ponte acrescenta ~1 s só no primeiro pedido (login n
 
 | servidor | initialize (frio / quente) | tools/list | tools/call |
 |---|---|---|---|
-| coppezip-dados | 6,3 s / 5,6 s | 5,1 s / 5,5 s | 5,6 s / 5,6 s (`buscar_empresa`) |
-| coppezip-docs | 5,8 s / 6,0 s | 5,2 s / 5,1 s | 5,0 s / 5,0 s (`buscar_documentos`) |
-| coppezip-relatorio | 5,3 s / 4,6 s | 4,6 s / 6,1 s | 5,8 s / 5,1 s (`gerar_relatorio`) |
+| energynexus-dados | 6,3 s / 5,6 s | 5,1 s / 5,5 s | 5,6 s / 5,6 s (`buscar_empresa`) |
+| energynexus-docs | 5,8 s / 6,0 s | 5,2 s / 5,1 s | 5,0 s / 5,0 s (`buscar_documentos`) |
+| energynexus-relatorio | 5,3 s / 4,6 s | 4,6 s / 6,1 s | 5,8 s / 5,1 s (`gerar_relatorio`) |
 
 "Frio" é processo novo e sessão nova do runtime. O runtime é stateless: cada pedido paga a mesma latência, então
-manter a sessão quente ajuda pouco. A versão anterior do `coppezip-docs`, que baixava o modelo de embeddings do S3,
+manter a sessão quente ajuda pouco. A versão anterior do `energynexus-docs`, que baixava o modelo de embeddings do S3,
 levava 11 a 14 s por pedido — é o pior caso conhecido e a razão do `timeout: 300000` no YAML.
 
 O boot do LibreChat, por servidor, é um `initialize` mais dois `tools/list` que o `MCPServerInspector` dispara em

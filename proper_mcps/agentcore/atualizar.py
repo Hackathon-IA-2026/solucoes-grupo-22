@@ -1,4 +1,4 @@
-"""Republica os três MCP do CoppeZIP (dados, docs, relatorio) no Amazon Bedrock AgentCore Runtime e testa o que subiu.
+"""Republica os três MCP do EnergyNexus (dados, docs, relatorio) no Amazon Bedrock AgentCore Runtime e testa o que subiu.
 
 Uso (da raiz do repositório, com um Python que tenha boto3 e pip):
   COGNITO_USUARIO=... COGNITO_SENHA=... .runtime/venv/bin/python proper_mcps/agentcore/atualizar.py
@@ -37,8 +37,10 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 REGIAO = "us-west-2"
 BUCKET = "coppezip-dados-oeste-139382521595"
 QUAIS = ("dados", "docs", "relatorio")
-# banco que cada runtime baixa do bucket na subida (o relatorio não usa banco) e de onde ele vem no repositório
-BANCOS = {"bancos/coppezip.duckdb": "data/coppezip.duckdb", "bancos/docs_titan.duckdb": "data/docs_titan.duckdb"}
+# banco que cada runtime baixa do bucket na subida (o relatorio não usa banco) e de onde ele vem no repositório.
+# A chave do S3 mantém o nome antigo porque é ela que o servidor.py dos três runtimes já em produção baixa; só o
+# caminho local acompanhou a renomeação para EnergyNexus.
+BANCOS = {"bancos/coppezip.duckdb": "data/energynexus.duckdb", "bancos/docs_titan.duckdb": "data/docs_titan.duckdb"}
 BIBLIOTECAS = ["duckdb==1.5.5", "mcp==2.2.0", "boto3"]  # o que os servidores importam, em roda ARM64
 PLATAFORMAS = ["manylinux_2_28_aarch64", "manylinux_2_17_aarch64", "manylinux2014_aarch64"]
 EMBEDDINGS = f"arn:aws:bedrock:{REGIAO}::foundation-model/amazon.titan-embed-text-v2:0"  # perguntas do coppezip-docs
@@ -243,7 +245,7 @@ def testar(qual: str, arn: str, jwt: str):
 
 
 def main():
-    opcoes = argparse.ArgumentParser(description="republica os MCP do CoppeZIP no Bedrock AgentCore e os testa")
+    opcoes = argparse.ArgumentParser(description="republica os MCP do EnergyNexus no Bedrock AgentCore e os testa")
     opcoes.add_argument("--dados", action="store_true", help="envia também os bancos de data/ para o bucket")
     opcoes.add_argument("--somente-teste", action="store_true", help="não republica: só testa o que está no ar")
     escolhas = opcoes.parse_args()

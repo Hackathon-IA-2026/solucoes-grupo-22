@@ -10,8 +10,8 @@ de palavras BM25, num único DuckDB trocado de forma atômica no fim.
 ## Onde ficam as coisas
 
 O repositório está no NFS (`/impa/home/...`), visível de todos os nós; os dados ficam no disco local de cada nó, e
-`data/raw`, `data/modelos`, `data/parquet` e `data/coppezip.duckdb` são links para lá. Por isso os caminhos absolutos
-são os mesmos em todas as máquinas: `/local/<usuário>/coppezip-platform/...`.
+`data/raw`, `data/modelos`, `data/parquet` e `data/energynexus.duckdb` são links para lá. Por isso os caminhos absolutos
+são os mesmos em todas as máquinas: `/local/<usuário>/energynexus-platform/...`.
 
 O DuckDB **nunca** é gravado no NFS: o lock de arquivo do DuckDB não funciona bem em disco de rede e a indexação trava
 no meio. O `--saida` é obrigatório e o script recusa qualquer destino cujo ponto de montagem seja `nfs`, `cifs` ou
@@ -34,7 +34,7 @@ existir no nó:
 .runtime/venv/bin/python -c "
 from huggingface_hub import snapshot_download
 snapshot_download('intfloat/multilingual-e5-large',
-                  local_dir='/local/$USER/coppezip-platform/modelos/multilingual-e5-large-torch')"
+                  local_dir='/local/$USER/energynexus-platform/modelos/multilingual-e5-large-torch')"
 ```
 
 O e5 só funciona com os prefixos com que foi treinado: **`passage: `** em tudo o que é indexado (o script põe) e
@@ -46,10 +46,10 @@ empresa, ano e título, senão um trecho solto de tabela não tem contexto nenhu
 Na kolyma, que é a dona dos dados, mas cuja GPU é dividida com o vLLM do chat:
 
 ```bash
-cd /impa/home/$USER/projects/clean-hack/coppezip
+cd /impa/home/$USER/projects/clean-hack/energynexus
 nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv   # o lote 256 pede ~5,5 GiB livres
 setsid nohup .runtime/venv/bin/python data/indexar_dados_local.py \
-  --gpu 0 --saida /local/$USER/coppezip-platform/data/docs_local.duckdb \
+  --gpu 0 --saida /local/$USER/energynexus-platform/data/docs_local.duckdb \
   > /local/$USER/indexar.log 2>&1 < /dev/null &
 tail -f /local/$USER/indexar.log
 ```
@@ -59,21 +59,21 @@ espelhar o venv, os modelos e os PDFs **nos mesmos caminhos absolutos**, senão 
 
 ```bash
 # ida, da kolyma (1× por nó; ~17 GB, ~15 min)
-for p in coppezip-runtime/venv coppezip-platform/modelos coppezip-platform/data/raw; do
+for p in energynexus-runtime/venv energynexus-platform/modelos energynexus-platform/data/raw; do
   ssh amazonas mkdir -p /local/$USER/$(dirname $p)
   rsync -a /local/$USER/$p/ amazonas:/local/$USER/$p/
 done
 
 # a rodada (setsid porque a sessão ssh pode cair antes do fim)
-ssh amazonas "setsid nohup /local/$USER/coppezip-runtime/venv/bin/python \
-  /impa/home/$USER/projects/clean-hack/coppezip/data/indexar_dados_local.py \
-  --gpu 0 --saida /local/$USER/coppezip-platform/data/docs_local.duckdb --lote 256 --leitores 32 \
+ssh amazonas "setsid nohup /local/$USER/energynexus-runtime/venv/bin/python \
+  /impa/home/$USER/projects/clean-hack/energynexus/data/indexar_dados_local.py \
+  --gpu 0 --saida /local/$USER/energynexus-platform/data/docs_local.duckdb --lote 256 --leitores 32 \
   > /local/$USER/indexar.log 2>&1 < /dev/null &"
 ssh amazonas 'tail -f /local/'$USER'/indexar.log'
 
 # volta: o banco pronto para o disco local da kolyma, e o link que o chat usa
-rsync -a amazonas:/local/$USER/coppezip-platform/data/docs_local.duckdb /local/$USER/coppezip-platform/data/
-ln -sfn /local/$USER/coppezip-platform/data/docs_local.duckdb data/docs.duckdb
+rsync -a amazonas:/local/$USER/energynexus-platform/data/docs_local.duckdb /local/$USER/energynexus-platform/data/
+ln -sfn /local/$USER/energynexus-platform/data/docs_local.duckdb data/docs.duckdb
 ```
 
 Parâmetros:
@@ -109,7 +109,7 @@ Todo PDF de `data/raw`, e não só o que está no `documentos.csv`:
 - `financeiro/<empresa>/pdfs/<ano>/` e `sustentabilidade/<empresa>/<ano>/` (mais `sustentabilidade/referencias/`), as
   pastas do `organizar.py`;
 - `pdfs_esg/`, onde ficam os PDFs que o `organizar.py` ainda não moveu;
-- os 6 dicionários de dados da ANEEL em `aneel/<base>/`, que descrevem as colunas das bases do `coppezip.duckdb`.
+- os 6 dicionários de dados da ANEEL em `aneel/<base>/`, que descrevem as colunas das bases do `energynexus.duckdb`.
 
 Metadados: a linha do `documentos.csv` casada pelo caminho ou, quando o CSV aponta para a pasta organizada e o PDF só
 existe solto em `pdfs_esg`, pelo nome do arquivo. Os dicionários da ANEEL não estão no CSV: vêm da lista `DICIONARIOS`

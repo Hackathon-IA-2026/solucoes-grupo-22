@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 /**
- * Dados da aba Timeline: JSON gerados por data/linha_do_tempo.py a partir dos bancos do CoppeZIP e servidos pelo
+ * Dados da aba Timeline: JSON gerados por data/linha_do_tempo.py a partir dos bancos do EnergyNexus e servidos pelo
  * LibreChat em /linha_do_tempo/ (o iniciar.sh liga .runtime/linha_do_tempo em client/public/assets).
  */
 

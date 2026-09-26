@@ -53,7 +53,7 @@ ORGANIZADAS = ("financeiro", "sustentabilidade")  # pastas de organizar.py: o ca
 AREA_DICIONARIO = "dados"
 TIPO_DICIONARIO = "dicionario_de_dados"
 EMPRESA_DICIONARIO = "ANEEL (dicionário de dados)"  # não é empresa, mas linha_do_tempo.py precisa de um nome
-DICIONARIOS = (  # os dicionários das bases da ANEEL que alimentam o coppezip.duckdb; não estão no documentos.csv
+DICIONARIOS = (  # os dicionários das bases da ANEEL que alimentam o energynexus.duckdb; não estão no documentos.csv
     "aneel/mmgd/dm-geracao-distribuida-relacao-de-empreendimentos.pdf",
     "aneel/ralie/dm-ralie-usina.pdf",
     "aneel/samp/dd-samp.pdf",

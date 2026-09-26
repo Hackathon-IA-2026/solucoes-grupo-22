@@ -16,7 +16,7 @@ async function lerEstatico<T>(caminho: string): Promise<T> {
   const arquivo = ARQUIVOS_ESTATICOS[caminho];
   if (!arquivo) {
     throw new Error(
-      `${caminho} exige o servidor do CoppeZIP; no site estático só existem os arquivos de dados`,
+      `${caminho} exige o servidor do EnergyNexus; no site estático só existem os arquivos de dados`,
     );
   }
   const resposta = await fetch(new URL(arquivo, document.baseURI), { cache: 'no-cache' });

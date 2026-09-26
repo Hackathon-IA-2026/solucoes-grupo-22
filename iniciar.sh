@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"; RAIZ=$PWD; R=$RAIZ/.runtime
 set -a; . ./.env; set +a
-export PATH=$R/bin:$PATH COPPEZIP_RAIZ=$RAIZ COPPEZIP_PYTHON=$R/venv/bin/python DEPLOYMENT_SKILLS_DIR=$RAIZ/proper_skills
+export PATH=$R/bin:$PATH ENERGYNEXUS_RAIZ=$RAIZ ENERGYNEXUS_PYTHON=$R/venv/bin/python DEPLOYMENT_SKILLS_DIR=$RAIZ/proper_skills
 MONGO_PORTA=${MONGO_URI##*:}; MONGO_PORTA=${MONGO_PORTA%%/*}; MEILI_PORTA=${MEILI_HOST##*:}
 aberta() { (echo > "/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 
@@ -21,12 +21,12 @@ aberta "$BUSCA_PORTA" || nohup bash -c 'echo $$ > "$0"; exec setsid "$@"' "$R/ru
 # relatórios do gerar_relatorio: o LibreChat serve client/public/assets na raiz do site (/relatorios/...)
 ln -sfn "$R/relatorios" client/public/assets/relatorios
 # aba Timeline: linha do tempo de cada empresa a partir dos bancos de data/, servida em /linha_do_tempo/
-"$COPPEZIP_PYTHON" data/linha_do_tempo.py || echo "aviso: a aba Timeline ficou sem dados novos (erro acima)"
+"$ENERGYNEXUS_PYTHON" data/linha_do_tempo.py || echo "aviso: a aba Timeline ficou sem dados novos (erro acima)"
 ln -sfn "$R/linha_do_tempo" client/public/assets/linha_do_tempo
 aberta "$PORT" || nohup bash -c 'echo $$ > "$0"; exec setsid npm run backend' "$R/run/librechat.pid" \
   > "$R/logs/librechat.log" 2>&1 < /dev/null &
 for _ in $(seq 90); do
-  curl -sf -o /dev/null "http://127.0.0.1:$PORT/health" && { echo "CoppeZIP em http://localhost:$PORT"; exit 0; }
+  curl -sf -o /dev/null "http://127.0.0.1:$PORT/health" && { echo "EnergyNexus em http://localhost:$PORT"; exit 0; }
   sleep 2
 done
 echo "o LibreChat não respondeu; veja $R/logs/librechat.log"; exit 1

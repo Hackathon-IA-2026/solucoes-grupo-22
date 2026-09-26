@@ -1,7 +1,7 @@
-"""Servidor MCP "coppezip-dados": a base do CoppeZIP (CVM, ANEEL, ONS, BNDES, ANBIMA) em DuckDB, só leitura.
+"""Servidor MCP "energynexus-dados": a base do EnergyNexus (CVM, ANEEL, ONS, BNDES, ANBIMA) em DuckDB, só leitura.
 
 Ferramentas: buscar_empresa, indicadores_financeiros, listar_tabelas, descrever_tabela, valores_distintos, consultar_sql.
-O banco (data/coppezip.duckdb) é montado por data/construir.py; as descrições das tabelas vêm da tabela catalogo.
+O banco (data/energynexus.duckdb) é montado por data/construir.py; as descrições das tabelas vêm da tabela catalogo.
 """
 import datetime
 import decimal
@@ -17,7 +17,7 @@ from mcp.server.mcpserver import MCPServer
 RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # raiz do repositório
 
 
-DB = os.path.join(RAIZ, "data", "coppezip.duckdb")
+DB = os.path.join(RAIZ, "data", "energynexus.duckdb")
 LIMITE_LINHAS = 200
 MAX_TRIMESTRES = 40  # 10 anos de ITR
 TEMPO_MAXIMO_S = 30
@@ -47,7 +47,7 @@ INSTRUCOES = """Você responde sobre empresas do setor elétrico brasileiro com 
    Use grupos_economicos (cnpj, agente, holding_cvm, cnpj_holding_cvm), diga quantos CNPJs entraram e quais. Só as 151
    companhias da CVM estão em kpis_financeiros; as demais do grupo aparecem nas tabelas da ANEEL, do BNDES e do SND."""
 
-mcp = MCPServer("coppezip-dados", instructions=INSTRUCOES)
+mcp = MCPServer("energynexus-dados", instructions=INSTRUCOES)
 
 
 def _con():

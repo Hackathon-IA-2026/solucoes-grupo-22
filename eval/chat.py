@@ -2,13 +2,13 @@
 """Cliente de linha de comando do chat (API do LibreChat), para testes e para agentes que fazem papel de usuário.
 
   eval/chat.py "pergunta"                       conversa nova com o perfil padrão
-  eval/chat.py --perfil coppezip-analista-claude "pergunta"
+  eval/chat.py --perfil energynexus-analista-claude "pergunta"
   eval/chat.py --conversa ID "pergunta"         continua a conversa ID
   eval/chat.py --aguardar ID                    espera a resposta que ainda está sendo gerada na conversa ID
 
 Cada conversa fica em <saida>/<ID>.json (mensagens brutas) e <saida>/<ID>.md (transcrição com as ferramentas, SQL e
 resultados); cada pergunta vira uma linha de <saida>/log.jsonl. Com --conversa, o perfil é o mesmo da conversa (o
-modelo que respondeu até aqui), a menos que --perfil diga outro. O usuário é teste-<persona>@coppezip.local, criado
+modelo que respondeu até aqui), a menos que --perfil diga outro. O usuário é teste-<persona>@energynexus.local, criado
 por eval/usuario.sh, com a senha de .runtime/run/usuarios.json.
 """
 import argparse
@@ -29,7 +29,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # raiz do re
 RT = os.path.join(REPO, ".runtime")
 CREDENCIAIS = os.path.join(RT, "run", "usuarios.json")
 SESSOES = os.path.join(RT, "run", "sessoes")
-ENDPOINT_VLLM = "CoppeZIP"  # nome do endpoint do vLLM no librechat.yaml
+ENDPOINT_VLLM = "EnergyNexus"  # nome do endpoint do vLLM no librechat.yaml
 
 
 def _porta():
@@ -66,7 +66,7 @@ def api(metodo, caminho, corpo=None, token=None, cookie=None):
     except urllib.error.HTTPError as e:
         status, texto, cookies = e.code, e.read().decode(errors="replace"), []
     except urllib.error.URLError as e:
-        falhar(f"o CoppeZIP não respondeu em {URL} ({e.reason}); o serviço pode estar fora do ar")
+        falhar(f"o EnergyNexus não respondeu em {URL} ({e.reason}); o serviço pode estar fora do ar")
     try:
         return status, json.loads(texto), cookies
     except json.JSONDecodeError:
@@ -84,7 +84,7 @@ class Sessao:
     """Token de acesso em cache, renovado pelo refresh token para não gastar o limite de logins (7 a cada 5 min)."""
 
     def __init__(self, persona):
-        self.persona, self.email = persona, f"teste-{persona}@coppezip.local"
+        self.persona, self.email = persona, f"teste-{persona}@energynexus.local"
         self.arquivo = os.path.join(SESSOES, f"{persona}.json")
         try:
             with open(self.arquivo) as f:
@@ -278,7 +278,7 @@ def main():
     ap.add_argument("--perfil", help="nome do perfil (modelSpec) no librechat.yaml; sem ele, o padrão")
     ap.add_argument("--conversa", help="ID da conversa a continuar")
     ap.add_argument("--aguardar", metavar="ID", help="espera a resposta pendente da conversa ID")
-    ap.add_argument("--persona", default="teste", help="usuário teste-<persona>@coppezip.local (eval/usuario.sh)")
+    ap.add_argument("--persona", default="teste", help="usuário teste-<persona>@energynexus.local (eval/usuario.sh)")
     ap.add_argument("--saida", default=os.path.join(RT, "conversas"), help="pasta das transcrições")
     ap.add_argument("--busca-web", action="store_true", help="liga a busca web nativa do LibreChat (Serper + Jina)")
     ap.add_argument("--timeout", type=int, default=900, help="segundos (padrão 900)")
@@ -315,7 +315,7 @@ def main():
                          if not m.get("isCreatedByUser") and m.get("model")), {})
     esc = perfil(sessao, a.perfil, anterior.get("modelo"), anterior.get("endpoint"))
     modelo, endpoint = esc["preset"]["model"], esc["preset"]["endpoint"]
-    tipo = "custom" if endpoint == ENDPOINT_VLLM else endpoint   # "CoppeZIP" é o vLLM; "bedrock" é o Claude na AWS
+    tipo = "custom" if endpoint == ENDPOINT_VLLM else endpoint   # "EnergyNexus" é o vLLM; "bedrock" é o Claude na AWS
     mcps = esc["mcpServers"]
     if anterior and not a.perfil:
         print(f"Perfil {esc['name']} ({modelo}), o mesmo da conversa {a.conversa}.")

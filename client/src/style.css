@@ -78,7 +78,7 @@
 html {
   --brand-purple: #ab68ff;
   --presentation: var(--white);
-  /* séries do Painel (CoppeZIP): roxo da marca e mais 7 cores, validadas contra o branco (daltonismo e contraste) */
+  /* séries do Painel (EnergyNexus): roxo da marca e mais 7 cores, validadas contra o branco (daltonismo e contraste) */
   --painel-1: #7c3aed;
   --painel-2: #eb6834;
   --painel-3: #1baf7a;

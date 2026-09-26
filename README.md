@@ -1,6 +1,6 @@
-# CoppeZIP
+# EnergyNexus
 
-Chat de inteligência do setor elétrico brasileiro. É o LibreChat (esta pasta, v0.8.7 com o tema do CoppeZIP) mais as
+Chat de inteligência do setor elétrico brasileiro. É o LibreChat (esta pasta, v0.8.7 com o tema do EnergyNexus) mais as
 nossas peças: o modelo (o nosso Qwen3.8-27B no vLLM ou o Claude pelo Amazon Bedrock) consulta dados públicos (CVM,
 ANEEL, ONS, BNDES, ANBIMA, Banco Central) e relatórios das empresas pelas ferramentas MCP e responde com a fonte de
 cada número.
@@ -31,8 +31,8 @@ Sem link público: o chat roda nos servidores do IMPA e é aberto por túnel SSH
 | `data/` | coleta (`baixar.py`), montagem do banco (`construir.py`), índice dos PDFs (`indexar_docs_titan.py`, em uso; `indexar_docs.py` é a versão com o e5 local), dados da aba Painel (`exportar_painel.py`), dados da aba Timeline (`linha_do_tempo.py`) e documentação das tabelas (`DADOS.md`); os dados em si ficam aqui, fora do git |
 | `researches/` | pesquisa de fontes de dados e dicionário de dados |
 | `eval/` | cliente do chat (`chat.py`) e regressão com perguntas de resposta conhecida (`regressao.py`) |
-| `client/src/style.css` | o tema do CoppeZIP |
-| abas Painel, Busca e Grafo | `client/src/components/Coppezip/`, `client/src/components/Nav/CoppezipNavButtons.tsx`, as rotas `/painel`, `/busca` e `/grafo` em `client/src/routes/index.tsx`, e `api/server/routes/painel.js` e `busca.js` (registradas em `api/server/index.js` e `routes/index.js`) |
+| `client/src/style.css` | o tema do EnergyNexus |
+| abas Painel, Busca e Grafo | `client/src/components/EnergyNexus/`, `client/src/components/Nav/EnergyNexusNavButtons.tsx`, as rotas `/painel`, `/busca` e `/grafo` em `client/src/routes/index.tsx`, e `api/server/routes/painel.js` e `busca.js` (registradas em `api/server/index.js` e `routes/index.js`) |
 | aba Timeline | `client/src/components/Timeline/`: evolução de cada empresa (eventos por ano, impacto, indicadores e fontes), trajetórias estratégicas e gráficos; registrada em `client/src/routes/index.tsx`, `client/src/hooks/Nav/useSideNavLinks.ts` e na chave `com_ui_timeline` das traduções |
 
 O resto (`api/`, `client/`, `packages/`, `config/`...) é o LibreChat. Mudou algo em `client/`? Recompile com
@@ -69,7 +69,7 @@ De outra máquina, abra um túnel: `ssh -N -L 3080:127.0.0.1:3080 <máquina>`.
   tokens, cache em fp8, atenção pelo Triton, 16 conversas simultâneas) foram ajustadas para o Qwen3.8-27B INT4 numa
   RTX 5090; em outra GPU pode ser preciso mudá-las no script.
 - **Amazon Bedrock (Claude):** ponha as credenciais da AWS em `~/.aws/credentials` e reinicie o chat. No seletor, use
-  o perfil "CoppeZIP Analista (Claude)". A região está em `BEDROCK_AWS_DEFAULT_REGION`.
+  o perfil "EnergyNexus Analista (Claude)". A região está em `BEDROCK_AWS_DEFAULT_REGION`.
 
 ## Dados
 
@@ -77,8 +77,8 @@ Os dados não vão para o git. Coloque em `data/`:
 
 | Caminho | Como obter |
 |---|---|
-| `data/raw/`, `data/parquet/` | `python data/baixar.py` (fontes oficiais) e o Drive do projeto (`CoppeZIP-dados-brutos`) |
-| `data/coppezip.duckdb` | `.runtime/venv/bin/python data/construir.py`, depois `data/documentar.py` |
+| `data/raw/`, `data/parquet/` | `python data/baixar.py` (fontes oficiais) e o Drive do projeto (`EnergyNexus-dados-brutos`) |
+| `data/energynexus.duckdb` | `.runtime/venv/bin/python data/construir.py`, depois `data/documentar.py` |
 | `data/modelos/multilingual-e5-large/` | o modelo `intfloat/multilingual-e5-large` do Hugging Face, copiado sem links simbólicos |
 | `data/docs_titan.duckdb` | `.runtime/venv/bin/python data/indexar_docs_titan.py`, com as credenciais da AWS em `~/.aws/credentials` (o índice em uso; `data/indexar_docs.py` monta a versão com o e5 local em `data/docs.duckdb`, que o chat não usa). PDFs em `data/raw/sustentabilidade/<empresa>/<ano>/` e `data/raw/financeiro/<empresa>/pdfs/<ano>/`, organizados por `data/organizar.py` e descritos em `data/documentos.csv` |
 | `data/painel.json` | `.runtime/venv/bin/python data/exportar_painel.py`, depois do `construir.py` |
@@ -97,9 +97,9 @@ Ao lado do chat (ícones na barra lateral), só para usuários logados:
   empresa acha pelo nome, apelido, ticker ou CNPJ. Cores das séries em `--painel-1..8` do `style.css`. Lê
   `data/painel.json`, relido a cada acesso: depois de reconstruir o banco, basta rodar `data/exportar_painel.py` de novo.
 - **Busca** (`/busca`): responde "em que página está isso?" nos PDFs indexados, com o trecho, a imagem da página e o
-  PDF. Usa o mesmo índice e modelo do `coppezip-docs` (`data/docs_titan.duckdb`, Titan pelo Bedrock); o `iniciar.sh` sobe
+  PDF. Usa o mesmo índice e modelo do `energynexus-docs` (`data/docs_titan.duckdb`, Titan pelo Bedrock); o `iniciar.sh` sobe
   `proper_mcps/docs/busca.py` em `127.0.0.1:BUSCA_PORTA` e o LibreChat repassa `/api/busca`.
-- **Grafo** (`/grafo`, `?empresa=<CNPJ só com dígitos>`): grafo de conhecimento de uma empresa, trazido do CoppeZIP
+- **Grafo** (`/grafo`, `?empresa=<CNPJ só com dígitos>`): grafo de conhecimento de uma empresa, trazido do EnergyNexus
   (Chainlit). Empresa → categoria (cada base do painel com dados dela, e os documentos por área) → indicadores (as
   medidas do painel, por período, com a mesma regra de agregação) e referências (a base, ou o PDF, agrupados por tipo).
   A empresa é o CNPJ, que liga as bases do `painel.json` entre si e aos documentos de `/api/busca/resumo`; não há
@@ -113,7 +113,7 @@ Ao lado do chat (ícones na barra lateral), só para usuários logados:
 .runtime/venv/bin/python -m pytest proper_mcps data -q   # ferramentas e linha do tempo, contra os bancos de data/
 eval/usuario.sh                                       # uma vez: usuário de teste no LibreChat
 python3 eval/chat.py "Qual foi a receita líquida da Taesa em 2025?"
-python3 eval/regressao.py                             # 27 perguntas; --perfil coppezip-analista-claude para o Claude
+python3 eval/regressao.py                             # 27 perguntas; --perfil energynexus-analista-claude para o Claude
 ```
 
 ## Licença

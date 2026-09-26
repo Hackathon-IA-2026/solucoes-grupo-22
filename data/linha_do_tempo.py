@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Monta a linha do tempo de cada empresa (aba Timeline do chat) a partir de data/coppezip.duckdb e data/docs.duckdb.
+"""Monta a linha do tempo de cada empresa (aba Timeline do chat) a partir de data/energynexus.duckdb e data/docs.duckdb.
 
 Uso: python data/linha_do_tempo.py      (o iniciar.sh roda a cada início)
 Saída: .runtime/linha_do_tempo/empresas.json (o seletor) e <CNPJ só com dígitos>.json por empresa, trocados de forma
@@ -26,7 +26,7 @@ import duckdb
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # raiz do repositório
 
 
-BANCO = os.path.join(RAIZ, "data", "coppezip.duckdb")
+BANCO = os.path.join(RAIZ, "data", "energynexus.duckdb")
 DOCS = os.path.join(RAIZ, "data", "docs.duckdb")
 SAIDA = os.path.join(RAIZ, ".runtime", "linha_do_tempo")
 ANOS_ANTES = 2  # começa dois anos antes da primeira DFP da base, para mostrar o que antecede os números

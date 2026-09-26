@@ -1,4 +1,4 @@
-"""Servidor MCP "coppezip-relatorio": grava o relatório final da análise em Markdown e DOCX, com fonte em todo número.
+"""Servidor MCP "energynexus-relatorio": grava o relatório final da análise em Markdown e DOCX, com fonte em todo número.
 
 Ferramenta: gerar_relatorio. Recebe título, sumário, seções (texto e tabelas), lacunas e a lista de fontes, e recusa o
 relatório se algum trecho com número não citar uma fonte ([F1], [F2]...) ou se uma tabela com números não tiver fonte.
@@ -35,7 +35,7 @@ formata e confere, não busca dados. Cada fonte recebe um id (F1, F2...); todo p
 entre colchetes ([F1]) e toda tabela informa as fontes. Se a ferramenta recusar, corrija o que ela apontou e chame de
 novo uma vez. Depois mostre ao usuário o sumário e os links devolvidos."""
 
-mcp = MCPServer("coppezip-relatorio", instructions=INSTRUCOES)
+mcp = MCPServer("energynexus-relatorio", instructions=INSTRUCOES)
 
 MARCA = re.compile(r"\[(F\d+)\]")
 URL = re.compile(r"https?://\S+")
@@ -176,7 +176,7 @@ def _celula(c) -> str:
 
 
 def _markdown(titulo, sumario, secoes, lacunas, fontes, quando) -> str:
-    out = [f"# {titulo}", "", f"_CoppeZIP, {quando:%d/%m/%Y %H:%M}. Cada número cita a fonte entre colchetes; a lista "
+    out = [f"# {titulo}", "", f"_EnergyNexus, {quando:%d/%m/%Y %H:%M}. Cada número cita a fonte entre colchetes; a lista "
                                "está no fim._", ""]
     if sumario:
         out += ["## Sumário executivo", "", sumario.strip(), ""]
@@ -292,7 +292,7 @@ DOC_RELS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 def _docx(caminho, titulo, sumario, secoes, lacunas, fontes, quando):
     corpo = [_par(titulo, "Titulo"),
-             _par(f"CoppeZIP, {quando:%d/%m/%Y %H:%M}. Cada número cita a fonte entre colchetes; a lista está no fim.",
+             _par(f"EnergyNexus, {quando:%d/%m/%Y %H:%M}. Cada número cita a fonte entre colchetes; a lista está no fim.",
                   "Legenda")]
     if sumario:
         corpo += [_par("Sumário executivo", "Titulo1")] + _texto_docx(sumario)

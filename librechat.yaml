@@ -1,8 +1,8 @@
-# Configuração do LibreChat do CoppeZIP. Segredos e endereços ficam no .env.
+# Configuração do LibreChat do EnergyNexus. Segredos e endereços ficam no .env.
 version: 1.3.13
 cache: true
 interface:
-  customWelcome: "CoppeZIP — inteligência comparativa do setor elétrico"
+  customWelcome: "EnergyNexus — inteligência comparativa do setor elétrico"
   # com perfis (modelSpecs) o LibreChat esconde os modelos avulsos; true mostra também os do Bedrock e do vLLM
   modelSelect: true
 endpoints:
@@ -38,7 +38,7 @@ endpoints:
       - "us.writer.palmyra-x5-v1:0"
       - "us.xai.grok-4.6"
   custom:
-    - name: "CoppeZIP"
+    - name: "EnergyNexus"
       apiKey: "${VLLM_API_KEY}"
       baseURL: "${VLLM_BASE_URL}"
       models:
@@ -46,7 +46,7 @@ endpoints:
         fetch: true
       titleConvo: true
       titleModel: "current_model"
-      modelDisplayLabel: "CoppeZIP"
+      modelDisplayLabel: "EnergyNexus"
       # Janela de contexto do modelo para todo pedido (interface, eval/chat.py, agentes). Sem isto o LibreChat assume
       # 32 mil tokens quando o pedido não traz o preset (a API com enforce: false só aplica o promptPrefix do perfil):
       # ele poda o histórico no meio das chamadas de ferramenta, o modelo repete buscas e a sumarização automática
@@ -64,12 +64,12 @@ modelSpecs:
   enforce: false
   prioritize: true
   list:
-    - name: "coppezip-analista"
-      label: "CoppeZIP Analista"
+    - name: "energynexus-analista"
+      label: "EnergyNexus Analista"
       description: "Análise do setor elétrico com dados da CVM, ANEEL, ONS, BNDES e relatórios das empresas"
       default: true
       showOnLanding: true
-      mcpServers: ["coppezip-dados", "coppezip-docs", "coppezip-relatorio"]
+      mcpServers: ["energynexus-dados", "energynexus-docs", "energynexus-relatorio"]
       # Roteiros (skills do LibreChat) lidos de DEPLOYMENT_SKILLS_DIR (proper_skills/<nome>/SKILL.md): o modelo vê o
       # catálogo e carrega o roteiro com a ferramenta "skill"; o usuário também pode chamar com $ no campo de mensagem.
       # true = catálogo inteiro. Uma lista de nomes não funciona no 0.8.7: o perfil procura os nomes só nas skills do
@@ -81,22 +81,22 @@ modelSpecs:
         - "Quais elétricas listadas mais investiram (CAPEX) de 2021 a 2025?"
         - "Qual é a capacidade instalada da Engie Brasil por fonte de energia?"
       preset:
-        endpoint: "CoppeZIP"
+        endpoint: "EnergyNexus"
         model: "qwen3.8-27b"
-        modelLabel: "CoppeZIP"
+        modelLabel: "EnergyNexus"
         # o LibreChat não conhece o modelo e assumiria 32 mil tokens: poda o histórico e perde a pergunta
         maxContextTokens: 256000  # o vLLM aceita até 262.144 (--max-model-len no vllm.sh)
         maxOutputTokens: 32000  # sem isto o LibreChat manda 4096 e a resposta sai truncada (ou vazia)
         promptPrefix: &prompt |
-          Você é o CoppeZIP, analista de inteligência do setor elétrico brasileiro. Atende executivos, analistas de
+          Você é o EnergyNexus, analista de inteligência do setor elétrico brasileiro. Atende executivos, analistas de
           investimento, consultores e especialistas em clima que querem entender como cada empresa investe, se posiciona
           e avança na transição energética.
 
           Fontes, nesta ordem:
-          1. Base de dados (ferramentas de coppezip-dados): demonstrações financeiras da CVM de 2020 a 2025, usinas e
+          1. Base de dados (ferramentas de energynexus-dados): demonstrações financeiras da CVM de 2020 a 2025, usinas e
              donos (ANEEL SIGA), leilões de geração, transmissão (SIGET), tarifas, P&D, eficiência energética, PDD,
              compensações de continuidade, BNDES, debêntures incentivadas e ONS. Números financeiros e operacionais vêm daqui.
-          2. Relatórios das empresas (ferramentas de coppezip-docs): relatórios de sustentabilidade, relatos integrados,
+          2. Relatórios das empresas (ferramentas de energynexus-docs): relatórios de sustentabilidade, relatos integrados,
              inventários de emissões, TCFD e planos climáticos, além das Resoluções CVM 193 e 244, do BEN 2026 e do SEEG.
              Emissões, metas, estratégia e riscos vêm daqui, sempre com a página.
           3. Internet, quando a busca web estiver disponível: fatos recentes, notícias, decisões regulatórias e o que não
@@ -167,17 +167,17 @@ modelSpecs:
           - Escreva tudo em português do Brasil, inclusive as frases curtas entre as chamadas de ferramenta.
           - Nos relatórios em PDF: use buscar_documentos com o filtro de empresa e ano e leia com ler_pagina as páginas
             que vai citar. Se o relatório não trouxer a informação, diga isso.
-    - name: "coppezip-analista-claude"
-      label: "CoppeZIP Analista (Claude)"
+    - name: "energynexus-analista-claude"
+      label: "EnergyNexus Analista (Claude)"
       description: "O mesmo analista com o Claude Sonnet 5 pelo Amazon Bedrock"
       showOnLanding: true
-      mcpServers: ["coppezip-dados", "coppezip-docs", "coppezip-relatorio"]
+      mcpServers: ["energynexus-dados", "energynexus-docs", "energynexus-relatorio"]
       skills: true
       conversation_starters: *perguntas
       preset:
         endpoint: "bedrock"
         model: "us.anthropic.claude-sonnet-5"
-        modelLabel: "CoppeZIP (Claude)"
+        modelLabel: "EnergyNexus (Claude)"
         maxContextTokens: 1000000
         maxOutputTokens: 64000  # o Sonnet 5 aceita até 128 mil; sem isto o padrão de 4096 trunca a resposta
         promptPrefix: *prompt
@@ -191,47 +191,47 @@ webSearch:
   rerankerType: "jina"
   scraperTimeout: 15000
   safeSearch: 1
-# Servidores MCP do CoppeZIP. Eles rodam no Amazon Bedrock AgentCore, e proper_mcps/agentcore/ponte.py é a ponte que
+# Servidores MCP do EnergyNexus. Eles rodam no Amazon Bedrock AgentCore, e proper_mcps/agentcore/ponte.py é a ponte que
 # fala JSON-RPC pelo stdio com o LibreChat e HTTPS com o runtime, pegando e renovando o token do Cognito (o LibreChat
 # resolve ${VAR} uma vez no boot, então um "Authorization: Bearer ${TOKEN}" pararia de funcionar em 24 h). O argumento
-# da ponte (dados, docs, relatorio) escolhe o runtime; iniciar.sh exporta COPPEZIP_PYTHON e COPPEZIP_RAIZ.
+# da ponte (dados, docs, relatorio) escolhe o runtime; iniciar.sh exporta ENERGYNEXUS_PYTHON e ENERGYNEXUS_RAIZ.
 # O LibreChat não expande ${VAR} em "command", só em "args" e "env": por isso /usr/bin/env.
 # O filho do stdio só herda HOME, LOGNAME, PATH, SHELL, TERM e USER, então tudo que a ponte usa está em env: (uma
 # âncora só, as três pontes leem apenas o próprio ARN). O que falta é erro na partida, não fallback.
 # initTimeout vale nas reconexões; no boot quem manda é MCP_INIT_TIMEOUT_MS do .env.
 mcpServers:
-  coppezip-dados:
+  energynexus-dados:
     type: stdio
     command: /usr/bin/env
-    args: ["${COPPEZIP_PYTHON}", "${COPPEZIP_RAIZ}/proper_mcps/agentcore/ponte.py", "dados"]
+    args: ["${ENERGYNEXUS_PYTHON}", "${ENERGYNEXUS_RAIZ}/proper_mcps/agentcore/ponte.py", "dados"]
     env: &ambiente_ponte
-      COPPEZIP_COGNITO_REGIAO: "${COPPEZIP_COGNITO_REGIAO}"
-      COPPEZIP_COGNITO_CLIENTE: "${COPPEZIP_COGNITO_CLIENTE}"
-      COPPEZIP_COGNITO_USUARIO: "${COPPEZIP_COGNITO_USUARIO}"
-      COPPEZIP_COGNITO_SENHA: "${COPPEZIP_COGNITO_SENHA}"
-      COPPEZIP_AGENTCORE_REGIAO: "${COPPEZIP_AGENTCORE_REGIAO}"
-      COPPEZIP_ARN_DADOS: "${COPPEZIP_ARN_DADOS}"
-      COPPEZIP_ARN_DOCS: "${COPPEZIP_ARN_DOCS}"
-      COPPEZIP_ARN_RELATORIO: "${COPPEZIP_ARN_RELATORIO}"
+      ENERGYNEXUS_COGNITO_REGIAO: "${ENERGYNEXUS_COGNITO_REGIAO}"
+      ENERGYNEXUS_COGNITO_CLIENTE: "${ENERGYNEXUS_COGNITO_CLIENTE}"
+      ENERGYNEXUS_COGNITO_USUARIO: "${ENERGYNEXUS_COGNITO_USUARIO}"
+      ENERGYNEXUS_COGNITO_SENHA: "${ENERGYNEXUS_COGNITO_SENHA}"
+      ENERGYNEXUS_AGENTCORE_REGIAO: "${ENERGYNEXUS_AGENTCORE_REGIAO}"
+      ENERGYNEXUS_ARN_DADOS: "${ENERGYNEXUS_ARN_DADOS}"
+      ENERGYNEXUS_ARN_DOCS: "${ENERGYNEXUS_ARN_DOCS}"
+      ENERGYNEXUS_ARN_RELATORIO: "${ENERGYNEXUS_ARN_RELATORIO}"
       PYTHONUNBUFFERED: "1"
     requiresOAuth: false  # sem isto a sondagem do boot bate sem token, vê o 403 do runtime e pede login por usuário
     serverInstructions: true
     initTimeout: 120000
     timeout: 300000  # cada pedido ao AgentCore custa 5 a 14 s; a ponte desiste em 240 s e devolve o erro da ferramenta
-  coppezip-docs:
+  energynexus-docs:
     type: stdio
     command: /usr/bin/env
-    args: ["${COPPEZIP_PYTHON}", "${COPPEZIP_RAIZ}/proper_mcps/agentcore/ponte.py", "docs"]
+    args: ["${ENERGYNEXUS_PYTHON}", "${ENERGYNEXUS_RAIZ}/proper_mcps/agentcore/ponte.py", "docs"]
     env: *ambiente_ponte
     requiresOAuth: false
     serverInstructions: true
     initTimeout: 120000
     timeout: 300000
   # relatório em Markdown e Word; no AgentCore os arquivos vão para o S3 com link assinado, não para /relatorios/
-  coppezip-relatorio:
+  energynexus-relatorio:
     type: stdio
     command: /usr/bin/env
-    args: ["${COPPEZIP_PYTHON}", "${COPPEZIP_RAIZ}/proper_mcps/agentcore/ponte.py", "relatorio"]
+    args: ["${ENERGYNEXUS_PYTHON}", "${ENERGYNEXUS_RAIZ}/proper_mcps/agentcore/ponte.py", "relatorio"]
     env: *ambiente_ponte
     requiresOAuth: false
     serverInstructions: true

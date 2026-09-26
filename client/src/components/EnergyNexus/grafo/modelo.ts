@@ -1,5 +1,5 @@
 // Modelo e layout do grafo de conhecimento: hierarquia, relações, posições dos cartões e animação entre layouts.
-// Porte do KnowledgeGraph.jsx do CoppeZIP (Chainlit), sem React, para ser testado isoladamente.
+// Porte do KnowledgeGraph.jsx do EnergyNexus (Chainlit), sem React, para ser testado isoladamente.
 import type { Fonte, Grafo, Icone, No, TipoNo } from './dados';
 
 export type Meta = {

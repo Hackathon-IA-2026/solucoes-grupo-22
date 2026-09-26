@@ -1,4 +1,4 @@
-"""Ponto de entrada dos servidores MCP do CoppeZIP no Amazon Bedrock AgentCore Runtime.
+"""Ponto de entrada dos servidores MCP do EnergyNexus no Amazon Bedrock AgentCore Runtime.
 
 COPPEZIP_MCP escolhe o servidor (dados, docs ou relatorio) e COPPEZIP_BUCKET é o bucket do S3 com os dados. Na
 subida, os arquivos que o servidor usa vêm do S3 para /tmp, o único lugar gravável do runtime; depois o servidor é

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Instala o CoppeZIP nesta máquina (uma vez): .env com segredos novos, Node, MongoDB e Meilisearch em .runtime/,
+# Instala o EnergyNexus nesta máquina (uma vez): .env com segredos novos, Node, MongoDB e Meilisearch em .runtime/,
 # as dependências e a interface do LibreChat (npm), e o Python das ferramentas MCP.
 set -euo pipefail
 cd "$(dirname "$0")"; RAIZ=$PWD; R=$RAIZ/.runtime

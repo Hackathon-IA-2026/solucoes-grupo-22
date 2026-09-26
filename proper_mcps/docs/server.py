@@ -1,4 +1,4 @@
-"""Servidor MCP "coppezip-docs": busca nos documentos das empresas, divididos em duas áreas (financeiro: releases,
+"""Servidor MCP "energynexus-docs": busca nos documentos das empresas, divididos em duas áreas (financeiro: releases,
 demonstrações, apresentações, fatos relevantes, debêntures, rating; sustentabilidade: relatórios ESG, inventário de
 emissões, TCFD, governança) e em documentos de referência (CVM, EPE, SEEG), com documento e página para citar.
 
@@ -39,7 +39,7 @@ duas áreas; filtre por area sempre que a pergunta for de uma delas:
 4. Regulação e referências setoriais: filtre empresa="CVM" (Resoluções 193 e 244), "EPE" (BEN) ou "SEEG".
 5. listar_documentos mostra o que existe (filtre por empresa, area e ano); se não estiver na base, diga isso."""
 
-mcp = MCPServer("coppezip-docs", instructions=INSTRUCOES)
+mcp = MCPServer("energynexus-docs", instructions=INSTRUCOES)
 _bedrock = None
 _trava = threading.Lock()
 

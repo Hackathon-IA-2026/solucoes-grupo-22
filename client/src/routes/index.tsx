@@ -11,8 +11,8 @@ import {
 import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
 import AgentMarketplace from '~/components/Agents/Marketplace';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
-import Vitrine, { BuscaIndisponivel, ChatIndisponivel } from '~/components/Coppezip/Vitrine';
-import { SITE_ESTATICO } from '~/components/Coppezip/api';
+import Vitrine, { BuscaIndisponivel, ChatIndisponivel } from '~/components/EnergyNexus/Vitrine';
+import { SITE_ESTATICO } from '~/components/EnergyNexus/api';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import WithRum from '~/lib/rum/WithRum';
 import RouteErrorBoundary from './RouteErrorBoundary';
@@ -59,17 +59,17 @@ const loadProjectWorkspace = () =>
   }));
 
 const loadPainelView = () =>
-  import('~/components/Coppezip/PainelView').then((m) => ({
+  import('~/components/EnergyNexus/PainelView').then((m) => ({
     Component: m.default,
   }));
 
 const loadBuscaView = () =>
-  import('~/components/Coppezip/BuscaView').then((m) => ({
+  import('~/components/EnergyNexus/BuscaView').then((m) => ({
     Component: m.default,
   }));
 
 const loadGrafoView = () =>
-  import('~/components/Coppezip/GrafoView').then((m) => ({
+  import('~/components/EnergyNexus/GrafoView').then((m) => ({
     Component: m.default,
   }));
 

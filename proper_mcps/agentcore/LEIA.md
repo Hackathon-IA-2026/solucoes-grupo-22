@@ -1,4 +1,9 @@
-# Os MCP do CoppeZIP no Amazon Bedrock AgentCore Runtime
+# Os MCP do EnergyNexus no Amazon Bedrock AgentCore Runtime
+
+Os nomes de recurso da AWS abaixo (`coppezip_dados`, o bucket, a role, a stack, as chaves do S3 e as variáveis
+`COPPEZIP_MCP`/`COPPEZIP_BUCKET` do runtime) ficaram como estão: nome de runtime do AgentCore é imutável e nenhum
+deles chega ao modelo nem ao usuário — o que o chat vê são as chaves `energynexus-dados`, `energynexus-docs` e
+`energynexus-relatorio` do `librechat.yaml`.
 
 Os três servidores de `proper_mcps/` também rodam na AWS, como runtimes MCP do Bedrock AgentCore em **us-west-2**, para
 clientes de fora desta máquina (o LibreChat daqui sobe os mesmos servidores por stdio, ver `mcpServers` no

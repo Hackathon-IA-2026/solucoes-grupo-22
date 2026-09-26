@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Exporta os dados quantitativos do coppezip.duckdb para o painel da interface (aba Painel do LibreChat).
+"""Exporta os dados quantitativos do energynexus.duckdb para o painel da interface (aba Painel do LibreChat).
 
 Uso: python data/exportar_painel.py
-Rode depois de construir o banco (data/construir.py). Lê data/coppezip.duckdb e grava data/painel.json, que a rota
+Rode depois de construir o banco (data/construir.py). Lê data/energynexus.duckdb e grava data/painel.json, que a rota
 /api/painel/dados do LibreChat relê a cada acesso: não precisa reiniciar.
 
 Cada conjunto declara o eixo de tempo, as dimensões (filtros e séries) e as medidas com a regra para juntar linhas:
@@ -21,7 +21,7 @@ import os
 import duckdb
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # raiz do repositório
-BANCO = os.path.join(RAIZ, "data", "coppezip.duckdb")
+BANCO = os.path.join(RAIZ, "data", "energynexus.duckdb")
 DESTINO = os.path.join(RAIZ, "data", "painel.json")
 
 

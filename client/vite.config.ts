@@ -137,11 +137,11 @@ export default defineConfig(({ command }) => ({
       },
       includeAssets: [],
       manifest: {
-        name: 'LibreChat',
-        short_name: 'LibreChat',
+        name: 'EnergyNexus',
+        short_name: 'EnergyNexus',
         display: 'standalone',
         background_color: '#000000',
-        theme_color: '#009688',
+        theme_color: '#7c3aed',
         icons: [
           {
             src: 'assets/favicon-32x32.png',

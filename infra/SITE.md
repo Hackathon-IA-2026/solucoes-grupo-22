@@ -33,9 +33,9 @@ script o monta a partir da conta que a credencial devolve, então a renomeação
 O build usado é o normal do front (`vite`), com `VITE_SITE_ESTATICO=1`. Essa variável faz duas coisas, e só duas:
 
 - `client/src/routes/index.tsx` usa uma árvore de rotas enxuta (`rotasEstaticas`), com a casca
-  `client/src/components/Coppezip/Vitrine.tsx` no lugar de `routes/Root.tsx`. É o que tira o site do portão de login:
+  `client/src/components/EnergyNexus/Vitrine.tsx` no lugar de `routes/Root.tsx`. É o que tira o site do portão de login:
   `Root.tsx` exige `isAuthenticated` e chama `/api/config`, que não existem num bucket;
-- `client/src/components/Coppezip/api.ts` troca `GET /api/painel/dados` por `dados/painel.json` e
+- `client/src/components/EnergyNexus/api.ts` troca `GET /api/painel/dados` por `dados/painel.json` e
   `GET /api/busca/resumo` por `dados/busca_resumo.json`. Qualquer outra rota `/api/...` falha dizendo o nome, em vez de
   devolver tela branca.
 

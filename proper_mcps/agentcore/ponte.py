@@ -39,7 +39,7 @@ import urllib.parse
 import urllib.request
 import uuid
 
-SERVIDORES = {"dados": "COPPEZIP_ARN_DADOS", "docs": "COPPEZIP_ARN_DOCS", "relatorio": "COPPEZIP_ARN_RELATORIO"}
+SERVIDORES = {"dados": "ENERGYNEXUS_ARN_DADOS", "docs": "ENERGYNEXUS_ARN_DOCS", "relatorio": "ENERGYNEXUS_ARN_RELATORIO"}
 MARGEM_TOKEN_S = 600      # renova o token 10 min antes de expirar (o Cognito devolve ExpiresIn=86400)
 VIDA_SESSAO_S = 25200     # 7 h: troca o id de sessão antes do maxLifetime de 8 h do runtime
 ESPERA_INIT_S = 25        # prazo do initialize, abaixo dos 30 s do MCP_INIT_TIMEOUT_MS padrão do LibreChat
@@ -118,7 +118,7 @@ class Sessao:
     def id(self) -> str:
         with self._trava:
             if not self._id or time.monotonic() - self._desde > VIDA_SESSAO_S:
-                self._id = f"coppezip-ponte-{NOME}-{uuid.uuid4().hex}"  # o AgentCore exige 33 caracteres ou mais
+                self._id = f"energynexus-ponte-{NOME}-{uuid.uuid4().hex}"  # o AgentCore exige 33 caracteres ou mais
                 self._desde = time.monotonic()
                 _log(f"sessão do runtime: {self._id}")
             return self._id
@@ -203,7 +203,7 @@ def _initialize_local(mensagem: dict) -> dict:
     pedido = (mensagem.get("params") or {}).get("protocolVersion") or PROTOCOLO
     return {"jsonrpc": "2.0", "id": mensagem["id"],
             "result": {"protocolVersion": pedido, "capabilities": {"tools": {"listChanged": False}},
-                       "serverInfo": {"name": f"coppezip-{NOME}", "version": "ponte"}}}
+                       "serverInfo": {"name": f"energynexus-{NOME}", "version": "ponte"}}}
 
 
 def _atender_initialize(mensagem: dict):
@@ -277,9 +277,9 @@ def main():
 if len(sys.argv) != 2 or sys.argv[1] not in SERVIDORES:
     raise SystemExit(f"[ponte] uso: ponte.py {' | '.join(SERVIDORES)}")
 NOME = sys.argv[1]
-TOKEN = Token(_var("COPPEZIP_COGNITO_REGIAO"), _var("COPPEZIP_COGNITO_CLIENTE"),
-              _var("COPPEZIP_COGNITO_USUARIO"), _var("COPPEZIP_COGNITO_SENHA"))
-RUNTIME = Runtime(_var(SERVIDORES[NOME]), _var("COPPEZIP_AGENTCORE_REGIAO"), TOKEN)
+TOKEN = Token(_var("ENERGYNEXUS_COGNITO_REGIAO"), _var("ENERGYNEXUS_COGNITO_CLIENTE"),
+              _var("ENERGYNEXUS_COGNITO_USUARIO"), _var("ENERGYNEXUS_COGNITO_SENHA"))
+RUNTIME = Runtime(_var(SERVIDORES[NOME]), _var("ENERGYNEXUS_AGENTCORE_REGIAO"), TOKEN)
 
 if __name__ == "__main__":
     main()

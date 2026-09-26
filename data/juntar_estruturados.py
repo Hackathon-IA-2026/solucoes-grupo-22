@@ -1,4 +1,4 @@
-"""Junta as demonstrações da CVM de data/dados_estruturados-20260926T162432Z-1-001 ao data/coppezip.duckdb.
+"""Junta as demonstrações da CVM de data/dados_estruturados-20260926T162432Z-1-001 ao data/energynexus.duckdb.
 
 Os CSVs trazem DFP (2010 em diante) e ITR (2011 em diante) dos 11 maiores grupos, no mesmo layout da CVM que o
 construir.py lê (só que em UTF-8 e já filtrado). O banco tem DFP de 2020 e ITR de 2024 em diante; este script acrescenta
@@ -6,7 +6,7 @@ os períodos que faltam em contas_cvm e contas_cvm_trimestral (o que já existe 
 composicao_capital (quantidade de ações). Antes de gravar, compara os períodos em comum e imprime as diferenças.
 
 Uso: python data/juntar_estruturados.py
-Saída: data/coppezip.duckdb, trocado de forma atômica (trabalha numa cópia .tmp).
+Saída: data/energynexus.duckdb, trocado de forma atômica (trabalha numa cópia .tmp).
 """
 import glob
 import os
@@ -17,7 +17,7 @@ import duckdb
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DADOS = os.path.join(RAIZ, "data")
 ORIGEM = os.path.join(DADOS, "dados_estruturados-20260926T162432Z-1-001", "dados_estruturados")
-destino = os.path.join(DADOS, "coppezip.duckdb")
+destino = os.path.join(DADOS, "energynexus.duckdb")
 tmp = destino + ".tmp"
 DEMOS = ["BPA", "BPP", "DRE", "DFC_MI", "DFC_MD", "DVA"]  # os mesmos que o construir.py carrega
 

@@ -20,7 +20,7 @@ describe('getModelMaxTokens partial-override fallback', () => {
 });
 
 describe('Claude 5 family on bedrock and anthropic', () => {
-  // The CoppeZIP profiles run `us.anthropic.claude-sonnet-5`/`claude-opus-5`; without an entry in
+  // The EnergyNexus profiles run `us.anthropic.claude-sonnet-5`/`claude-opus-5`; without an entry in
   // `anthropicModels` these fall back to the generic `claude-` prefix (100k) and history gets pruned.
   it.each([
     ['us.anthropic.claude-sonnet-5', 1000000],

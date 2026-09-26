@@ -22,7 +22,7 @@ da raiz de raw/, fora de cvm/) e cvm/dfp_cia_aberta_2024.zip (o da raiz de cvm/,
 planilhas aneel_ons_epe_bndes/anuario_dados_brutos.xlsx, pde2035_dados.zip, pde2035_transmissao.xlsx e
 cvm/deb_incentivadas.xls.
 Os PDFs de dicionário de dados de data/raw não são tabelas: vão para o índice de documentos (data/indexar_dados_local.py).
-Saída: data/coppezip.duckdb, trocado de forma atômica (os servidores MCP abrem só para leitura).
+Saída: data/energynexus.duckdb, trocado de forma atômica (os servidores MCP abrem só para leitura).
 """
 import csv
 import glob
@@ -44,8 +44,8 @@ ANEEL = os.path.join(RAW, "aneel_ons_epe_bndes")
 AN = os.path.join(RAW, "aneel")
 ONS = os.path.join(RAW, "ons")
 PQ = os.path.join(DADOS, "parquet")
-destino = os.path.join(DADOS, "coppezip.duckdb")
-banco = os.path.realpath(destino)  # data/coppezip.duckdb costuma ser um link para o disco local: grava no destino real
+destino = os.path.join(DADOS, "energynexus.duckdb")
+banco = os.path.realpath(destino)  # data/energynexus.duckdb costuma ser um link para o disco local: grava no destino real
 tmp = banco + ".tmp"
 if os.path.exists(tmp):
     os.remove(tmp)
@@ -72,7 +72,7 @@ def csv_limpo(arquivo, codificacao):
     return f"read_csv('{saida}', delim=';', header=true, all_varchar=true, quote='\"', escape='\"')"
 
 
-DICA = "traga os dados com data/baixar.py ou com o rclone do Drive (CoppeZIP-dados-brutos)"
+DICA = "traga os dados com data/baixar.py ou com o rclone do Drive (EnergyNexus-dados-brutos)"
 
 
 def exigir(caminho, dica=DICA):
