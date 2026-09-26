@@ -16,6 +16,9 @@ aberta "$MEILI_PORTA" || nohup bash -c 'echo $$ > "$0"; exec setsid meilisearch 
   --env production > "$R/logs/meili.log" 2>&1 < /dev/null &
 # relatórios do gerar_relatorio: o LibreChat serve client/public/assets na raiz do site (/relatorios/...)
 ln -sfn "$R/relatorios" client/public/assets/relatorios
+# aba Timeline: linha do tempo de cada empresa a partir dos bancos de data/, servida em /linha_do_tempo/
+"$COPPEZIP_PYTHON" data/linha_do_tempo.py || echo "aviso: a aba Timeline ficou sem dados novos (erro acima)"
+ln -sfn "$R/linha_do_tempo" client/public/assets/linha_do_tempo
 aberta "$PORT" || nohup bash -c 'echo $$ > "$0"; exec setsid npm run backend' "$R/run/librechat.pid" \
   > "$R/logs/librechat.log" 2>&1 < /dev/null &
 for _ in $(seq 90); do

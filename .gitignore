@@ -183,6 +183,7 @@ codedb.snapshot
 # CoppeZIP
 .runtime
 client/public/assets/relatorios
+client/public/assets/linha_do_tempo
 data/raw
 data/parquet
 data/modelos

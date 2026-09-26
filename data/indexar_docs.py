@@ -3,7 +3,9 @@
 Uso: python data/indexar_docs.py [--threads N] [--tudo]
 Entrada: os PDFs de data/raw/pdfs_esg descritos em data/documentos.csv (empresa, cnpj, ano, tipo, título, url). PDF fora do CSV é ignorado.
 Saída: data/docs.duckdb com documentos, paginas e trechos (embedding FLOAT[1024] do multilingual-e5-large), trocado de forma
-atômica. Incremental: reaproveita os embeddings dos PDFs que não mudaram (mesmo nome e tamanho) do índice anterior.
+atômica, e blocos (os parágrafos de cada página na ordem do PDF, sem misturar colunas, para a linha do tempo de
+data/linha_do_tempo.py). Incremental: reaproveita os embeddings dos PDFs que não mudaram (mesmo nome e tamanho) do índice
+anterior.
 """
 import argparse
 import csv
@@ -72,7 +74,7 @@ def main():
                 anteriores.setdefault((arq, tam), {})[(pag, texto)] = emb
         velho.close()
 
-    paginas, pedacos = [], []
+    paginas, pedacos, blocos = [], [], []
     for d in docs:
         caminho = os.path.join(PDFS, d["arquivo"])
         if not os.path.exists(caminho):
@@ -85,6 +87,9 @@ def main():
                 paginas.append((d["arquivo"], n, texto))
                 for t in trechos(texto):
                     pedacos.append((d["arquivo"], n, t))
+                for b in pagina.get_text("blocks"):  # (x0, y0, x1, y1, texto, número, tipo): tipo 0 é texto
+                    if b[6] == 0 and len(b[4].strip()) >= 80:
+                        blocos.append((d["arquivo"], n, b[4].strip()))
         print(f"{d['arquivo']}: {d['paginas']} páginas")
     print(f"{len(paginas)} páginas, {len(pedacos)} trechos; calculando embeddings ({MODELO})...")
 
@@ -120,10 +125,14 @@ def main():
         "embedding": pa.array([list(v) for v in vetores], pa.list_(pa.float32(), len(vetores[0]))),
     })
     con.execute("CREATE TABLE trechos AS SELECT * FROM tabela")
+    paragrafos = pa.table({"id": pa.array(range(len(blocos)), pa.int64()), "arquivo": [b[0] for b in blocos],
+                           "pagina": pa.array([b[1] for b in blocos], pa.int32()), "texto": [b[2] for b in blocos]})
+    con.execute("CREATE TABLE blocos AS SELECT * FROM paragrafos")
     con.execute("INSTALL fts; LOAD fts")
     # índice de palavras em português, sem acento e mantendo números (escopo 1, 2025, tCO2e)
-    con.execute("""PRAGMA create_fts_index('trechos', 'id', 'texto', stemmer = 'portuguese', stopwords = 'none',
-                   ignore = '(\\.|[^a-z0-9])+', strip_accents = 1, lower = 1)""")
+    for t in ("trechos", "blocos"):
+        con.execute(f"""PRAGMA create_fts_index('{t}', 'id', 'texto', stemmer = 'portuguese', stopwords = 'none',
+                       ignore = '(\\.|[^a-z0-9])+', strip_accents = 1, lower = 1)""")
     con.close()
     os.replace(tmp, SAIDA)
     print("ok:", SAIDA)
