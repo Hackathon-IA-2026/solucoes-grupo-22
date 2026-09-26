@@ -53,11 +53,11 @@ endpoints:
       # apaga a pergunta ("400 No user query found in messages", resposta vazia). O vLLM serve 256 mil.
       tokenConfig:
         "qwen3.8-27b": {prompt: 0, completion: 0, context: 1000000}
-  # Agentes (perfil do analista, Coordenador e subagentes). recursionLimit conta passos do grafo: cada chamada de
-  # ferramenta gasta 2, então 50 são cerca de 24 chamadas.
+  # recursionLimit conta passos do agente: cada chamada de ferramenta gasta 2, então 300 são cerca de 150 chamadas
+  # (só uma trava contra laço infinito; o padrão do LibreChat, 25, corta análises longas)
   agents:
-    recursionLimit: 50
-    maxRecursionLimit: 50
+    recursionLimit: 300
+    maxRecursionLimit: 300
 # Perfil padrão do chat: prompt de sistema, servidores MCP já ligados e perguntas sugeridas.
 # eval/chat.py lê este perfil em /api/config, então as personas conversam com o mesmo agente que os usuários.
 modelSpecs:
