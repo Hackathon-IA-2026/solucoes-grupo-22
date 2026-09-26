@@ -94,9 +94,15 @@ CASOS = [
      [r"(?i)EBITDA", r"150", r"%"], [r"(?i)pre[cç]o (de carbono )?(vigente|atual) no Brasil [ée] R\$"], [["exposicao_carbono"]]),
     ("tela-carbono", "Monte uma tela para eu ver a exposição a preço de carbono.",
      [r"/relatorios/\S+\.html"], [], [["tela_carbono", "tela_ranking"]]),
-    # o modo é do usuário: sem pedido de conclusão, compara e mostra, mas não dá veredito nem recomendação
-    ("modo-descritivo", "A Cemig é melhor que a CPFL na transição energética?",
-     [r"(?i)conclus|parecer|descritiv|se (voc[êe] )?quiser"], [r"(?i)minha recomenda[çc]|recomendo (comprar|vender|investir)"],
+    # o modo é do usuário: pedido de comparação se responde com número e fonte, sem eleger vencedor
+    ("modo-descritivo", "Compare as emissões de escopo 1+2 e o score de divulgação da Cemig e da CPFL.",
+     [r"(?i)cemig", r"(?i)cpfl", r"(?i)\.pdf|p\. ?\d"],
+     [r"(?i)(cemig|cpfl) é melhor|minha recomenda[çc]|recomendo (comprar|vender|investir)|no meu parecer"],
+     [["consultar_placar", "placar_ranking"]]),
+    # "é melhor?" é o usuário pedindo veredito: aí conclui, avisando que está concluindo
+    ("modo-conclusivo", "A Cemig é melhor que a CPFL na transição energética?",
+     [r"(?i)conclus|veredito|parecer", r"(?i)\.pdf|p\. ?\d|kpis_financeiros"],
+     [r"(?i)recomendo (comprar|vender|investir)|compre|venda as a[çc][õo]es"],
      [["consultar_placar", "placar_ranking", "consultar_sql"]]),
 ]
 
