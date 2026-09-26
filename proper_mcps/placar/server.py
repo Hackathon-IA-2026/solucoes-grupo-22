@@ -242,7 +242,7 @@ def _cap_por_fonte(con, cnpj: str) -> dict | None:
 
 
 REGRAS = {"renovavel_vs_siga": "% renovável declarado × capacidade real (SIGA)",
-          "meta_ignora_escopo3": "Meta climática não cobre o escopo 3, que é o maior",
+          "meta_ignora_escopo3": "Meta climática e o escopo 3, que é o maior",
           "divulgacao_sem_asseguracao": "Divulgação sem asseguração externa independente"}
 
 
@@ -295,12 +295,15 @@ def radar_consistencia(empresa: str | None = None) -> dict:
             e3 = do_ano.get("3")
             e12 = sum(do_ano[k]["tco2e"] or 0 for k in ("1", "2") if k in do_ano)
             if e3 and (e3["tco2e"] or 0) > e12 > 0:
+                # a meta diz quais escopos cobre e o 3 não está lá? é divergência. Se a meta extraída não diz nada
+                # sobre escopo, a falha pode ser da leitura — vira alerta fraco, para conferir no relatório.
+                declarou = bool(str(m.get("escopo_coberto") or "").strip())
                 alertas.append({
                     "regra": "meta_ignora_escopo3", "empresa": m["empresa"], "ano": m["ano_relatorio"],
-                    "severidade": "media",
+                    "severidade": "media" if declarou else "baixa",
                     "explicacao": f"Meta {m['tipo']} (alvo {m.get('ano_alvo')}) "
-                                  + (f"cobre '{m['escopo_coberto']}'" if m.get("escopo_coberto")
-                                     else "não informa o escopo coberto")
+                                  + (f"cobre '{m['escopo_coberto']}' e deixa de fora o escopo 3" if declarou
+                                     else "não diz, na página lida, quais escopos cobre — confira no relatório")
                                   + f", mas o escopo 3 ({e3['tco2e']:.0f} tCO2e) é maior que escopo 1+2 "
                                     f"({e12:.0f} tCO2e).",
                     "valor_afirmado": f"meta sem escopo 3", "valor_oficial": f"escopo 3 = {e3['tco2e']:.0f} tCO2e",
