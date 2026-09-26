@@ -42,9 +42,11 @@ def _digitos(valor) -> str:
 
 
 def _aparece_na_pagina(valor: float | None, trecho: str, texto_pagina: str) -> bool:
-    """Confiança mínima: o trecho está na página e os algarismos do valor aparecem. Aceita magnitude por extenso
-    ("R$ 9,7 bilhões" -> 9,7e9; "5,8 milhões" -> 5,8e6): a mantissa (dígitos sem os zeros do multiplicador) tem de
-    estar no trecho citado."""
+    """Confiança mínima: o trecho está na página, é citável (tem palavras, não só uma linha de tabela solta) e os
+    algarismos do valor aparecem. Aceita magnitude por extenso ("R$ 9,7 bilhões" -> 9,7e9; "5,8 milhões" -> 5,8e6):
+    a mantissa (dígitos sem os zeros do multiplicador) tem de estar no trecho citado."""
+    if not _citavel(trecho):
+        return False
     trecho_ok = bool(trecho) and _sem_acento(trecho)[:40] in _sem_acento(texto_pagina)
     if valor is None:
         return trecho_ok
@@ -54,6 +56,12 @@ def _aparece_na_pagina(valor: float | None, trecho: str, texto_pagina: str) -> b
         if len(alvo) >= 2 and _digitos_no_texto(alvo, onde):
             return True
     return len(cheio) < 2 and trecho_ok   # valor de 1 dígito: basta o trecho na página
+
+
+def _citavel(trecho: str) -> bool:
+    """O trecho serve de citação? Precisa de pelo menos um rótulo (palavra de 3+ letras). Descarta linha de tabela
+    solta ("2,6  4,3  5,7"), em que não há como saber a que escopo ou ano o número pertence."""
+    return bool(re.search(r"[A-Za-zÀ-ÿ]{3,}", trecho or ""))
 
 
 def _digitos_no_texto(alvo: str, texto: str) -> bool:
@@ -110,6 +118,15 @@ class Framework(BaseModel):
     trecho: str
 
 
+# chave de concordância: o que precisa sair igual nas duas leituras da mesma página para o valor entrar na base
+CHAVE = {
+    "esg_emissoes": lambda d: (d["escopo"].replace("_mercado", ""), round(d.get("tco2e") or -1)),
+    "esg_metas": lambda d: (d["tipo"], d.get("ano_alvo"), round(d.get("valor_alvo") or -1)),
+    "esg_renovavel": lambda d: (round(d.get("pct_geracao_renovavel") or d.get("pct_capacidade_renovavel") or -1),),
+    "esg_capex": lambda d: (round(d.get("capex_total_brl") or -1), round(d.get("capex_verde_brl") or -1)),
+    "esg_frameworks": lambda d: (d["framework"], bool(d.get("asseguracao_externa"))),
+}
+
 GRUPOS = {
     "emissoes": {
         "modelo": Emissao,
@@ -118,9 +135,11 @@ GRUPOS = {
         "instrucao": (
             "Extraia as emissões de gases de efeito estufa (GEE) desta página. Um item por escopo (1, 2, 3; "
             "escopo 2 por mercado use \"2_mercado\"). Use o TOTAL de cada escopo (não subcategorias) e, se houver "
-            "vários anos, o do ano do relatório. tco2e SEMPRE em toneladas de CO2 equivalente: se a tabela estiver "
-            "em mil tCO2e, multiplique por 1000. Se houver intensidade (tCO2e/MWh, tCO2e/GWh...), preencha "
-            "intensidade e unidade_intensidade. Não some escopos; não invente. Se a página não trouxer emissões, []."
+            "vários anos, o do ano do relatório. tco2e em toneladas de CO2 equivalente: SÓ multiplique por 1000 se "
+            "a unidade disser explicitamente 'mil tCO2e', 'kt' ou '10³'; trate 'tCO2e', 'mtCO2e' e 'toneladas' como "
+            "toneladas (NÃO multiplique). Se o mesmo escopo aparecer com valores muito diferentes, prefira o que "
+            "estiver em texto com a palavra 'toneladas' e unidade clara. Se houver intensidade (tCO2e/MWh...), "
+            "preencha intensidade e unidade_intensidade. Não some escopos; não invente. Sem emissões na página, []."
         ),
     },
     "metas": {
@@ -179,7 +198,10 @@ def _llm(instrucao: str, texto_pagina: str, pagina: int, empresa: str, ano: int)
         "Você extrai dados ESG de relatórios corporativos para uma base rastreável. Responda SOMENTE com um array "
         "JSON (sem texto fora dele, sem markdown). Cada objeto deve conter os campos pedidos e, obrigatoriamente, "
         "\"pagina\" (o número informado) e \"trecho\" (uma frase COPIADA LITERALMENTE da página que contém o "
-        "valor). Nunca infira números que não estejam escritos na página. Se nada se aplica, responda []."
+        "valor). O trecho tem de identificar o número: copie o rótulo junto (\"Escopo 1 (tCO2e) 14.254,38\", não "
+        "\"14.254,38\"); trecho só com algarismos é descartado. Se a linha da tabela tiver vários anos, copie a linha "
+        "inteira. Ao converter magnitude por extenso, use exatamente os algarismos escritos (\"5,8 milhões de "
+        "tCO2e\" = 5800000). Nunca infira números que não estejam escritos na página. Se nada se aplica, responda []."
     )
     prompt = (f"{instrucao}\n\nEmpresa: {empresa}. Ano do relatório: {ano}. Página {pagina}.\n"
               f"Use pagina={pagina}.\n\n--- TEXTO DA PÁGINA ---\n{texto_pagina[:9000]}")
@@ -210,21 +232,46 @@ def paginas_candidatas(con, arquivo: str, padrao: str, limite: int) -> list[tupl
     return [(p, t) for _, p, t in marcadas[:limite]]
 
 
-def extrair_documento(con, doc: dict, grupo: str, limite_paginas: int, seco: bool) -> list[dict]:
+def _concordantes(leituras: list[list[dict]], modelo, chave) -> list:
+    """Dos N conjuntos lidos da mesma página, devolve os achados que aparecem (mesma chave) em pelo menos duas
+    leituras. Tabela achatada em PDF é ambígua e o modelo escolhe colunas diferentes a cada leitura; o que só
+    aparece uma vez não entra na base."""
+    vistos = []
+    for bruto in leituras:
+        atual = {}
+        for item in bruto:
+            try:
+                obj = modelo(**item)
+            except ValidationError:
+                continue
+            try:
+                atual.setdefault(chave(obj.model_dump()), obj)
+            except (KeyError, TypeError, AttributeError):
+                continue
+        vistos.append(atual)
+    if len(vistos) < 2:
+        return list(vistos[0].values()) if vistos else []
+    saida = []
+    for k, obj in vistos[0].items():
+        if sum(1 for v in vistos if k in v) >= 2:
+            saida.append(obj)
+    return saida
+
+
+def extrair_documento(con, doc: dict, grupo: str, limite_paginas: int, seco: bool, leituras: int = 2) -> list[dict]:
     g = GRUPOS[grupo]
     achados = []
     for pagina, texto in paginas_candidatas(con, doc["arquivo"], g["padrao"], limite_paginas):
-        try:
-            brutos = _llm(g["instrucao"], texto, pagina, doc["empresa"], doc["ano"])
-        except Exception as e:
-            print(f"    ! erro LLM em {doc['arquivo']} p.{pagina}: {e}")
-            continue
-        for item in brutos:
-            item.setdefault("pagina", pagina)
+        lidos = []
+        for _ in range(max(1, leituras)):
             try:
-                obj = g["modelo"](**item)
-            except ValidationError:
-                continue
+                lidos.append(_llm(g["instrucao"], texto, pagina, doc["empresa"], doc["ano"]))
+            except Exception as e:
+                print(f"    ! erro LLM em {doc['arquivo']} p.{pagina}: {e}")
+        if len(lidos) < min(2, max(1, leituras)):   # com 2 leituras pedidas, uma que falhou não vira base
+            print(f"    ! {doc['arquivo']} p.{pagina}: só {len(lidos)} leitura(s); página ignorada")
+            continue
+        for obj in _concordantes(lidos, g["modelo"], CHAVE[g["tabela"]]):
             d = obj.model_dump()
             valor = next((d[k] for k in ("tco2e", "valor_alvo", "pct_capacidade_renovavel", "capex_total_brl")
                           if d.get(k) is not None), None)
@@ -260,14 +307,14 @@ DDL = {
 }
 
 
-def gravar(con, tabela: str, achados: list[dict], modelo: str):
+def gravar(con, tabela: str, achados: list[dict], modelo: str, arquivos: list[str]):
+    """Reescreve, para os documentos lidos agora, o que a extração achou. Idempotente e sem sobra: documento lido que
+    não deu nada fica sem linha nenhuma (em vez de manter a de uma rodada antiga)."""
     cols = [c.split()[0] for c in DDL[tabela].split(", ")]
     agora = datetime.now(timezone.utc)
-    arquivos = list({a["arquivo"] for a in achados})
-    if arquivos:  # idempotente: reescreve o que já havia daquele(s) documento(s)
-        con.execute(f"DELETE FROM {tabela} WHERE arquivo IN (SELECT unnest(?))", [arquivos])
+    con.execute(f"DELETE FROM {tabela} WHERE arquivo IN (SELECT unnest(?))", [list(arquivos)])
     for a in achados:
-        a.setdefault("metodo", "llm+pagina")
+        a.setdefault("metodo", "llm+pagina+concordancia")
         a["modelo"] = modelo
         a["extraido_em"] = agora
         valores = [a.get(c) for c in cols]
@@ -312,6 +359,8 @@ def main():
     ap.add_argument("--grupo", choices=list(GRUPOS), help="limita a um grupo (padrão: todos)")
     ap.add_argument("--empresa", help="filtra por nome de empresa (substring)")
     ap.add_argument("--limite-paginas", type=int, default=4, help="páginas candidatas por documento e grupo")
+    ap.add_argument("--leituras", type=int, default=2,
+                    help="leituras do LLM por página; só entra o que 2 concordam (1 desliga a checagem)")
     ap.add_argument("--seco", action="store_true", help="não grava; só imprime o que extrairia")
     a = ap.parse_args()
     if a.revalidar:
@@ -337,12 +386,12 @@ def main():
         print(f"\n=== grupo {grupo} ===")
         total = 0
         for doc in docs:
-            achados = extrair_documento(docs_con, doc, grupo, a.limite_paginas, a.seco)
+            achados = extrair_documento(docs_con, doc, grupo, a.limite_paginas, a.seco, a.leituras)
             bons = [x for x in achados if x["confianca"] > 0]
             if achados:
                 print(f"  {doc['empresa']} {doc['ano']}: {len(bons)}/{len(achados)} com fonte confirmada")
-            if saida and achados:
-                gravar(saida, GRUPOS[grupo]["tabela"], achados, MODELO_BEDROCK)
+            if saida and not a.seco:
+                gravar(saida, GRUPOS[grupo]["tabela"], achados, MODELO_BEDROCK, [doc["arquivo"]])
             total += len(bons)
         print(f"  -> {total} valores com fonte confirmada no grupo {grupo}")
     if saida:

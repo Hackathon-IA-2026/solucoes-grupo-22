@@ -38,18 +38,26 @@ def conferir() -> str:
     linhas = ["# Conferência do Placar — emissões vs. gabarito (§3.2)", "",
               f"Tolerância de {TOLERANCIA:.0%}. Extraído de `placar.duckdb`; gabarito de "
               "`researches/FINDINGS-claude-sonnet-5.md §3.2`.", "",
-              "| Empresa (gabarito) | Ano | Escopo | Extraído (tCO2e) | Pág. | Gabarito | Veredito |",
+              "| Empresa (gabarito) | Ano | Escopo | Extraído (tCO2e) | Edição/pág. | Gabarito | Veredito |",
               "|---|---|---|---:|---|---:|---|"]
-    acertos = divergencias = faltas = 0
+    acertos = divergencias = faltas = rejeitados = 0
     for (empresa, ano), escopos in GABARITO.items():
         for escopo, esperado in escopos.items():
+            # o gabarito é por ano do dado; o relatório que o traz é do mesmo ano ou do seguinte. escopo 2 por
+            # mercado (2_mercado) conta como escopo 2. A ordem prefere o valor com fonte confirmada e, entre eles, o
+            # da edição do próprio ano do gabarito (a mesma de onde ele veio).
             r = con.execute("""
-                SELECT tco2e, pagina FROM esg_emissoes
+                SELECT tco2e, pagina, ano_relatorio, confianca FROM esg_emissoes
                 WHERE strip_accents(lower(empresa)) LIKE '%' || strip_accents(lower(?)) || '%'
-                  AND ano_relatorio = ? AND escopo = ? AND confianca > 0
-                ORDER BY tco2e DESC LIMIT 1""", [empresa, ano, escopo]).fetchone()
-            extraido, pagina = (r[0], r[1]) if r else (None, None)
-            if _bate(extraido, esperado):
+                  AND replace(escopo, '_mercado', '') = ?
+                  AND (coalesce(ano, ano_relatorio) = ? OR ano_relatorio = ? + 1)
+                ORDER BY confianca DESC, (coalesce(ano, ano_relatorio) = ?) DESC, tco2e DESC
+                LIMIT 1""", [empresa, escopo, ano, ano, ano]).fetchone()
+            extraido, pagina, edicao, confianca = r if r else (None, None, None, None)
+            if confianca == 0:   # extraído, mas a checagem "o valor aparece na página?" reprovou: não entra na base
+                veredito, rejeitados = "⛔ rejeitado na fonte", rejeitados + 1
+                extraido = None
+            elif _bate(extraido, esperado):
                 veredito, acertos = "✅ bate", acertos + 1
             elif extraido is None:
                 veredito, faltas = "⬜ faltou", faltas + 1
@@ -57,9 +65,11 @@ def conferir() -> str:
                 veredito, divergencias = "⚠️ diverge", divergencias + 1
             g = "ausente" if esperado is None else f"{esperado:,.0f}".replace(",", ".")
             e = "—" if extraido is None else f"{extraido:,.0f}".replace(",", ".")
-            linhas.append(f"| {empresa} | {ano} | {escopo} | {e} | {pagina or '—'} | {g} | {veredito} |")
-    total = acertos + divergencias + faltas
-    linhas += ["", f"**Resumo:** {acertos}/{total} batem, {divergencias} divergem, {faltas} faltaram.", "",
+            onde = f"{edicao} p.{pagina}" if pagina else "—"
+            linhas.append(f"| {empresa} | {ano} | {escopo} | {e} | {onde} | {g} | {veredito} |")
+    total = acertos + divergencias + faltas + rejeitados
+    linhas += ["", f"**Resumo:** {acertos}/{total} batem, {divergencias} divergem, {faltas} faltaram, "
+                   f"{rejeitados} rejeitados na checagem de fonte.", "",
                "Divergências e faltas não são necessariamente erro: a base tem edições/anos diferentes do gabarito "
                "(que veio de outro conjunto de documentos). Cada valor extraído tem página e trecho para conferência "
                "manual."]
