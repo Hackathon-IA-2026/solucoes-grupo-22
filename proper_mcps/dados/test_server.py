@@ -283,6 +283,31 @@ def test_holding_encontrada_por_aproximacao_lista_as_empresas_do_grupo():
     assert "60.444.437/0001-46" in r["aviso_holding"]
 
 
+@pytest.mark.parametrize("termo, cnpj", [
+    ("Energisa Tocantins", "25.086.034/0001-71"),   # 3 agentes com esse nome: a distribuidora vem antes das 2 transmissoras
+    ("Energisa Acre", "04.065.033/0001-70"),
+    ("Energisa Borborema", "08.826.596/0001-95"),
+])
+def test_concessao_fora_da_cvm_nao_devolve_o_cnpj_da_holding(termo, cnpj):
+    # sem apelido de mercado e sem registro na CVM, estas caíam no passo do apelido e voltavam como ENERGISA SA
+    r = s.buscar_empresa(termo)
+    primeiro_ = r["resultados"][0]
+    assert primeiro_["cnpj"] == cnpj
+    assert primeiro_["confianca"] == "nome"
+    assert primeiro_["anos_com_demonstracoes"] == "não" and "não tem demonstrações" in primeiro_["como_encontrou"]
+    # o CNPJ devolvido tem de voltar sozinho: era ele que caía no passo do nome parecido e virava outra empresa
+    de_volta = s.buscar_empresa(cnpj)["resultados"][0]
+    assert de_volta["cnpj"] == cnpj and de_volta["confianca"] == "exata"
+    assert s.indicadores_financeiros(cnpj)["anos"] == "sem demonstrações na base para esses anos"
+
+
+def test_palavra_do_nome_e_inteira_e_nao_pedaco():
+    # '%rge %' casava FOTONS DE SAO GEORGE e '%light%' casava LIGHTSOURCE: 'Light Rio' tem de voltar ao grupo Light
+    r = s.buscar_empresa("Light Rio")
+    assert r["resultados"][0]["cnpj"] == "03.378.521/0001-75"
+    assert "60.444.437/0001-46" in r["aviso_holding"]
+
+
 # ---------------------------------------------------------------- coerência das contas da CVM
 def test_custo_positivo_e_bruto_acima_da_receita_sao_apontados():
     # Equatorial Pará 2025: a empresa enviou 3.02 positiva, então 3.03 = 3.01 + 3.02 FECHA e a soma não pega o erro

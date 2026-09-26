@@ -22,9 +22,9 @@ no mesmo `WHERE cnpj IN (...)`.
 | Bloco | Tabela e colunas |
 |---|---|
 | Continuidade | `dec_fec_distribuidora_anual`: dec_horas, fec_interrupcoes, dec_limite_medio_ponderado_horas, fec_limite_medio_ponderado, consumidores_medios |
-| Compensações | `compensacoes_continuidade`: SUM(valor) FILTER (indicador LIKE 'PGU%') por cnpj e ano (R$). Os 48 indicadores `QTU*` são quantidade de consumidores: somar com os `PGU*` mistura reais com contagem (Cemig-D 2024: 131.360.837,88 sem filtro contra 128.836.221,88 certos) |
+| Compensações | `compensacoes_continuidade`: SUM(valor) FILTER (indicador LIKE 'PGU%') por cnpj e ano (R$). Os 48 indicadores `QTU*` são quantidade de unidades compensadas: somar com os `PGU*` mistura reais com contagem (Cemig-D 2024: 131.360.837,88 sem filtro contra 128.836.221,88 certos) |
 | Tarifa | `tarifas_distribuicao`: subgrupo='B1', classe='Residencial', subclasse='Residencial', modalidade='Convencional', posto='Não se aplica', detalhe='Não se aplica', base_tarifaria='Tarifa de Aplicação', vigência mais recente (tusd + te, R$/MWh, com a data). Só `subgrupo` e `classe` deixam 60 linhas por distribuidora, de 548,35 (Branca fora-ponta com SCEE) a 2.081,06 (Branca na ponta) — Equatorial PA em 01/01/2026 é 978,30. Variação entre tarifas não é o efeito médio do reajuste |
-| Ranking da ANEEL | `ranking_continuidade`: posicao, dgc, porte por ano (235 linhas, 2021-2025). A posição é dentro do `porte`: diga a posição e o total do mesmo porte e ano ("33º de 33 entre as grandes em 2025"), nunca a posição solta |
+| Ranking da ANEEL | `ranking_continuidade`: posicao, dgc, porte por ano (235 linhas, 2021-2025). A posição é dentro do `porte` ("mais de 400 mil unidades consumidoras" ou "até 400 mil unidades consumidoras"): diga a posição, o total do mesmo porte e ano e o porte por extenso (Cemig-D em 2025: 31º de 33 entre as de mais de 400 mil), nunca a posição solta |
 | Violação por conjunto | `continuidade_limites` + `continuidade_conjuntos`: DEC/FEC apurado contra o limite de cada conjunto, para contar quantos conjuntos violaram |
 | Investimento regulatório | `pdd_investimentos`: SUM(planejado_brl), SUM(realizado_brl) por ano |
 | Inovação | `ped_projetos` (custo_previsto_brl) e `pee_projetos` (custo_total_brl, energia_economizada_mwh) |

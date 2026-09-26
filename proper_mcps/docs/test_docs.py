@@ -12,9 +12,14 @@ server = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(server)
 
 
+TRECHO = "Emissões de escopo 1 de 2025: 1.234 tCO2e."
+
+
 def _base(caminho: str, com_area: bool) -> None:
-    """Índice mínimo; com_area=False imita um índice de versão antiga (data/indexar_docs.py, sem a coluna area)."""
+    """Índice mínimo, com as três tabelas e o índice de palavras que data/indexar_docs_titan.py publica;
+    com_area=False imita um índice de versão antiga (data/indexar_docs.py, sem a coluna area)."""
     con = duckdb.connect(caminho)
+    con.execute("LOAD fts")
     area = "area VARCHAR, " if com_area else ""
     con.execute(f"""CREATE TABLE documentos (arquivo VARCHAR, empresa VARCHAR, cnpj VARCHAR, ano INTEGER,
                     tipo VARCHAR, {area}titulo VARCHAR, url VARCHAR, paginas INTEGER)""")
@@ -23,7 +28,11 @@ def _base(caminho: str, com_area: bool) -> None:
                + "'Relatório Anual 2025', NULL, 3")
     con.execute(f"INSERT INTO documentos VALUES ({valores})")
     con.execute("CREATE TABLE paginas (arquivo VARCHAR, pagina INTEGER, texto VARCHAR)")
-    con.execute("INSERT INTO paginas VALUES ('rel.pdf', 1, 'Emissões de escopo 1 de 2025: 1.234 tCO2e.')")
+    con.execute(f"INSERT INTO paginas VALUES ('rel.pdf', 1, '{TRECHO}')")
+    con.execute("CREATE TABLE trechos (id BIGINT, arquivo VARCHAR, pagina INTEGER, texto VARCHAR, embedding FLOAT[1024])")
+    con.execute("INSERT INTO trechos VALUES (1, 'rel.pdf', 1, ?, ?)", [TRECHO, [0.1] * 1024])
+    con.execute("""PRAGMA create_fts_index('trechos', 'id', 'texto', stemmer = 'portuguese', stopwords = 'none',
+                   ignore = '(\\.|[^a-z0-9])+', strip_accents = 1, lower = 1)""")
     con.close()
 
 
@@ -47,7 +56,7 @@ def test_indice_sem_area_vira_toolerror_com_o_motivo(antigo):
     # erro cru do DuckDB chega ao modelo como "Error executing tool"; ToolError diz o motivo e o que fazer
     with pytest.raises(ToolError) as e:
         antigo.listar_documentos()
-    assert "não tem a coluna" in str(e.value) or "area" in str(e.value)
+    assert "não tem a coluna area" in str(e.value)
     assert "indexar_docs_titan.py" in str(e.value)
 
 
@@ -67,8 +76,25 @@ def test_ler_pagina_sem_a_tabela_paginas_vira_toolerror(tmp_path, monkeypatch):
 def test_buscar_documentos_em_indice_antigo_vira_toolerror(antigo, monkeypatch):
     monkeypatch.setattr(antigo, "_embed", lambda _: [0.0] * 1024)
     with pytest.raises(ToolError) as e:
-        antigo.buscar_documentos("emissões escopo 1")
-    assert "indexar_docs_titan.py" in str(e.value)
+        antigo.buscar_documentos("emissões escopo 1", area="financeiro")
+    assert "não tem a coluna area" in str(e.value) and "indexar_docs_titan.py" in str(e.value)
+
+
+def test_indice_de_outra_versao_vira_toolerror(tmp_path, monkeypatch):
+    # arquivo que não é um banco do DuckDB: o erro do connect subia cru, fora do try das ferramentas
+    caminho = tmp_path / "docs_titan.duckdb"
+    caminho.write_text("isto não é um banco")
+    monkeypatch.setattr(server, "DB", str(caminho))
+    with pytest.raises(ToolError) as e:
+        server.listar_documentos()
+    assert "a consulta falhou no índice" in str(e.value) and "indexar_docs_titan.py" in str(e.value)
+
+
+def test_buscar_documentos_funde_palavras_e_significado(atual, monkeypatch):
+    monkeypatch.setattr(atual, "_embed", lambda _: [0.1] * 1024)
+    r = atual.buscar_documentos("emissões escopo 1", area="sustentabilidade")
+    assert [x["pagina"] for x in r["resultados"]] == [1]
+    assert r["resultados"][0]["documento"] == "Relatório Anual 2025" and "tCO2e" in r["resultados"][0]["trecho"]
 
 
 def test_indice_sem_arquivo_avisa_em_vez_de_estourar(atual):

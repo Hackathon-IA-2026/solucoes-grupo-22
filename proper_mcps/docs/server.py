@@ -8,6 +8,7 @@ documentos.csv; credenciais da AWS em ~/.aws/credentials e região BEDROCK_AWS_D
 """
 import json
 import os
+import re
 import threading
 
 import boto3
@@ -63,19 +64,34 @@ def _embed(texto: str) -> list[float]:
     return json.loads(r["body"].read())["embedding"]
 
 
-def _con():
-    if not os.path.exists(DB):
-        raise ToolError(f"base de documentos indisponível: o índice {DB} não existe (data/indexar_docs_titan.py)")
-    con = duckdb.connect(DB, read_only=True)
-    con.execute("LOAD fts")
-    return con
+SEM_AREA = re.compile(r'column[^"]*"area"', re.I)  # BinderException de índice antigo, sem a coluna que _filtro usa
 
 
 def _erro_consulta(e: Exception) -> ToolError:
     """Erro cru do DuckDB vira só "Error executing tool" para o modelo e parece falha passageira; ToolError diz o
     motivo (índice de outra versão, sem a coluna area, sem o índice fts) e o que fazer."""
+    if SEM_AREA.search(str(e)):
+        return ToolError(f"base de documentos indisponível: o índice {os.path.basename(DB)} não tem a coluna area, que "
+                         "as três ferramentas devolvem; refaça com data/indexar_docs_titan.py (chamar sem o filtro "
+                         "area não resolve)")
     return ToolError(f"base de documentos indisponível: a consulta falhou no índice {os.path.basename(DB)} ({e}); "
                      "se o índice for de uma versão antiga, refaça com data/indexar_docs_titan.py")
+
+
+def _con():
+    if not os.path.exists(DB):
+        raise ToolError(f"base de documentos indisponível: o índice {DB} não existe (data/indexar_docs_titan.py)")
+    try:
+        con = duckdb.connect(DB, read_only=True)
+    except duckdb.Error as e:  # arquivo de outra versão do DuckDB, ou interrompido no meio da indexação
+        raise _erro_consulta(e)
+    try:
+        con.execute("LOAD fts")  # BM25 das palavras; o AgentCore instala a extensão na subida do runtime
+    except duckdb.Error as e:
+        con.close()
+        raise ToolError(f"base de documentos indisponível: a extensão fts do DuckDB não carregou ({e}); instale com "
+                        "INSTALL fts no mesmo Python que roda o servidor")
+    return con
 
 
 def _filtro(empresa: str | None, ano: int | None, area: str | None = None) -> tuple[str, list]:

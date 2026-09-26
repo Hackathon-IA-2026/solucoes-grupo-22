@@ -92,20 +92,32 @@ def test_relatorio_sem_lacunas_recebe_aviso(s):
 
 @pytest.mark.parametrize("texto, cortado", [
     ("A receita foi de R$ 4,62 bi em 2025 [F1].", False),
+    ("A receita de 2025 foi de R$ 4,62 bi [F1]", False),   # acabar na citação não é corte
+    ("A receita subiu (4,62 contra 4,10 [F1])", False),
     ("A receita foi de R$ 4,62 bi [F1]...", True),
     ("A receita foi de R$ 4,62 bi [F1] […]", True),
+    ("A Equatorial GO é a única dist", True),              # cortado no meio da palavra, mesmo em texto curto
     ("A receita cresceu [F1]. " + "Detalhe do período com números de 4,62 e 3,19 [F1]. " * 4 + "e o resto vem", True),
 ])
 def test_texto_cortado_e_apontado(s, texto, cortado):
-    assert s._cortado(texto) is cortado
+    assert bool(s._cortado(texto)) is cortado
 
 
-def test_secao_cortada_gera_aviso(s):
+def test_secao_cortada_recusa_o_relatorio(s, tmp_path):
+    # a auditoria gravou dois relatórios cortados no meio da frase com gravado: true; agora é erro
     r = s.gerar_relatorio("Taesa em 2025", secao("A receita foi de R$ 4,62 bi em 2025 [F1]..."), FONTES,
                           sumario="Receita de R$ 4,62 bi [F1]; RAP na p. 22 [F2].",
                           lacunas=["Sem cronograma de dívida na base."])
-    assert r["gravado"]
-    assert any("termina no meio" in a for a in r["avisos"])
+    assert not r["gravado"] and os.listdir(tmp_path) == []
+    assert any("marca de corte" in e for e in r["erros"])
+
+
+def test_sumario_truncado_recusa_e_avisa_das_lacunas(s):
+    r = s.gerar_relatorio("Distribuidoras em 2025", secao(), FONTES,
+                          sumario="Entre as 4 comparadas, a Equatorial GO é a única dist", lacunas=[])
+    assert not r["gravado"]
+    assert any("parece truncado" in e and "única dist" in e for e in r["erros"])
+    assert any("não tem lacunas" in a for a in r["avisos"])  # os avisos vêm junto da recusa, para corrigir de uma vez
 
 
 def test_fonte_sem_localizador_gera_aviso(s):
@@ -121,3 +133,27 @@ def test_fonte_com_tabela_pagina_ou_link_nao_gera_aviso(s):
                           lacunas=["Sem comparação com 2024."])
     assert r["gravado"]
     assert not any("não diz onde achar" in a for a in r.get("avisos", []))
+
+
+def test_nome_de_arquivo_e_link_nao_contam_como_tabela(s):
+    assert s._tabelas_citadas("Cemig, cemig_relatorio_2025.pdf, p. 87") == []
+    assert s._tabelas_citadas("veja https://ri.taesa.com.br/dados_2025.html") == []
+    assert s._tabelas_citadas("CVM DFP 2025, conta 3.01, via kpis_financeiros") == ["kpis_financeiros"]
+
+
+@pytest.mark.skipif(not os.path.exists(server.CATALOGO_DB), reason="o catálogo da base não está nesta máquina")
+def test_fonte_com_tabela_inventada_gera_aviso(s):
+    # a auditoria passou "tabela_que_nao_existe, conta 9.99" e o relatório saiu com cara de auditado
+    fontes = [{"id": "F1", "descricao": "tabela_que_nao_existe, conta 9.99, via ORGAO_INVENTADO"}]
+    r = s.gerar_relatorio("X", secao(), fontes, lacunas=["Sem comparação com 2024."])
+    assert r["gravado"]
+    assert any("'tabela_que_nao_existe' não é uma tabela da base" in a for a in r["avisos"])
+    boa = s.gerar_relatorio("X", secao(), FONTES, lacunas=["Sem comparação com 2024."])  # kpis_financeiros existe
+    assert boa["gravado"] and not any("não é uma tabela da base" in a for a in boa.get("avisos", []))
+
+
+def test_sem_o_catalogo_o_relatorio_diz_que_nao_conferiu(s, tmp_path, monkeypatch):
+    # o runtime do AgentCore sobe só o relatório, sem o banco ao lado: a conferência não acontece e isso fica dito
+    monkeypatch.setattr(s, "CATALOGO_DB", str(tmp_path / "nao_existe.duckdb"))
+    r = s.gerar_relatorio("X", secao(), FONTES, lacunas=["Sem comparação com 2024."])
+    assert r["gravado"] and any("não confiro os nomes de tabela" in a for a in r["avisos"])

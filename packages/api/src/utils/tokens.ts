@@ -402,7 +402,12 @@ export const modelMaxOutputs = {
   system_default: 32000,
 };
 
-/** Outputs from https://docs.anthropic.com/en/docs/about-claude/models/all-models#model-names */
+/**
+ * Outputs from https://docs.anthropic.com/en/docs/about-claude/models/all-models#model-names
+ *
+ * Só vale para o endpoint anthropic: maxOutputTokensMap não tem a chave bedrock, então o Claude na AWS não passa por
+ * aqui — lá o limite de saída vem do maxOutputTokens do perfil (librechat.yaml), que o cliente manda no corpo do pedido.
+ */
 const anthropicMaxOutputs = {
   'claude-3-haiku': 4096,
   'claude-3-sonnet': 4096,

@@ -1,9 +1,10 @@
 """Servidor MCP "energynexus-relatorio": grava o relatório final da análise em Markdown e DOCX, com fonte em todo número.
 
 Ferramenta: gerar_relatorio. Recebe título, sumário, seções (texto e tabelas), lacunas e a lista de fontes, e recusa o
-relatório se algum trecho com número não citar uma fonte ([F1], [F2]...) ou se uma tabela com números não tiver fonte.
-A conferência é de citação, não de valor: o servidor garante que cada número aponta para uma fonte declarada, e não
-que o número bate com ela — quem levantou o dado nas outras ferramentas responde pelo valor.
+relatório se algum trecho com número não citar uma fonte ([F1], [F2]...), se uma tabela com números não tiver fonte ou
+se um texto vier cortado no meio. A conferência é de citação, não de valor: o servidor garante que cada número aponta
+para uma fonte declarada, e não que o número bate com ela — quem levantou o dado nas outras ferramentas responde pelo
+valor. Nome de tabela citado numa fonte é conferido contra o catálogo da base, e sai como aviso quando não existe.
 Os arquivos vão para .runtime/relatorios, que o iniciar.sh liga em client/public/assets/relatorios do LibreChat; o
 navegador os baixa em /relatorios/.
 O DOCX é montado com a biblioteca padrão (zipfile e XML do WordprocessingML), sem python-docx.
@@ -16,6 +17,7 @@ import zipfile
 from datetime import datetime
 from xml.sax.saxutils import escape
 
+import duckdb
 from mcp.server.mcpserver import MCPServer
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # raiz do repositório
@@ -23,6 +25,7 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 PASTA = os.path.join(RAIZ, ".runtime", "relatorios")
 URL_BASE = "/relatorios"  # o LibreChat serve .runtime/relatorios nesse caminho (iniciar.sh)
+CATALOGO_DB = os.path.join(RAIZ, "data", "energynexus.duckdb")  # só para conferir os nomes de tabela citados nas fontes
 
 
 def publicar(caminho: str) -> str:
@@ -84,15 +87,42 @@ def _contar_numeros(sumario, secoes, lacunas) -> dict:
 
 
 CORTE = re.compile(r"(\.\.\.|…|\[\.\.\.\]|\[truncad|\[cortad)", re.I)
+FIM = re.compile(r"[.!?:;)\]\"'»”]\s*$")  # trecho inteiro acaba em pontuação, no fecho da citação ([F1]) ou em ')'
 LOCALIZADOR = re.compile(r"\w+_\w+|conta\s+\d|p\.\s*\d|p[áa]gina\s*\d|https?://")
+ARQUIVO = re.compile(r"\S+\.(pdf|docx?|xlsx?|csv|parquet|zip)\b", re.I)
+NOME_TABELA = re.compile(r"\bvia\s+([A-Za-z]\w*)|\b([A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+)\b")
 
 
-def _cortado(texto: str) -> bool:
-    """Texto que parece ter sido colado pela metade: marca de corte, ou fim sem pontuação num trecho longo."""
+def _tabelas_citadas(descricao: str) -> list[str]:
+    """Nomes que a descrição da fonte apresenta como tabela da base: depois de "via" ou em snake_case. Link e nome de
+    arquivo saem antes, senão "cemig_relatorio_2025.pdf" entraria na conferência."""
+    limpo = ARQUIVO.sub(" ", URL.sub(" ", descricao or ""))
+    return list(dict.fromkeys(a or b for a, b in NOME_TABELA.findall(limpo)))
+
+
+def _catalogo() -> set[str] | None:
+    """Tabelas da base, em minúsculas, ou None quando o banco não está ao lado do servidor — é o caso do runtime do
+    AgentCore, que sobe só o relatório, e aí a conferência dos nomes fica registrada como aviso."""
+    if not os.path.exists(CATALOGO_DB):
+        return None
+    con = duckdb.connect(CATALOGO_DB, read_only=True)
+    try:
+        return {t.lower() for (t,) in con.execute("SELECT tabela FROM catalogo").fetchall()}
+    finally:
+        con.close()
+
+
+def _cortado(texto: str) -> str:
+    """Por que o texto parece ter sido colado pela metade (vazio quando parece inteiro): marca de corte no fim ou fim
+    sem pontuação. Dois relatórios da auditoria foram gravados cortados no meio da frase, então isto é erro."""
     t = (texto or "").strip()
     if not t:
-        return False
-    return bool(CORTE.search(t[-40:])) or (len(t) > 200 and t[-1] not in ".!?:)\"'»”")
+        return ""
+    if CORTE.search(t[-40:]):
+        return "o texto tem marca de corte ('...')"
+    if not FIM.search(t):
+        return "o texto termina sem pontuação e parece truncado"
+    return ""
 
 
 def _validar(titulo, sumario, secoes, lacunas, fontes) -> tuple[list[str], list[str], dict]:
@@ -113,6 +143,23 @@ def _validar(titulo, sumario, secoes, lacunas, fontes) -> tuple[list[str], list[
         ids[fid] = f
     if not ids:
         erros.append("o relatório não tem fontes")
+    # a auditoria passou "tabela_que_nao_existe, conta 9.99" e o relatório saiu com cara de auditado: confere o nome da
+    # tabela contra o catálogo da base (aviso, não erro, porque fonte de documento e de link não têm tabela)
+    citados = {fid: _tabelas_citadas(str(f.get("descricao") or "")) for fid, f in ids.items()}
+    if any(citados.values()):
+        try:
+            catalogo = _catalogo()
+            impedimento = f"o banco {os.path.basename(CATALOGO_DB)} não está ao lado do servidor"
+        except duckdb.Error as e:  # banco em uso por quem o reconstrói, ou de outra versão
+            catalogo, impedimento = None, f"o catálogo não abriu ({e})"
+        if catalogo is None:
+            avisos.append(f"não confiro os nomes de tabela citados nas fontes: {impedimento}")
+        else:
+            for fid, nomes in citados.items():
+                for n in nomes:
+                    if n.lower() not in catalogo:
+                        avisos.append(f"fonte {fid}: '{n}' não é uma tabela da base (confira em listar_tabelas); se o "
+                                      "número vem de documento ou link, descreva o documento e a página")
     citadas = set()
 
     def texto(onde, t):
@@ -129,13 +176,13 @@ def _validar(titulo, sumario, secoes, lacunas, fontes) -> tuple[list[str], list[
     if not str(titulo or "").strip():
         erros.append("falta o título")
     texto("sumário", sumario)
-    if _cortado(sumario):
-        avisos.append("sumário: o texto termina no meio ou tem marca de corte ('...'); escreva o trecho inteiro")
+    if motivo := _cortado(sumario):
+        erros.append(f"sumário: {motivo} (\"...{str(sumario).strip()[-40:]}\"); reenvie o trecho inteiro")
     for i, s in enumerate(secoes or [], 1):
         nome = f"seção {i} ({s.get('titulo') or 'sem título'})"
         texto(nome, s.get("texto"))
-        if _cortado(s.get("texto")):
-            avisos.append(f"{nome}: o texto termina no meio ou tem marca de corte ('...'); escreva o trecho inteiro")
+        if motivo := _cortado(s.get("texto")):
+            erros.append(f"{nome}: {motivo} (\"...{str(s.get('texto')).strip()[-40:]}\"); reenvie o trecho inteiro")
         for j, tab in enumerate(s.get("tabelas") or [], 1):
             onde = f"{nome}, tabela {j}"
             colunas, linhas = tab.get("colunas") or [], tab.get("linhas") or []
@@ -339,16 +386,18 @@ def gerar_relatorio(titulo: str, secoes: list[dict], fontes: list[dict], sumario
               "tabelas": [{"titulo": "Indicadores 2025, R$ bi", "colunas": ["Empresa", "Receita"],
                            "linhas": [["Taesa", "4,62"]], "fontes": ["F1"]}]}]
     sumario: 3 a 5 frases com a resposta; lacunas: o que não foi encontrado ou não é comparável.
-    Recusa (sem gravar) se algum trecho com número não citar fonte, se uma tabela com números não tiver fonte ou se
-    uma citação não existir na lista de fontes. Confere a citação, não o valor: o número é de quem o levantou.
+    Recusa (sem gravar) se algum trecho com número não citar fonte, se uma tabela com números não tiver fonte, se uma
+    citação não existir na lista de fontes ou se um texto terminar no meio. Confere a citação, não o valor: o número é
+    de quem o levantou.
     Devolve numeros_com_fonte (total e quantos estão no texto, nas tabelas e nas lacunas) e avisos a resolver.
     """
     lacunas = [l for l in (lacunas or []) if str(l).strip()]
     secoes = secoes or []
     erros, avisos, ids = _validar(titulo, sumario, secoes, lacunas, fontes)
     if erros:
-        return {"gravado": False, "erros": erros[:30],
-                "como_corrigir": "acrescente [Fn] aos trechos apontados (ou retire o número) e chame de novo"}
+        return {"gravado": False, "erros": erros[:30], **({"avisos": avisos} if avisos else {}),
+                "como_corrigir": "acrescente [Fn] aos trechos apontados (ou retire o número), reenvie inteiro o texto "
+                                 "apontado como truncado, e chame de novo"}
     quando = datetime.now()
     os.makedirs(PASTA, exist_ok=True)
     nome = f"{quando:%Y%m%d-%H%M%S}-{_slug(titulo)}-{secrets.token_hex(4)}"
@@ -363,7 +412,8 @@ def gerar_relatorio(titulo: str, secoes: list[dict], fontes: list[dict], sumario
             "conferencia": "todo número citado aponta para uma fonte da lista; o valor em si não foi conferido contra "
                            "a fonte",
             "fontes": len(ids), **({"avisos": avisos} if avisos else {}),
-            "proximo_passo": "mostre ao usuário o sumário e os dois links (Markdown e Word)"}
+            "proximo_passo": "mostre ao usuário o sumário e os dois links (Markdown e Word), e diga que a conferência "
+                             "foi de citação, não de valor"}
 
 
 if __name__ == "__main__":

@@ -106,6 +106,40 @@ FROM empresas e LEFT JOIN a USING (cnpj) LEFT JOIN f USING (cnpj)
 """
 COLUNAS_EMPRESA = ["cnpj", "nome_social", "nome_comercial", "situacao", "tickers", "anos_com_demonstracoes"]
 
+# universo completo de empresas do setor (4,2 mil em grupos_economicos, 10 mil no cadastro da ANEEL), fora das 151
+# companhias da CVM que estão em empresas: é onde moram as concessões sem apelido de mercado (Energisa Tocantins)
+FORA_DA_CVM = """
+fora AS (SELECT cnpj, agente AS nome, NULL::BOOLEAN AS ativo, 1 AS prioridade,
+                'em grupos_economicos, grupo ' || coalesce(holding_cvm, 'sem holding na CVM') AS origem
+         FROM grupos_economicos WHERE cnpj IS NOT NULL
+         UNION ALL
+         SELECT cnpj, razao_social, ativo, CASE WHEN distribuicao THEN 0 ELSE 1 END,
+                'no cadastro da ANEEL (' || coalesce(sigla, 'sem sigla') || ')'
+         FROM agentes_aneel WHERE cnpj IS NOT NULL)
+"""
+# palavra inteira, não pedaço: '%rge %' em nome casava FOTONS DE SAO GEORGE e '%light%' casava LIGHTSOURCE
+PALAVRA_INTEIRA = ("regexp_matches(' ' || strip_accents(lower(nome)) || ' ', '[^a-z0-9]' "
+                   "|| regexp_escape(strip_accents(lower(?))) || '[^a-z0-9]')")
+
+
+def _fora_da_cvm(con, onde: str, params: list, limite: int) -> list[tuple]:
+    """Busca no universo fora da CVM, nas colunas de COLUNAS_EMPRESA mais a origem e se o CNPJ também está na CVM
+    (nesse caso o cadastro da CVM manda). Quando o termo não diz o segmento, a distribuidora vem antes: é dela o
+    CNPJ de DEC/FEC, tarifa e mercado."""
+    return con.execute(f"""WITH b AS ({BUSCA}), {FORA_DA_CVM},
+            m AS (SELECT cnpj, any_value(nome) AS nome, any_value(origem) AS origem, bool_or(ativo) AS ativo,
+                         min(prioridade) AS prioridade, min(length(nome)) AS tamanho
+                  FROM fora WHERE {onde} GROUP BY cnpj)
+        SELECT m.cnpj, coalesce(b.nome_social, m.nome), b.nome_comercial,
+               coalesce(b.situacao, CASE WHEN m.ativo THEN 'ATIVO na ANEEL' WHEN m.ativo IS NULL
+                                         THEN 'sem registro na CVM' ELSE 'INATIVO na ANEEL' END),
+               b.tickers, coalesce(b.anos_com_demonstracoes, 'não'), m.origem, b.nome_social IS NOT NULL
+        FROM m LEFT JOIN b USING (cnpj) ORDER BY m.prioridade, m.tamanho LIMIT ?""", params + [limite]).fetchall()
+
+
+def _como_fora(prefixo: str, r: tuple) -> str:
+    return f"{prefixo} {r[6]}" + ("" if r[7] else "; agente sem registro na CVM, não tem demonstrações")
+
 
 def _buscar(con, termo: str, limite: int) -> list[dict]:
     termo = termo.strip()
@@ -129,6 +163,11 @@ def _buscar(con, termo: str, limite: int) -> list[dict]:
         juntar(con.execute(f"""WITH b AS ({BUSCA}) SELECT {cols} FROM b JOIN empresas e USING (cnpj)
             WHERE regexp_replace(b.cnpj, '\\D', '', 'g') LIKE '%' || ? || '%' OR ltrim(e.cd_cvm, '0') = ltrim(?, '0')""",
                            [digitos, digitos]).fetchall(), "exata", lambda r: "CNPJ ou código CVM")
+    # 2b. CNPJ inteiro de agente que não é companhia da CVM: é um CNPJ que este mesmo buscar_empresa devolve (passo 5),
+    #     e sem isto ele voltava do passo 7 como "nome parecido" de outra empresa
+    if not achados and len(digitos) == 14:
+        juntar(_fora_da_cvm(con, "regexp_replace(cnpj, '\\D', '', 'g') = ?", [digitos], limite),
+               "exata", lambda r: _como_fora("CNPJ", r))
     # 3. todas as palavras no nome social, comercial ou apelidos
     palavras = [p for p in re.split(r"[^\w]+", termo) if len(p) > 1]
     if palavras:
@@ -148,7 +187,13 @@ def _buscar(con, termo: str, limite: int) -> list[dict]:
             ORDER BY b.nome_social IS NULL, ag.ativo DESC LIMIT ?""", [termo, termo, limite]).fetchall(),
                "exata", lambda r: f"sigla '{r[6]}' do cadastro da ANEEL"
                                   + ("" if r[7] else "; agente sem registro na CVM, não tem demonstrações"))
-    # 5. termo que contém um apelido inteiro ("Neoenergia Coelba" -> Coelba): subsidiária antes da holding, depois o mais longo
+    # 5. palavras do termo no nome completo do universo fora da CVM: "Energisa Tocantins", "Energisa Acre" e
+    #    "Energisa Borborema" são concessões sem apelido de mercado e sem registro na CVM, e caíam no passo 6
+    #    devolvendo o CNPJ da holding do grupo (ENERGISA SA) como se fosse o da distribuidora
+    if not achados and palavras:
+        juntar(_fora_da_cvm(con, " AND ".join([PALAVRA_INTEIRA] * len(palavras)), palavras, limite),
+               "nome", lambda r: _como_fora("palavras do nome", r))
+    # 6. termo que contém um apelido inteiro ("Neoenergia Coelba" -> Coelba): subsidiária antes da holding, depois o mais longo
     if not achados:
         juntar(con.execute(f"""WITH b AS ({BUSCA}) SELECT {cols}, ap.tipo, ap.apelido, ap.observacao
             FROM empresas_apelidos ap JOIN b USING (cnpj)
@@ -156,7 +201,7 @@ def _buscar(con, termo: str, limite: int) -> list[dict]:
                   '[^a-z0-9]' || regexp_escape(strip_accents(lower(ap.apelido))) || '[^a-z0-9]')
             ORDER BY coalesce(ap.observacao, '') LIKE 'holding%', length(ap.apelido) DESC LIMIT ?""", [termo, limite]).fetchall(),
                "nome", lambda r: f"o termo contém o {r[6]} '{r[7]}'" + (f" ({r[8]})" if r[8] else ""))
-    # 6. nada encontrado: nomes parecidos, marcados como aproximados
+    # 7. nada encontrado: nomes parecidos, marcados como aproximados
     if not achados:
         juntar(con.execute(f"""WITH b AS ({BUSCA}) SELECT {cols} FROM b
             ORDER BY jaro_winkler_similarity(b.busca, strip_accents(lower(?))) DESC LIMIT 3""", [termo]).fetchall(),
@@ -175,8 +220,10 @@ def _controladas(con, cnpj: str) -> list[str]:
 @mcp.tool()
 def buscar_empresa(termo: str, limite: int = 8) -> dict:
     """Encontra o CNPJ de empresas do setor elétrico por nome, apelido de mercado (Eletrobras, Taesa, Enel SP), nome
-    antigo, ticker da B3 (TAEE11, CMIG4), CNPJ ou código CVM. Devolve cnpj, nomes, tickers, anos com demonstrações
-    financeiras e a confiança do resultado (exata, nome ou aproximada). Filtre as outras tabelas pelo cnpj."""
+    antigo, ticker da B3 (TAEE11, CMIG4), CNPJ ou código CVM. Acha também a concessão que não é companhia da CVM
+    (Energisa Tocantins, Sulgipe), pelo cadastro da ANEEL e por grupos_economicos: nesses casos anos_com_demonstracoes
+    vem "não" e não há linha em kpis_financeiros. Devolve cnpj, nomes, tickers, anos com demonstrações financeiras e a
+    confiança do resultado (exata, nome ou aproximada). Filtre as outras tabelas pelo cnpj."""
     con = _con()
     try:
         achados = _buscar(con, termo, limite)

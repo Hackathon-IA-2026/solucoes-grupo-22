@@ -1,7 +1,7 @@
 # Fontes em planilha ainda fora do banco
 
 Especificação de **leitura** de quatro fontes em planilha que estão em `data/raw/` e ainda não entram no
-`coppezip.duckdb`. Este documento não implementa nada: ele diz, aba por aba, o que ler, como ler, com que nome, em que
+`energynexus.duckdb`. Este documento não implementa nada: ele diz, aba por aba, o que ler, como ler, com que nome, em que
 tipo, em que formato (longo) e com que ressalvas. Quem escreve o `data/construir.py` é outra frente.
 
 Tudo que está aqui saiu de leitura real dos arquivos. As receitas foram executadas; a contagem de linhas e as 5 linhas
@@ -2313,7 +2313,8 @@ insumo-produto energética em tep: fonte × setor, escopo de balanço energétic
 
 ### 9.1 O que o banco já tem e como as 34 tabelas se encaixam
 
-Abri o banco em `/local/al.richard.viana/coppezip-platform/data/coppezip.duckdb` **sempre com
+Abri o banco em `/local/al.richard.viana/coppezip-platform/data/coppezip.duckdb` (o arquivo no disco local guarda o
+nome antigo; no repositório ele é `data/energynexus.duckdb`, um link para lá) **sempre com
 `ATTACH ... (READ_ONLY)`** e li a tabela `catalogo`: **65 tabelas, 18.625.032 linhas**. Fatos relevantes:
 
 - **Não existe nenhuma tabela `epe_*`.** A EPE não é fonte do banco hoje.
