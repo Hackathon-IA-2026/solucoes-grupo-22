@@ -28,7 +28,7 @@ Sem link público: o chat roda nos servidores do IMPA e é aberto por túnel SSH
 | `vllm.sh` | sobe o modelo próprio numa máquina com GPU |
 | `proper_mcps/` | ferramentas MCP: `dados` (banco DuckDB), `docs` (busca nos relatórios em PDF), `relatorio` (Markdown e Word) |
 | `proper_skills/` | roteiros do analista: benchmark de distribuidoras, ficha de crédito, investimento na transição, avaliação climática |
-| `data/` | coleta (`baixar.py`), montagem do banco (`construir.py`), índice dos PDFs (`indexar_docs.py`) e documentação das tabelas (`DADOS.md`); os dados em si ficam aqui, fora do git |
+| `data/` | coleta (`baixar.py`), montagem do banco (`construir.py`), índice dos PDFs (`indexar_docs.py`), documentação das tabelas (`DADOS.md`) e scripts do acervo documental das 11 elétricas (`acervo/`); os dados em si ficam aqui, fora do git |
 | `researches/` | pesquisa de fontes de dados e dicionário de dados |
 | `eval/` | cliente do chat (`chat.py`) e regressão com perguntas de resposta conhecida (`regressao.py`) |
 | `client/src/style.css` | o tema do CoppeZIP (a única mudança no código do LibreChat) |
@@ -78,6 +78,7 @@ Os dados não vão para o git. Coloque em `data/`:
 | `data/coppezip.duckdb` | `.runtime/venv/bin/python data/construir.py`, depois `data/documentar.py` |
 | `data/modelos/multilingual-e5-large/` | o modelo `intfloat/multilingual-e5-large` do Hugging Face, copiado sem links simbólicos |
 | `data/docs.duckdb` | `.runtime/venv/bin/python data/indexar_docs.py` (PDFs em `data/raw/pdfs_esg/`) |
+| `data/raw/acervo/` | acervo documental das 11 elétricas: a pasta `dados_hackathon` do Drive copiada inteira; ou, para baixar das fontes, o `_indice/checklist_documentos.csv` do Drive (sem o `_log_download.jsonl`, que marca o que já foi baixado) e depois `data/acervo/baixar_nucleo.py`, `montar_indice.py` e `dados_estruturados.py` |
 
 Os bancos prontos também estão no Drive, em `bancos/`.
 

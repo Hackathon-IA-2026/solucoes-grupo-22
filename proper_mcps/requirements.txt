@@ -8,3 +8,4 @@ pymupdf==1.28.2
 fastembed==0.8.1
 pyyaml==6.0.3
 numpy==2.5.3
+pandas==3.0.6
