@@ -61,6 +61,11 @@ const loadBuscaView = () =>
     Component: m.default,
   }));
 
+const loadGrafoView = () =>
+  import('~/components/Coppezip/GrafoView').then((m) => ({
+    Component: m.default,
+  }));
+
 const baseEl = document.querySelector('base');
 const baseHref = baseEl?.getAttribute('href') || '/';
 
@@ -203,6 +208,10 @@ export const router = createBrowserRouter(
             {
               path: 'busca',
               lazy: loadBuscaView,
+            },
+            {
+              path: 'grafo',
+              lazy: loadGrafoView,
             },
           ],
         },

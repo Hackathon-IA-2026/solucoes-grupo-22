@@ -10,6 +10,7 @@ import threading
 
 import duckdb
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # raiz do repositório
 
@@ -46,12 +47,17 @@ def _embed(texto: str) -> list[float]:
     global _modelo
     with _trava:
         if _modelo is None:
+            # ToolError chega ao modelo com o motivo; outra exceção vira só "Error executing tool" e parece falha passageira
+            if not os.path.exists(os.path.join(PASTA_MODELO, "model.onnx")):
+                raise ToolError(f"base de documentos indisponível: falta o modelo de embeddings em {PASTA_MODELO}")
             from fastembed import TextEmbedding
             _modelo = TextEmbedding(MODELO, specific_model_path=PASTA_MODELO, threads=4)
         return next(iter(_modelo.embed([f"query: {texto}"]))).tolist()
 
 
 def _con():
+    if not os.path.exists(DB):
+        raise ToolError(f"base de documentos indisponível: o índice {DB} não existe (data/indexar_docs.py)")
     con = duckdb.connect(DB, read_only=True)
     con.execute("LOAD fts")
     return con

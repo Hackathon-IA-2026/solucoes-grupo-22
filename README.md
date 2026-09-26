@@ -32,7 +32,7 @@ Sem link público: o chat roda nos servidores do IMPA e é aberto por túnel SSH
 | `researches/` | pesquisa de fontes de dados e dicionário de dados |
 | `eval/` | cliente do chat (`chat.py`) e regressão com perguntas de resposta conhecida (`regressao.py`) |
 | `client/src/style.css` | o tema do CoppeZIP |
-| abas Painel e Busca | `client/src/components/Coppezip/`, `client/src/components/Nav/CoppezipNavButtons.tsx`, as rotas `/painel` e `/busca` em `client/src/routes/index.tsx`, e `api/server/routes/painel.js` e `busca.js` (registradas em `api/server/index.js` e `routes/index.js`) |
+| abas Painel, Busca e Grafo | `client/src/components/Coppezip/`, `client/src/components/Nav/CoppezipNavButtons.tsx`, as rotas `/painel`, `/busca` e `/grafo` em `client/src/routes/index.tsx`, e `api/server/routes/painel.js` e `busca.js` (registradas em `api/server/index.js` e `routes/index.js`) |
 
 O resto (`api/`, `client/`, `packages/`, `config/`...) é o LibreChat. Mudou algo em `client/`? Recompile com
 `PATH=$PWD/.runtime/bin:$PATH npm run frontend` (o Node do sistema pode ser antigo demais). O README original está em `README.librechat.md`.
@@ -84,7 +84,7 @@ Os dados não vão para o git. Coloque em `data/`:
 
 Os bancos prontos também estão no Drive, em `bancos/`.
 
-### Abas Painel e Busca
+### Abas Painel, Busca e Grafo
 
 Ao lado do chat (ícones na barra lateral), só para usuários logados:
 
@@ -96,6 +96,13 @@ Ao lado do chat (ícones na barra lateral), só para usuários logados:
 - **Busca** (`/busca`): responde "em que página está isso?" nos PDFs indexados, com o trecho, a imagem da página e o
   PDF. Usa o mesmo índice e modelo do `coppezip-docs` (`data/docs.duckdb`, `data/modelos/`); o `iniciar.sh` sobe
   `proper_mcps/docs/busca.py` em `127.0.0.1:BUSCA_PORTA` e o LibreChat repassa `/api/busca`.
+- **Grafo** (`/grafo`, `?empresa=<CNPJ só com dígitos>`): grafo de conhecimento de uma empresa, trazido do CoppeZIP
+  (Chainlit). Empresa → categoria (cada base do painel com dados dela, e os documentos por área) → indicadores (as
+  medidas do painel, por período, com a mesma regra de agregação) e referências (a base, ou o PDF, agrupados por tipo).
+  A empresa é o CNPJ, que liga as bases do `painel.json` entre si e aos documentos de `/api/busca/resumo`; não há
+  serviço novo, o grafo é montado no navegador (`grafo/dados.ts`). Sem o serviço de busca, sai só com as bases.
+  Arraste para navegar, roda do mouse para zoom, duplo clique recolhe ou expande, clique abre os dados e a fonte (com o
+  PDF, pela rota da Busca). As cores vêm do tema (claro e escuro) e o CSS só usa classes `kg-`.
 
 ## Testes
 

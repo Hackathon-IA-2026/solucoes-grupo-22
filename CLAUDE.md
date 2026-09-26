@@ -5,7 +5,7 @@ Guia para agentes que trabalham neste repositório. Responda e escreva em portug
 ## O que é
 
 CoppeZIP: chat de inteligência do setor elétrico. A raiz é o LibreChat v0.8.7 (mudamos só o tema,
-`client/src/style.css`, e as abas Painel e Busca, listadas no README). Tudo o que é nosso está em:
+`client/src/style.css`, e as abas Painel, Busca e Grafo, listadas no README). Tudo o que é nosso está em:
 
 - `librechat.yaml`: modelos (vLLM `CoppeZIP` e `bedrock`), perfis do analista com o prompt (âncora `&prompt`,
   reaproveitada pelo perfil do Claude), servidores MCP e busca web;
@@ -21,9 +21,10 @@ CoppeZIP: chat de inteligência do setor elétrico. A raiz é o LibreChat v0.8.7
   valores padrão alternativos; o que é configurável (portas, chaves, endereço do modelo) fica no `.env`.
 - **Mínimo e funcionando.** Não deixe código que não foi testado nem arquivos sem uso. Prefira mudar o que existe a
   criar camadas novas.
-- **Não mexa no código do LibreChat** (`api/`, `client/`, `packages/`, `config/`) além do tema e das abas Painel e
-  Busca. Comportamento do chat se muda pelo `librechat.yaml`. Mudou `client/`? `PATH=$PWD/.runtime/bin:$PATH npm run
-  frontend` (com o Node do sistema o build falha depois de apagar `packages/data-provider/dist`).
+- **Não mexa no código do LibreChat** (`api/`, `client/`, `packages/`, `config/`) além do tema e das abas Painel,
+  Busca e Grafo. Comportamento do chat se muda pelo `librechat.yaml`. Mudou `client/`?
+  `PATH=$PWD/.runtime/bin:$PATH npm run frontend` (com o Node do sistema o build falha depois de apagar
+  `packages/data-provider/dist`).
 - **Nunca vão para o git:** `.env`, `.runtime/`, dados (`data/raw`, `data/parquet`, `data/modelos`, `data/*.duckdb`,
   `data/painel.json`), chaves, senhas.
 - **Commits:** mensagem em português no estilo `dados: ...`, `mcp: ...`, `chat: ...`. Autor: o usuário do repositório.
@@ -54,3 +55,4 @@ prompt ou o `librechat.yaml`? Reinicie (`./parar.sh && ./iniciar.sh`) e rode a r
 | novo caso de regressão | `CASOS` em `eval/regressao.py`, com o valor conferido na fonte |
 | nova tabela na aba Painel | `CONJUNTOS` em `data/exportar_painel.py` |
 | aba Busca | `proper_mcps/docs/busca.py` (serviço) e `client/src/components/Coppezip/BuscaView.tsx` (tela) |
+| aba Grafo | `client/src/components/Coppezip/grafo/dados.ts` (nós a partir do `painel.json` e dos documentos), `modelo.ts` (layout), `GraphView.tsx` e `grafo.css` (tela); página em `GrafoView.tsx` |

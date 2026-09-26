@@ -79,7 +79,7 @@ def resumo(_: dict) -> dict:
     con = _conectar()
     try:
         cur = con.execute("""
-            SELECT d.arquivo, d.empresa, d.ano, d.tipo, d.titulo, d.paginas, d.url,
+            SELECT d.arquivo, d.area, d.empresa, d.cnpj, d.ano, d.tipo, d.titulo, d.paginas, d.url,
                    count(DISTINCT t.pagina) AS paginas_com_texto
             FROM documentos d LEFT JOIN trechos t USING (arquivo) GROUP BY ALL ORDER BY d.empresa, d.ano, d.titulo""")
         nomes = [c[0] for c in cur.description]
