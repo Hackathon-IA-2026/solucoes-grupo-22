@@ -247,3 +247,27 @@ fonte (tooltip/rodapé D#/B#/W#). Validação de citação análoga à do `relat
 **Fora desta entrega**: promessa × entrega (§2), diff entre edições (§4), mapa da expansão (§6), briefing de uma
 página (§7) e grafo societário (§8); publicação do `coppezip-placar` no AgentCore (precisa do `placar.duckdb` no
 S3 — os outros três MCP já rodam lá).
+
+**Resultado medido (26/09/2026, tudo rodado nesta máquina):**
+
+| Verificação | Resultado |
+|---|---|
+| `.runtime/venv/bin/python -m pytest proper_mcps -q` | **78 testes verdes** (ferramentas, telas, extração) |
+| `node eval/e2e/telas.js` | **10 checagens verdes** (barras, fonte em toda linha, dobrar o preço dobra a exposição) |
+| `eval/regressao.py` (casos novos) | **6/6**, de 21 a 90 s por pergunta |
+| `data/conferir_placar.py` | 7/18 batem com o gabarito §3.2; 4 divergem (edições diferentes), 6 faltam (empresa sem relatório na base), 1 rejeitado na checagem de fonte |
+| Base extraída (`placar.duckdb`) | emissões 43/48 com fonte confirmada (8 empresas), metas 19/26 (5), renovável 6/13 (5), CAPEX 11/15 (6), frameworks 39/56 (10) |
+| Pergunta real no chat | "tela da exposição a R$ 150/t" → 63 s, `exposicao_carbono` + `tela_carbono`, link e as duas maiores com arquivo, página e a conta |
+
+**Limitações registradas** (além das lacunas do §8):
+
+- **"% renovável declarado × SIGA" quase não dispara**: o relatório é da holding e o SIGA atribui a usina ao CNPJ
+  que participa dela (a térmica da EDP, por exemplo, não está sob o CNPJ do relatório). E quando a empresa só
+  divulga "% da **geração**", não dá para confrontar com a **capacidade** do SIGA — o radar registra em
+  `nao_comparaveis` em vez de inventar um alerta.
+- **Extração não é determinística**: o Claude no Bedrock não aceita `temperature` fixa (o parâmetro foi depreciado
+  para o Sonnet 5), então duas rodadas podem achar coisas diferentes numa tabela ambígua. É justamente o que a
+  concordância de duas leituras filtra — ao custo de perder valor real de vez em quando (a CPFL só entrou com 3
+  páginas candidatas; com 6 as duas leituras não fecharam).
+- **Escopo faltando**: Auren e Engie entram na exposição a carbono só com o escopo 1, porque o relatório indexado
+  não traz o 2. A ferramenta devolve `escopos_sem_valor` e a tela mostra a ressalva na linha.
