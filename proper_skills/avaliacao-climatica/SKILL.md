@@ -5,9 +5,9 @@ description: Roteiro de avaliação climática de empresas do setor elétrico (e
 
 # Avaliação climática
 
-Orçamento: até 8 chamadas de ferramenta. Emissões e metas vêm dos relatórios: faça poucas buscas bem filtradas
+Emissões e metas vêm dos relatórios: faça poucas buscas bem filtradas
 (`buscar_documentos` com empresa e ano) e use `ler_pagina` só na página da tabela de emissões. Não repita a mesma
-busca com palavras parecidas. Se o orçamento acabar, entregue o que foi confirmado e liste o resto em Lacunas.
+busca com palavras parecidas.
 
 ## 1. Fixe o escopo comum
 

@@ -5,9 +5,8 @@ description: Roteiro para comparar como empresas do setor elétrico investem na 
 
 # Comparação de investimento na transição
 
-Orçamento: até 8 chamadas de ferramenta. Uma chamada de `indicadores_financeiros` por empresa e uma consulta
-agregada por tabela (todas as empresas no mesmo `WHERE cnpj IN (...)`). Se o orçamento acabar, entregue o que foi
-confirmado e liste o resto em Lacunas.
+Uma chamada de `indicadores_financeiros` por empresa e uma consulta
+agregada por tabela (todas as empresas no mesmo `WHERE cnpj IN (...)`).
 
 ## 1. Fixe o escopo comum
 

@@ -5,8 +5,8 @@ description: Roteiro de benchmark regulatório de distribuidoras de energia (DEC
 
 # Benchmark regulatório de distribuidoras
 
-Orçamento: até 8 chamadas de ferramenta. Prefira uma consulta SQL agregada por tabela, com todas as distribuidoras
-no mesmo `WHERE cnpj IN (...)`. Se o orçamento acabar, entregue o que já foi confirmado e liste o resto em Lacunas.
+Prefira uma consulta SQL agregada por tabela, com todas as distribuidoras
+no mesmo `WHERE cnpj IN (...)`.
 
 ## 1. Fixe o escopo comum (antes de consultar)
 

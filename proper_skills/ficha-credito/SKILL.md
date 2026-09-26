@@ -5,8 +5,8 @@ description: Roteiro de ficha ou nota de crédito de empresa do setor elétrico 
 
 # Ficha de crédito
 
-Orçamento: até 8 chamadas de ferramenta. `indicadores_financeiros` já traz quase tudo de uma vez; use SQL só para
-debêntures, BNDES e contratos. Se o orçamento acabar, entregue o que foi confirmado e liste o resto em Lacunas.
+`indicadores_financeiros` já traz quase tudo de uma vez; use SQL só para
+debêntures, BNDES e contratos.
 
 ## 1. Fixe o escopo comum
 
