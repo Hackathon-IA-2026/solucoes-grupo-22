@@ -4,14 +4,17 @@ Guia para agentes que trabalham neste repositório. Responda e escreva em portug
 
 ## O que é
 
-CoppeZIP: chat de inteligência do setor elétrico. A raiz é o LibreChat v0.8.7 (o único arquivo do LibreChat que
-mudamos é `client/src/style.css`, o tema). Tudo o que é nosso está em:
+CoppeZIP: chat de inteligência do setor elétrico. A raiz é o LibreChat v0.8.7 (no LibreChat mudamos só o tema,
+`client/src/style.css`, e a aba Timeline: `client/src/components/Timeline/`, registrada em `client/src/routes/index.tsx`,
+`client/src/hooks/Nav/useSideNavLinks.ts` e na chave `com_ui_timeline` das traduções). Tudo o que é nosso está em:
 
 - `librechat.yaml`: modelos (vLLM `CoppeZIP` e `bedrock`), perfis do analista com o prompt (âncora `&prompt`,
   reaproveitada pelo perfil do Claude), servidores MCP e busca web;
 - `.env.example`: portas, segredos, endereço do vLLM, região do Bedrock (o `.env` real nunca vai para o git);
 - `instalar.sh`, `iniciar.sh`, `parar.sh`, `vllm.sh`;
-- `proper_mcps/` (dados, docs, relatorio), `proper_skills/`, `data/`, `researches/`, `eval/`.
+- `proper_mcps/` (dados, docs, relatorio), `proper_skills/`, `data/`, `researches/`, `eval/`;
+- `data/linha_do_tempo.py`: os dados da aba Timeline (eventos, trajetórias e gráficos de cada empresa), gerados dos dois
+  bancos em `.runtime/linha_do_tempo/` pelo `iniciar.sh` e servidos em `/linha_do_tempo/`.
 
 ## Regras
 
@@ -20,8 +23,8 @@ mudamos é `client/src/style.css`, o tema). Tudo o que é nosso está em:
   valores padrão alternativos; o que é configurável (portas, chaves, endereço do modelo) fica no `.env`.
 - **Mínimo e funcionando.** Não deixe código que não foi testado nem arquivos sem uso. Prefira mudar o que existe a
   criar camadas novas.
-- **Não mexa no código do LibreChat** (`api/`, `client/`, `packages/`, `config/`) além do tema. Comportamento do chat
-  se muda pelo `librechat.yaml`.
+- **Não mexa no código do LibreChat** (`api/`, `client/`, `packages/`, `config/`) além do tema e da aba Timeline.
+  Comportamento do chat se muda pelo `librechat.yaml`.
 - **Nunca vão para o git:** `.env`, `.runtime/`, dados (`data/raw`, `data/parquet`, `data/modelos`, `data/*.duckdb`),
   chaves, senhas.
 - **Commits:** mensagem em português no estilo `dados: ...`, `mcp: ...`, `chat: ...`. Autor: o usuário do repositório.
@@ -31,14 +34,15 @@ mudamos é `client/src/style.css`, o tema). Tudo o que é nosso está em:
 ## Como testar
 
 ```bash
-.runtime/venv/bin/python -m pytest proper_mcps -q        # ferramentas MCP, contra o banco de data/
+.runtime/venv/bin/python -m pytest proper_mcps data -q   # ferramentas MCP e linha do tempo, contra os bancos de data/
 ./iniciar.sh && eval/usuario.sh                          # chat no ar e usuário de teste (uma vez)
 python3 eval/chat.py "Qual foi a receita líquida da Taesa em 2025?"          # modelo padrão (vLLM)
 python3 eval/chat.py --perfil coppezip-analista-claude "a mesma pergunta"     # Claude pelo Bedrock
 python3 eval/regressao.py                                # 27 perguntas com resposta conhecida
 ```
 
-Mudou o banco (`data/construir.py`)? Rode os testes das ferramentas e a regressão. Mudou o prompt ou o
+Mudou o banco (`data/construir.py` ou `data/indexar_docs.py`)? Rode os testes e a regressão; a linha do tempo se refaz
+no próximo `./iniciar.sh` (ou com `.runtime/venv/bin/python data/linha_do_tempo.py`). Mudou o prompt ou o
 `librechat.yaml`? Reinicie (`./parar.sh && ./iniciar.sh`) e rode a regressão.
 
 ## Onde mexer
@@ -50,3 +54,4 @@ Mudou o banco (`data/construir.py`)? Rode os testes das ferramentas e a regress�
 | novo roteiro do analista | `proper_skills/<nome>/SKILL.md` |
 | regra de resposta | `promptPrefix` do perfil `coppezip-analista` no `librechat.yaml` |
 | novo caso de regressão | `CASOS` em `eval/regressao.py`, com o valor conferido na fonte |
+| aba Timeline | dados em `data/linha_do_tempo.py` (temas, eventos, trajetórias; teste em `data/test_linha_do_tempo.py`), tela em `client/src/components/Timeline/` (depois `npm run frontend`) |

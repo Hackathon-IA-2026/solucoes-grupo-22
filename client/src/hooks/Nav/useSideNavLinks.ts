@@ -3,6 +3,7 @@ import { MCPIcon, AttachmentIcon, OpenAIMinimalIcon } from '@librechat/client';
 import {
   Bot,
   Brain,
+  History,
   Bookmark,
   NotebookPen,
   ScrollText,
@@ -34,6 +35,7 @@ import { MemoryPanel } from '~/components/SidePanel/Memories';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import { PromptsAccordion } from '~/components/Prompts';
 import { SkillsAccordion } from '~/components/Skills';
+import { TimelinePanel } from '~/components/Timeline';
 
 export default function useSideNavLinks({
   hidePanel,
@@ -95,6 +97,14 @@ export default function useSideNavLinks({
 
   const Links = useMemo(() => {
     const links: NavLink[] = [];
+
+    links.push({
+      title: 'com_ui_timeline',
+      label: '',
+      icon: History,
+      id: 'timeline',
+      Component: TimelinePanel,
+    });
 
     if (
       endpointsConfig?.[EModelEndpoint.agents] &&
