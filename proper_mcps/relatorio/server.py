@@ -22,6 +22,11 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 PASTA = os.path.join(RAIZ, ".runtime", "relatorios")
 URL_BASE = "/relatorios"  # o LibreChat serve .runtime/relatorios nesse caminho (iniciar.sh)
 
+
+def publicar(caminho: str) -> str:
+    """Link para baixar um arquivo gravado. Aqui o LibreChat serve a pasta; no AgentCore o arquivo vai para o S3."""
+    return f"{URL_BASE}/{os.path.basename(caminho)}"
+
 INSTRUCOES = """Use gerar_relatorio quando o usuário pedir relatório, memorando, ficha, nota para comitê ou resumo
 para conselho que ele vá guardar ou enviar. Antes, levante os números com as outras ferramentas: gerar_relatorio só
 formata e confere, não busca dados. Cada fonte recebe um id (F1, F2...); todo parágrafo ou item com número cita o id
@@ -314,7 +319,8 @@ def gerar_relatorio(titulo: str, secoes: list[dict], fontes: list[dict], sumario
         f.write(md)
     _docx(os.path.join(PASTA, nome + ".docx"), titulo, sumario, secoes, lacunas, ids, quando)
     return {"gravado": True,
-            "arquivos": {"markdown": f"{URL_BASE}/{nome}.md", "docx": f"{URL_BASE}/{nome}.docx"},
+            "arquivos": {"markdown": publicar(os.path.join(PASTA, nome + ".md")),
+                         "docx": publicar(os.path.join(PASTA, nome + ".docx"))},
             "numeros_conferidos": sum(len(_numeros(b)) for b in _blocos(sumario)) +
                                   sum(len(_numeros(b)) for s in secoes for b in _blocos(s.get("texto") or "")),
             "fontes": len(ids), **({"avisos": avisos} if avisos else {}),
