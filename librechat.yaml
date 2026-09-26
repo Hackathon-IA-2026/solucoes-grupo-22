@@ -52,7 +52,7 @@ endpoints:
       # ele poda o histórico no meio das chamadas de ferramenta, o modelo repete buscas e a sumarização automática
       # apaga a pergunta ("400 No user query found in messages", resposta vazia). O vLLM serve 256 mil.
       tokenConfig:
-        "qwen3.8-27b": {prompt: 0, completion: 0, context: 1000000}
+        "qwen3.8-27b": {prompt: 0, completion: 0, context: 256000}
   # recursionLimit conta passos do agente: cada chamada de ferramenta gasta 2, então 300 são cerca de 150 chamadas
   # (só uma trava contra laço infinito; o padrão do LibreChat, 25, corta análises longas)
   agents:
@@ -85,7 +85,7 @@ modelSpecs:
         model: "qwen3.8-27b"
         modelLabel: "CoppeZIP"
         # o LibreChat não conhece o modelo e assumiria 32 mil tokens: poda o histórico e perde a pergunta
-        maxContextTokens: 200000
+        maxContextTokens: 256000  # o vLLM aceita até 262.144 (--max-model-len no vllm.sh)
         promptPrefix: &prompt |
           Você é o CoppeZIP, analista de inteligência do setor elétrico brasileiro. Atende executivos, analistas de
           investimento, consultores e especialistas em clima que querem entender como cada empresa investe, se posiciona
@@ -161,7 +161,7 @@ modelSpecs:
         endpoint: "bedrock"
         model: "us.anthropic.claude-sonnet-5"
         modelLabel: "CoppeZIP (Claude)"
-        maxContextTokens: 200000
+        maxContextTokens: 1000000
         promptPrefix: *prompt
 # Busca web nativa do LibreChat: Serper (resultados do Google) busca e lê as páginas; Jina reordena os trechos.
 # Chaves no .env (SERPER_API_KEY, JINA_API_KEY).

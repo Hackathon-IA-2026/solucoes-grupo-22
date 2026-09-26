@@ -28,11 +28,12 @@ Sem link público: o chat roda nos servidores do IMPA e é aberto por túnel SSH
 | `vllm.sh` | sobe o modelo próprio numa máquina com GPU |
 | `proper_mcps/` | ferramentas MCP: `dados` (banco DuckDB), `docs` (busca nos relatórios em PDF; `busca.py` atende a aba Busca), `relatorio` (Markdown e Word) |
 | `proper_skills/` | roteiros do analista: benchmark de distribuidoras, ficha de crédito, investimento na transição, avaliação climática |
-| `data/` | coleta (`baixar.py`), montagem do banco (`construir.py`), índice dos PDFs (`indexar_docs_titan.py`, em uso; `indexar_docs.py` é a versão com o e5 local), dados da aba Painel (`exportar_painel.py`) e documentação das tabelas (`DADOS.md`); os dados em si ficam aqui, fora do git |
+| `data/` | coleta (`baixar.py`), montagem do banco (`construir.py`), índice dos PDFs (`indexar_docs_titan.py`, em uso; `indexar_docs.py` é a versão com o e5 local), dados da aba Painel (`exportar_painel.py`), dados da aba Timeline (`linha_do_tempo.py`) e documentação das tabelas (`DADOS.md`); os dados em si ficam aqui, fora do git |
 | `researches/` | pesquisa de fontes de dados e dicionário de dados |
 | `eval/` | cliente do chat (`chat.py`) e regressão com perguntas de resposta conhecida (`regressao.py`) |
 | `client/src/style.css` | o tema do CoppeZIP |
 | abas Painel, Busca e Grafo | `client/src/components/Coppezip/`, `client/src/components/Nav/CoppezipNavButtons.tsx`, as rotas `/painel`, `/busca` e `/grafo` em `client/src/routes/index.tsx`, e `api/server/routes/painel.js` e `busca.js` (registradas em `api/server/index.js` e `routes/index.js`) |
+| aba Timeline | `client/src/components/Timeline/`: evolução de cada empresa (eventos por ano, impacto, indicadores e fontes), trajetórias estratégicas e gráficos; registrada em `client/src/routes/index.tsx`, `client/src/hooks/Nav/useSideNavLinks.ts` e na chave `com_ui_timeline` das traduções |
 
 O resto (`api/`, `client/`, `packages/`, `config/`...) é o LibreChat. Mudou algo em `client/`? Recompile com
 `PATH=$PWD/.runtime/bin:$PATH npm run frontend` (o Node do sistema pode ser antigo demais). O README original está em `README.librechat.md`.
@@ -82,7 +83,9 @@ Os dados não vão para o git. Coloque em `data/`:
 | `data/docs_titan.duckdb` | `.runtime/venv/bin/python data/indexar_docs_titan.py`, com as credenciais da AWS em `~/.aws/credentials` (o índice em uso; `data/indexar_docs.py` monta a versão com o e5 local em `data/docs.duckdb`, que o chat não usa). PDFs em `data/raw/sustentabilidade/<empresa>/<ano>/` e `data/raw/financeiro/<empresa>/pdfs/<ano>/`, organizados por `data/organizar.py` e descritos em `data/documentos.csv` |
 | `data/painel.json` | `.runtime/venv/bin/python data/exportar_painel.py`, depois do `construir.py` |
 
-Os bancos prontos também estão no Drive, em `bancos/`.
+Os bancos prontos também estão no Drive, em `bancos/`. A aba Timeline lê os parágrafos dos relatórios da tabela `blocos`
+do `docs.duckdb`: um índice feito antes dela precisa ser refeito com `data/indexar_docs.py` (os embeddings são
+reaproveitados). O `iniciar.sh` monta a linha do tempo de cada empresa (`data/linha_do_tempo.py`) a cada início.
 
 ### Abas Painel, Busca e Grafo
 
@@ -107,7 +110,7 @@ Ao lado do chat (ícones na barra lateral), só para usuários logados:
 ## Testes
 
 ```bash
-.runtime/venv/bin/python -m pytest proper_mcps -q     # ferramentas, contra o banco de data/
+.runtime/venv/bin/python -m pytest proper_mcps data -q   # ferramentas e linha do tempo, contra os bancos de data/
 eval/usuario.sh                                       # uma vez: usuário de teste no LibreChat
 python3 eval/chat.py "Qual foi a receita líquida da Taesa em 2025?"
 python3 eval/regressao.py                             # 27 perguntas; --perfil coppezip-analista-claude para o Claude

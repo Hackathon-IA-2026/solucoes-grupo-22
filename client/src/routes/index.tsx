@@ -41,6 +41,11 @@ const loadSkillsView = () =>
     Component: m.default,
   }));
 
+const loadTimelineView = () =>
+  import('~/components/Timeline').then((m) => ({
+    Component: m.TimelineView,
+  }));
+
 const loadProjectsView = () =>
   import('~/components/Projects').then((m) => ({
     Component: m.ProjectsView,
@@ -176,6 +181,14 @@ export const router = createBrowserRouter(
             {
               path: 'skills/:skillId/edit',
               lazy: loadSkillsView,
+            },
+            {
+              path: 'timeline',
+              lazy: loadTimelineView,
+            },
+            {
+              path: 'timeline/:empresaId',
+              lazy: loadTimelineView,
             },
             {
               path: 'projects',

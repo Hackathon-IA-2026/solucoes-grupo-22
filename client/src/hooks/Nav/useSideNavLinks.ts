@@ -34,6 +34,7 @@ import { MemoryPanel } from '~/components/SidePanel/Memories';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
 import { PromptsAccordion } from '~/components/Prompts';
 import { SkillsAccordion } from '~/components/Skills';
+import { TimelinePanel, TimelineIcon } from '~/components/Timeline';
 
 export default function useSideNavLinks({
   hidePanel,
@@ -95,6 +96,14 @@ export default function useSideNavLinks({
 
   const Links = useMemo(() => {
     const links: NavLink[] = [];
+
+    links.push({
+      title: 'com_ui_timeline',
+      label: '',
+      icon: TimelineIcon,
+      id: 'timeline',
+      Component: TimelinePanel,
+    });
 
     if (
       endpointsConfig?.[EModelEndpoint.agents] &&

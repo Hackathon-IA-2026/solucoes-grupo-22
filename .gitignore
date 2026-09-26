@@ -183,6 +183,7 @@ codedb.snapshot
 # CoppeZIP
 .runtime
 client/public/assets/relatorios
+client/public/assets/linha_do_tempo
 data/raw
 data/parquet
 data/modelos
@@ -191,5 +192,7 @@ data/painel.json
 !librechat.yaml
 !CLAUDE.md
 data/violations.json
-data/build_*/
 __pycache__/
+*.pyc
+data/build_*/
+proper_mcps/agentcore/cdk.out/
