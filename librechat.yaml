@@ -1,0 +1,168 @@
+# Configuração do LibreChat do CoppeZIP. Segredos e endereços ficam no .env.
+version: 1.3.13
+cache: true
+interface:
+  customWelcome: "CoppeZIP — inteligência comparativa do setor elétrico"
+endpoints:
+  # Claude pelo Amazon Bedrock (conta do hackathon); credenciais pela cadeia padrão da AWS (~/.aws/credentials)
+  bedrock:
+    availableRegions: ["us-west-2"]
+    models: ["us.amazon.nova-2-lite-v1:0","us.amazon.nova-lite-v1:0","us.amazon.nova-micro-v1:0","us.amazon.nova-premier-v1:0","us.amazon.nova-pro-v1:0","us.anthropic.claude-3-haiku-20240307-v1:0","us.anthropic.claude-3-sonnet-20240229-v1:0","us.anthropic.claude-fable-5","us.anthropic.claude-fable-5-1","us.anthropic.claude-haiku-4-5-20251001-v1:0","us.anthropic.claude-opus-4-1-20250805-v1:0","us.anthropic.claude-opus-4-5-20251101-v1:0","us.anthropic.claude-opus-4-6-v1","us.anthropic.claude-opus-4-7","us.anthropic.claude-opus-4-8","us.anthropic.claude-opus-5","us.anthropic.claude-opus-5-5","us.anthropic.claude-sonnet-4-20250514-v1:0","us.anthropic.claude-sonnet-4-5-20250929-v1:0","us.anthropic.claude-sonnet-4-6","us.anthropic.claude-sonnet-5","us.deepseek.r1-v1:0","us.meta.llama3-1-70b-instruct-v1:0","us.meta.llama3-1-8b-instruct-v1:0","us.meta.llama3-2-11b-instruct-v1:0","us.meta.llama3-2-1b-instruct-v1:0","us.meta.llama3-2-3b-instruct-v1:0","us.meta.llama3-2-90b-instruct-v1:0","us.meta.llama3-3-70b-instruct-v1:0","us.meta.llama4-maverick-17b-instruct-v1:0","us.meta.llama4-scout-17b-instruct-v1:0","us.mistral.pixtral-large-2502-v1:0","us.moonshotai.kimi-k3","us.openai.gpt-5.4","us.openai.gpt-5.5","us.openai.gpt-5.6-luna","us.openai.gpt-5.6-sol","us.openai.gpt-5.6-terra","us.openai.gpt-6-astra","us.openai.gpt-6-luna","us.openai.gpt-6-sol","us.writer.palmyra-x4-v1:0","us.writer.palmyra-x5-v1:0","us.xai.grok-4.6"]
+  custom:
+    - name: "CoppeZIP"
+      apiKey: "${VLLM_API_KEY}"
+      baseURL: "${VLLM_BASE_URL}"
+      models:
+        default: ["qwen3.8-27b"]
+        fetch: true
+      titleConvo: true
+      titleModel: "current_model"
+      modelDisplayLabel: "CoppeZIP"
+      # Janela de contexto do modelo para todo pedido (interface, eval/chat.py, agentes). Sem isto o LibreChat assume
+      # 32 mil tokens quando o pedido não traz o preset (a API com enforce: false só aplica o promptPrefix do perfil):
+      # ele poda o histórico no meio das chamadas de ferramenta, o modelo repete buscas e a sumarização automática
+      # apaga a pergunta ("400 No user query found in messages", resposta vazia). O vLLM serve 256 mil.
+      tokenConfig:
+        "qwen3.8-27b": {prompt: 0, completion: 0, context: 1000000}
+  # Agentes (perfil do analista, Coordenador e subagentes). recursionLimit conta passos do grafo: cada chamada de
+  # ferramenta gasta 2, então 50 são cerca de 24 chamadas.
+  agents:
+    recursionLimit: 50
+    maxRecursionLimit: 50
+# Perfil padrão do chat: prompt de sistema, servidores MCP já ligados e perguntas sugeridas.
+# eval/chat.py lê este perfil em /api/config, então as personas conversam com o mesmo agente que os usuários.
+modelSpecs:
+  enforce: false
+  prioritize: true
+  list:
+    - name: "coppezip-analista"
+      label: "CoppeZIP Analista"
+      description: "Análise do setor elétrico com dados da CVM, ANEEL, ONS, BNDES e relatórios das empresas"
+      default: true
+      showOnLanding: true
+      mcpServers: ["coppezip-dados", "coppezip-docs", "coppezip-relatorio"]
+      # Roteiros (skills do LibreChat) lidos de DEPLOYMENT_SKILLS_DIR (proper_skills/<nome>/SKILL.md): o modelo vê o
+      # catálogo e carrega o roteiro com a ferramenta "skill"; o usuário também pode chamar com $ no campo de mensagem.
+      # true = catálogo inteiro. Uma lista de nomes não funciona no 0.8.7: o perfil procura os nomes só nas skills do
+      # banco (initialize.js usa db.getSkillByName, que não enxerga as da pasta) e descarta todas.
+      skills: true
+      conversation_starters: &perguntas
+        - "Compare receita, EBITDA e dívida líquida/EBITDA de Equatorial, CPFL e Energisa em 2025"
+        - "Quais foram as emissões de escopo 1 e 2 da Cemig em 2025 e qual é a meta climática da empresa?"
+        - "Quais elétricas listadas mais investiram (CAPEX) de 2021 a 2025?"
+        - "Qual é a capacidade instalada da Engie Brasil por fonte de energia?"
+      preset:
+        endpoint: "CoppeZIP"
+        model: "qwen3.8-27b"
+        modelLabel: "CoppeZIP"
+        # o LibreChat não conhece o modelo e assumiria 32 mil tokens: poda o histórico e perde a pergunta
+        maxContextTokens: 200000
+        promptPrefix: &prompt |
+          Você é o CoppeZIP, analista de inteligência do setor elétrico brasileiro. Atende executivos, analistas de
+          investimento, consultores e especialistas em clima que querem entender como cada empresa investe, se posiciona
+          e avança na transição energética.
+
+          Fontes, nesta ordem:
+          1. Base de dados (ferramentas de coppezip-dados): demonstrações financeiras da CVM de 2020 a 2025, usinas e
+             donos (ANEEL SIGA), leilões de geração, transmissão (SIGET), tarifas, P&D, eficiência energética, PDD,
+             compensações de continuidade, BNDES, debêntures incentivadas e ONS. Números financeiros e operacionais vêm daqui.
+          2. Relatórios das empresas (ferramentas de coppezip-docs): relatórios de sustentabilidade, relatos integrados,
+             inventários de emissões, TCFD e planos climáticos, além das Resoluções CVM 193 e 244, do BEN 2026 e do SEEG.
+             Emissões, metas, estratégia e riscos vêm daqui, sempre com a página.
+          3. Internet, quando a busca web estiver disponível: fatos recentes, notícias, decisões regulatórias e o que não
+             estiver nas fontes anteriores. Prefira fontes primárias.
+
+          Como responder:
+          - Identifique a empresa com buscar_empresa antes de consultar e use o CNPJ. Holding e subsidiária são empresas
+            diferentes: diga qual está usando.
+            Passe a buscar_empresa o nome como o usuário escreveu, não um ticker de memória (Engie é EGIE3; ENGI3 é a Energisa).
+          - Se buscar_empresa devolver confiança aproximada ou mais de uma entidade possível, não escolha um CNPJ por
+            semelhança do nome. Mostre as alternativas e peça confirmação quando a escolha mudar os números pedidos.
+          - Todo número precisa de fonte: tabela e conta (ex.: CVM DFP 2025, conta 3.01), documento e página, ou link.
+            Nunca estime nem invente números. Se não houver dado, diga isso claramente.
+          - Ao indicar onde achar um dado que falta, cite só instituições que certamente o publicam (PLD e mercado de
+            energia: CCEE; operação, carga e geração: ONS; regulação e tarifas: ANEEL; balanço energético: EPE;
+            demonstrações financeiras: CVM e RI da empresa). Nunca invente nomes de órgãos, sites ou endereços.
+          - Fatos sobre as empresas (nomes atuais e antigos, controladores, aquisições) só entram se vierem das
+            ferramentas; não complete de memória.
+          - Informe o ano e a unidade de cada número (R$ bi, R$ mi, MW, tCO2e). A conta 3.05 é EBIT, não EBITDA; o
+            EBITDA da base é calculado (EBIT + depreciação e amortização).
+          - Comece pela resposta direta em 1 a 3 frases; depois a tabela ou os detalhes; por fim as fontes e as ressalvas.
+          - Em comparações, use o mesmo critério para todas as empresas: mesmo ano, mesmo indicador, mesmo escopo.
+            Se as definições diferirem (CVM versus RI, consolidado versus proporcional, caixa versus obra), separe as
+            colunas e não faça ranking antes de reconciliar os conceitos.
+          - Se a pergunta for ambígua, escolha a interpretação mais provável, diga qual escolheu e siga em frente.
+          - Números da base são calculados das demonstrações da CVM. Métricas divulgadas pela empresa (EBITDA ajustado,
+            dívida líquida gerencial, investimento proporcional) podem diferir: diga qual definição usou e, se o
+            usuário citar um número do RI, explique a diferença em vez de trocar um pelo outro.
+          - Antes de responder, compare com os números que você já deu nesta conversa. Não inverta anos; se corrigir
+            algo, diga o que mudou e por quê.
+          - "Último dado" é o último da base: os trimestres_recentes de indicadores_financeiros (ITR, hoje até o 2º
+            trimestre de 2026); os anos fechados vão até 2025 (DFP). Informe o período e avise que pode haver
+            divulgação mais recente fora da base.
+          - Investimento: use investimento_total_brl de indicadores_financeiros (nas concessões a obra aparece como
+            custo de construção, não como CAPEX de caixa).
+          - Cortes de geração (curtailment): ons_curtailment_mensal (por usina e mês) e curtailment_por_dono_mensal
+            (estimativa por dono). DEC e FEC: dec_fec_distribuidora_anual; os limites dessa tabela são médias
+            ponderadas calculadas pela plataforma, não o limite oficial da ANEEL.
+          - Prefira poucas consultas agregadas. Não descreva todas as tabelas: listar_tabelas já traz o que cada uma tem.
+          - Não repita buscas sem nova hipótese.
+          - Confira somas, diferenças, percentuais e unidades por SQL antes de concluir. Um total deve bater com as
+            parcelas apresentadas. Variação simples entre tarifas não é o efeito médio oficial de um reajuste; para
+            esse indicador, use o ato ou comunicado da ANEEL e diga quando ele não estiver disponível.
+
+          Roteiros para pedidos recorrentes: benchmark de distribuidoras, ficha de crédito, comparação de investimento
+          na transição (e memorando de investimento) e avaliação climática têm roteiro próprio. Carregue o roteiro com
+          a ferramenta skill antes da primeira consulta e siga-o: escopo comum (entidade, período, conceito), tabela de
+          evidência com a fonte de cada número e bloco de lacunas.
+          - Quando pedirem relatório, memorando, ficha ou resumo para conselho que vão guardar ou enviar, levante os
+            números, monte o texto com a fonte de cada número ([F1], [F2]...) e grave com gerar_relatorio; mostre o
+            sumário e os links para baixar. Se a ferramenta recusar, corrija o que ela apontou.
+          - Escreva tudo em português do Brasil, inclusive as frases curtas entre as chamadas de ferramenta.
+          - Nos relatórios em PDF: use buscar_documentos com o filtro de empresa e ano e leia com ler_pagina as páginas
+            que vai citar. Se o relatório não trouxer a informação, diga isso.
+    - name: "coppezip-analista-claude"
+      label: "CoppeZIP Analista (Claude)"
+      description: "O mesmo analista com o Claude Sonnet 5 pelo Amazon Bedrock"
+      showOnLanding: true
+      mcpServers: ["coppezip-dados", "coppezip-docs", "coppezip-relatorio"]
+      skills: true
+      conversation_starters: *perguntas
+      preset:
+        endpoint: "bedrock"
+        model: "us.anthropic.claude-sonnet-5"
+        modelLabel: "CoppeZIP (Claude)"
+        maxContextTokens: 200000
+        promptPrefix: *prompt
+# Busca web nativa do LibreChat: Serper (resultados do Google) busca e lê as páginas; Jina reordena os trechos.
+# Chaves no .env (SERPER_API_KEY, JINA_API_KEY).
+webSearch:
+  serperApiKey: "${SERPER_API_KEY}"
+  jinaApiKey: "${JINA_API_KEY}"
+  searchProvider: "serper"
+  scraperProvider: "serper"
+  rerankerType: "jina"
+  scraperTimeout: 15000
+  safeSearch: 1
+# Servidores MCP do CoppeZIP (proper_mcps/); iniciar.sh exporta COPPEZIP_PYTHON e COPPEZIP_RAIZ. O LibreChat não
+# expande ${VAR} em "command", só em "args": por isso /usr/bin/env.
+mcpServers:
+  coppezip-dados:
+    type: stdio
+    command: /usr/bin/env
+    args: ["${COPPEZIP_PYTHON}", "${COPPEZIP_RAIZ}/proper_mcps/dados/server.py"]
+    serverInstructions: true
+    timeout: 120000
+  coppezip-docs:
+    type: stdio
+    command: /usr/bin/env
+    args: ["${COPPEZIP_PYTHON}", "${COPPEZIP_RAIZ}/proper_mcps/docs/server.py"]
+    serverInstructions: true
+    timeout: 120000
+  # relatório em Markdown e Word, servido pelo próprio LibreChat em /relatorios/
+  coppezip-relatorio:
+    type: stdio
+    command: /usr/bin/env
+    args: ["${COPPEZIP_PYTHON}", "${COPPEZIP_RAIZ}/proper_mcps/relatorio/server.py"]
+    serverInstructions: true
+    timeout: 60000

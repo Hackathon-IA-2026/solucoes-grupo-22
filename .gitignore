@@ -187,3 +187,6 @@ data/raw
 data/parquet
 data/modelos
 data/*.duckdb*
+!librechat.yaml
+!CLAUDE.md
+data/violations.json
