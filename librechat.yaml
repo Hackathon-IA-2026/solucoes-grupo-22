@@ -69,7 +69,7 @@ modelSpecs:
       description: "Análise do setor elétrico com dados da CVM, ANEEL, ONS, BNDES e relatórios das empresas"
       default: true
       showOnLanding: true
-      mcpServers: ["coppezip-dados", "coppezip-docs", "coppezip-relatorio"]
+      mcpServers: ["coppezip-dados", "coppezip-docs", "coppezip-relatorio", "coppezip-placar"]
       # Roteiros (skills do LibreChat) lidos de DEPLOYMENT_SKILLS_DIR (proper_skills/<nome>/SKILL.md): o modelo vê o
       # catálogo e carrega o roteiro com a ferramenta "skill"; o usuário também pode chamar com $ no campo de mensagem.
       # true = catálogo inteiro. Uma lista de nomes não funciona no 0.8.7: o perfil procura os nomes só nas skills do
@@ -97,7 +97,9 @@ modelSpecs:
              compensações de continuidade, BNDES, debêntures incentivadas e ONS. Números financeiros e operacionais vêm daqui.
           2. Relatórios das empresas (ferramentas de coppezip-docs): relatórios de sustentabilidade, relatos integrados,
              inventários de emissões, TCFD e planos climáticos, além das Resoluções CVM 193 e 244, do BEN 2026 e do SEEG.
-             Emissões, metas, estratégia e riscos vêm daqui, sempre com a página.
+             Emissões, metas, estratégia e riscos vêm daqui, sempre com a página. Para emissões por escopo, metas,
+             % renovável, CAPEX e frameworks das empresas com relatório indexado, comece pelo coppezip-placar
+             (Placar da Transição): os valores já vêm com arquivo, página e a conferência de que aparecem na página.
           3. Internet, quando a busca web estiver disponível: fatos recentes, notícias, decisões regulatórias e o que não
              estiver nas fontes anteriores. Prefira fontes primárias.
 
@@ -140,6 +142,15 @@ modelSpecs:
             parcelas apresentadas. Variação simples entre tarifas não é o efeito médio oficial de um reajuste; para
             esse indicador, use o ato ou comunicado da ANEEL e diga quando ele não estiver disponível.
 
+          Modo de resposta (quem escolhe é o usuário, nunca você):
+          - O padrão é descritivo: o que os dados mostram, com a fonte de cada número, sem juízo de valor, sem
+            veredito e sem recomendação. Comparar e apontar diferença é descritivo; dizer quem é "melhor" não é.
+          - Passe ao modo conclusivo (parecer, veredito, recomendação) só quando o usuário pedir conclusão, parecer,
+            opinião ou carregar o roteiro modo-conclusivo. Aí diga que está concluindo e separe "o que os dados
+            mostram" do "o que eu concluo". Não volte ao descritivo sem ele pedir.
+          - Alerta do radar de consistência é divergência a investigar, não prova de greenwashing; exposição a
+            carbono é cenário com o preço informado, não previsão.
+
           Roteiros para pedidos recorrentes: benchmark de distribuidoras, ficha de crédito, comparação de investimento
           na transição (e memorando de investimento) e avaliação climática têm roteiro próprio. Carregue o roteiro com
           a ferramenta skill antes da primeira consulta e siga-o: escopo comum (entidade, período, conceito), tabela de
@@ -154,7 +165,7 @@ modelSpecs:
       label: "CoppeZIP Analista (Claude)"
       description: "O mesmo analista com o Claude Sonnet 5 pelo Amazon Bedrock"
       showOnLanding: true
-      mcpServers: ["coppezip-dados", "coppezip-docs", "coppezip-relatorio"]
+      mcpServers: ["coppezip-dados", "coppezip-docs", "coppezip-relatorio", "coppezip-placar"]
       skills: true
       conversation_starters: *perguntas
       preset:
@@ -195,3 +206,11 @@ mcpServers:
     args: ["${COPPEZIP_PYTHON}", "${COPPEZIP_RAIZ}/proper_mcps/relatorio/server.py"]
     serverInstructions: true
     timeout: 60000
+  # Placar da Transição (ESG estruturado dos relatórios + radar de consistência + exposição a carbono + as telas):
+  # lê data/placar.duckdb (extraído por data/extrair_placar.py) e data/coppezip.duckdb.
+  coppezip-placar:
+    type: stdio
+    command: /usr/bin/env
+    args: ["${COPPEZIP_PYTHON}", "${COPPEZIP_RAIZ}/proper_mcps/placar/server.py"]
+    serverInstructions: true
+    timeout: 120000
