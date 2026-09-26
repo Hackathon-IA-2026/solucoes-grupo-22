@@ -3,6 +3,8 @@ version: 1.3.13
 cache: true
 interface:
   customWelcome: "CoppeZIP — inteligência comparativa do setor elétrico"
+  # com perfis (modelSpecs) o LibreChat esconde os modelos avulsos; true mostra também os do Bedrock e do vLLM
+  modelSelect: true
 endpoints:
   # Claude pelo Amazon Bedrock (conta do hackathon); credenciais pela cadeia padrão da AWS (~/.aws/credentials)
   bedrock:
