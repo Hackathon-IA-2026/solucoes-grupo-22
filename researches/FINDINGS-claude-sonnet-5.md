@@ -1,6 +1,6 @@
 # FINDINGS — Base de Pesquisa para Inteligência Comparativa da Transição Energética
 
-**Projeto:** CoppeZIP (Equipe ZIP)
+**Projeto:** EnergyNexus (Equipe ZIP)
 **Branch:** `claude-sonnet-5`
 **Modelo:** Claude Sonnet 5 (orquestrador) + 5 subagentes paralelos
 **Data:** 13 de setembro de 2026
@@ -238,7 +238,7 @@ fato = client.chat.completions.create(model="claude-sonnet-5", response_model=Em
 
 ---
 
-## 7. IMPLICAÇÕES PARA O PRODUTO COPPEZIP
+## 7. IMPLICAÇÕES PARA O PRODUTO ENERGYNEXUS
 
 1. **A regra de inclusão de empresas deve ser dupla**: (a) empresas que divulgam relatório ISSB voluntariamente — capturar frameworks/asseguração/maturidade; (b) empresas que não divulgam ou divulgam de forma rasa (CPFL resumida, Taesa sem asseguração, Light sem relatório desde 2021) — isso também é sinal competitivo e deve aparecer no comparativo, não ser tratado como dado faltante.
 2. **Duas chaves de junção, não uma**: CNPJ (financeiro/regulatório) e CodCEG (físico/geração) — construir a tabela de-para logo no início do pipeline.

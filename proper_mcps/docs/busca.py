@@ -1,4 +1,4 @@
-"""Busca por página nos relatórios do coppezip-docs, para a aba Busca do LibreChat (rota /api/busca, só com login).
+"""Busca por página nos relatórios do energynexus-docs, para a aba Busca do LibreChat (rota /api/busca, só com login).
 
 Serviço HTTP em 127.0.0.1 sobre o mesmo índice do server.py. Reaproveita os embeddings dos trechos: a nota de uma página
 é a do seu trecho mais parecido com a pergunta (Amazon Titan pelo Bedrock), fundida por posição (RRF) com a busca de

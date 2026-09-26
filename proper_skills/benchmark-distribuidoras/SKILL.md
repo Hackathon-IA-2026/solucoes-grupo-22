@@ -37,4 +37,4 @@ no mesmo `WHERE cnpj IN (...)`.
 4. **Lacunas**: o que não está na base (limite global oficial, conjuntos com violação, efeito médio do reajuste,
    ranking ANEEL) e onde achar (ANEEL: ranking de continuidade; resolução homologatória do reajuste).
 
-Se o usuário pedir documento para enviar, termine com `gerar_relatorio`.
+Se o usuário pedir documento para enviar, carregue o roteiro `relatorio-energynexus` e termine com `gerar_relatorio`.

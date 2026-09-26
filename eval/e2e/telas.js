@@ -1,4 +1,4 @@
-// E2E das telas do Placar: gera os três artefatos com o servidor coppezip-placar e abre cada um no navegador para
+// E2E das telas do Placar: gera os três artefatos com o servidor energynexus-placar e abre cada um no navegador para
 // conferir que renderizam, que TODO número mostrado traz fonte e que o preço de carbono recalcula na hora.
 // Usa o Playwright que já vem com o LibreChat e o Chromium do sistema (não baixa navegador).
 //

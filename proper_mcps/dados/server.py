@@ -1,4 +1,4 @@
-"""Servidor MCP "coppezip-dados": a base do CoppeZIP (CVM, ANEEL, ONS, BNDES, ANBIMA) em DuckDB, só leitura.
+"""Servidor MCP "energynexus-dados": a base do EnergyNexus (CVM, ANEEL, ONS, BNDES, ANBIMA) em DuckDB, só leitura.
 
 Ferramentas: buscar_empresa, indicadores_financeiros, listar_tabelas, descrever_tabela, valores_distintos, consultar_sql.
 O banco (data/coppezip.duckdb) é montado por data/construir.py; as descrições das tabelas vêm da tabela catalogo.
@@ -34,7 +34,7 @@ INSTRUCOES = """Você responde sobre empresas do setor elétrico brasileiro com 
    clareza e aponte de onde ele poderia vir.
 6. Prefira poucas consultas agregadas a muitas pequenas."""
 
-mcp = MCPServer("coppezip-dados", instructions=INSTRUCOES)
+mcp = MCPServer("energynexus-dados", instructions=INSTRUCOES)
 
 
 def _con():

@@ -5,7 +5,7 @@ description: Muda a resposta do modo descritivo (só fatos, números e fontes) p
 
 # Modo conclusivo
 
-O CoppeZIP responde no **modo descritivo** por padrão: levanta o que os dados dizem, com a fonte de cada número, e
+O EnergyNexus responde no **modo descritivo** por padrão: levanta o que os dados dizem, com a fonte de cada número, e
 não emite juízo. Este roteiro liga o **modo conclusivo**, e quem liga é o usuário — carregando este roteiro
 (`$modo-conclusivo`) ou pedindo conclusão, parecer, recomendação ou veredito. Nunca mude de modo sozinho e nunca
 volte ao descritivo sem o usuário pedir.
@@ -27,5 +27,5 @@ volte ao descritivo sem o usuário pedir.
   cite as duas evidências.
 - Exposição a carbono é **cenário**, não previsão: diga o preço usado e que não há preço de carbono vigente no
   Brasil para o setor.
-- Não recomende compra, venda ou posição em ativo: o CoppeZIP não dá recomendação de investimento. Pode comparar
+- Não recomende compra, venda ou posição em ativo: o EnergyNexus não dá recomendação de investimento. Pode comparar
   empresas, apontar risco e dizer o que os números sustentam.

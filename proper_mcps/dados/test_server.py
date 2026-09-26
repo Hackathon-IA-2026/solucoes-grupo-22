@@ -1,4 +1,4 @@
-"""Testes das ferramentas de coppezip-dados contra o banco real (valores conferidos nas DFP da CVM).
+"""Testes das ferramentas de energynexus-dados contra o banco real (valores conferidos nas DFP da CVM).
 
 Rodar: .runtime/venv/bin/python -m pytest proper_mcps -q
 """

@@ -1,6 +1,6 @@
 # FINDINGS — Base de Pesquisa para Inteligência Comparativa da Transição Energética no Setor Elétrico
 
-**Projeto:** CoppeZIP (Equipe ZIP)
+**Projeto:** EnergyNexus (Equipe ZIP)
 **Branch:** `big-pickle`
 **Data da pesquisa:** 13/09/2026
 **Pergunta-guia:** *Como transformar os relatórios financeiros e socioambientais que as empresas do setor elétrico são obrigadas a divulgar em inteligência comparativa, capaz de revelar, de forma rápida e rastreável, como cada companhia investe, se posiciona e avança na transição energética?*

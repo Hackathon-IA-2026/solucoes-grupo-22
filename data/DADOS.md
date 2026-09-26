@@ -1,6 +1,6 @@
-# Dados do CoppeZIP
+# Dados do EnergyNexus
 
-Tabelas e visões do `coppezip.duckdb` em 25/09/2026, geradas do catálogo por `platform/documentar_banco.py`. Não edite à mão: descrição, fonte e ressalvas vêm do catálogo em `platform/build_duckdb.py`, o mesmo texto que o modelo lê. O formato dos arquivos brutos de cada fonte está em `research/DATA_DICTIONARY.md`.
+Tabelas e visões do `coppezip.duckdb` em 25/09/2026, geradas do catálogo por `data/documentar.py`. Não edite à mão: descrição, fonte e ressalvas vêm do catálogo em `data/construir.py`, o mesmo texto que o modelo lê. O formato dos arquivos brutos de cada fonte está em `researches/DATA_DICTIONARY.md`.
 
 | Tabela | Linhas | Descrição | Fonte |
 |---|---:|---|---|

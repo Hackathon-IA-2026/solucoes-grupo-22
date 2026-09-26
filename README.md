@@ -1,9 +1,10 @@
-# CoppeZIP
+# EnergyNexus
 
-Chat de inteligência do setor elétrico brasileiro. É o LibreChat (esta pasta, v0.8.7 com o tema do CoppeZIP) mais as
-nossas peças: o modelo (o nosso Qwen3.8-27B no vLLM ou o Claude pelo Amazon Bedrock) consulta dados públicos (CVM,
-ANEEL, ONS, BNDES, ANBIMA, Banco Central) e relatórios das empresas pelas ferramentas MCP e responde com a fonte de
-cada número.
+Chat de inteligência do setor elétrico brasileiro. É o LibreChat (esta pasta, v0.8.7 com o tema e a logo do
+EnergyNexus) mais as nossas peças: o modelo (o nosso Qwen3.8-27B no vLLM ou o Claude pelo Amazon Bedrock) consulta
+dados públicos (CVM, ANEEL, ONS, BNDES, ANBIMA, Banco Central) e relatórios das empresas pelas ferramentas MCP,
+responde com a fonte de cada número e entrega o relatório final em PDF, no modelo do Energy Nexus, aberto ao lado do
+chat.
 
 ## Demo
 
@@ -11,7 +12,7 @@ Sem link público: o chat roda nos servidores do IMPA e é aberto por túnel SSH
 
 ## Tecnologias utilizadas
 
-- Linguagem: Python (ferramentas, dados e testes), JavaScript/Node (LibreChat), Bash (scripts)
+- Linguagem: Python (ferramentas, dados e testes), JavaScript/Node (LibreChat), Bash (scripts), LaTeX (relatório)
 - Framework(s): LibreChat v0.8.7, MCP (Model Context Protocol), vLLM
 - Banco de dados: DuckDB (dados do setor e índice dos relatórios), MongoDB e Meilisearch (usuários e conversas do chat)
 - Modelos: Qwen3.8-27B INT4 (próprio, no vLLM) e Claude Sonnet 5 (Amazon Bedrock); embeddings Amazon Titan Text Embeddings v2 (Bedrock)
@@ -23,15 +24,17 @@ Sem link público: o chat roda nos servidores do IMPA e é aberto por túnel SSH
 | Pasta ou arquivo | O que é |
 |---|---|
 | `librechat.yaml` | configuração do chat: modelos, perfis do analista (prompt), ferramentas MCP e busca web |
-| `.env.example` | modelo do `.env` (portas, segredos, endereço do vLLM, região do Bedrock) |
+| `.env.example` | modelo do `.env` (nome do app, portas, segredos, endereço do vLLM, região do Bedrock) |
 | `instalar.sh`, `iniciar.sh`, `parar.sh` | instalar uma vez, subir e parar o chat |
 | `vllm.sh` | sobe o modelo próprio numa máquina com GPU |
-| `proper_mcps/` | ferramentas MCP: `dados` (banco DuckDB), `docs` (busca nos relatórios em PDF; `busca.py` atende a aba Busca), `relatorio` (Markdown e Word), `placar` (Placar da Transição, radar de consistência, exposição a carbono e as telas em HTML) |
-| `proper_skills/` | roteiros do analista: benchmark de distribuidoras, ficha de crédito, investimento na transição, avaliação climática e o modo conclusivo |
+| `proper_mcps/` | ferramentas MCP: `dados` (banco DuckDB), `docs` (busca nos relatórios em PDF; `busca.py` atende a aba Busca), `relatorio` (relatório final em PDF, com o modelo LaTeX em `relatorio/modelo/`), `placar` (Placar da Transição, radar de consistência, exposição a carbono e as telas em HTML) |
+| `proper_skills/` | roteiros do analista: relatório final (`relatorio-energynexus`), benchmark de distribuidoras, ficha de crédito, investimento na transição, avaliação climática e o modo conclusivo |
 | `data/` | coleta (`baixar.py`), montagem do banco (`construir.py`), índice dos PDFs (`indexar_docs_titan.py`, em uso; `indexar_docs.py` é a versão com o e5 local), extração do placar ESG (`extrair_placar.py`, `conferir_placar.py`), dados da aba Painel (`exportar_painel.py`), dados da aba Timeline (`linha_do_tempo.py`) e documentação das tabelas (`DADOS.md`); os dados em si ficam aqui, fora do git |
 | `researches/` | pesquisa de fontes de dados e dicionário de dados |
 | `eval/` | cliente do chat (`chat.py`), regressão com perguntas de resposta conhecida (`regressao.py`) e o E2E das telas (`e2e/telas.js`) |
-| `client/src/style.css` | o tema do CoppeZIP |
+| `client/src/style.css` | o tema do EnergyNexus |
+| `client/public/assets/` (logo e ícones), `client/index.html`, `client/vite.config.ts` | a logo e o nome do EnergyNexus |
+| `client/src/utils/artifacts.ts`, `client/src/components/Artifacts/ArtifactTabs.tsx` e `DownloadArtifact.tsx` | o painel lateral do LibreChat mostra o relatório em PDF e baixa o arquivo |
 | abas Painel, Busca e Grafo | `client/src/components/Coppezip/`, `client/src/components/Nav/CoppezipNavButtons.tsx`, as rotas `/painel`, `/busca` e `/grafo` em `client/src/routes/index.tsx`, e `api/server/routes/painel.js` e `busca.js` (registradas em `api/server/index.js` e `routes/index.js`) |
 | aba Timeline | `client/src/components/Timeline/`: evolução de cada empresa (eventos por ano, impacto, indicadores e fontes), trajetórias estratégicas e gráficos; registrada em `client/src/routes/index.tsx`, `client/src/hooks/Nav/useSideNavLinks.ts` e na chave `com_ui_timeline` das traduções |
 
@@ -47,7 +50,7 @@ valor só entra se **aparecer na página citada** e se **duas leituras do modelo
 é ambígua e o modelo escolhe colunas diferentes a cada leitura). `data/conferir_placar.py` compara a extração com o
 gabarito conferido à mão.
 
-No chat, as ferramentas de `coppezip-placar`:
+No chat, as ferramentas de `energynexus-placar`:
 
 | Ferramenta | O que faz |
 |---|---|
@@ -59,22 +62,32 @@ No chat, as ferramentas de `coppezip-placar`:
 
 A resposta é **descritiva** por padrão; parecer e recomendação só quando o usuário pedir (roteiro `modo-conclusivo`).
 
+## Relatório final
+
+Quando o usuário pede um relatório (ou memorando, ficha, nota para comitê), o modelo carrega o roteiro
+`proper_skills/relatorio-energynexus/SKILL.md` (as instruções do modelo oficial: seis seções fixas, fonte de cada fato,
+distinção entre fato e análise, referências em BibTeX), levanta os dados e chama `gerar_relatorio`. A ferramenta confere
+a estrutura e as citações, preenche `proper_mcps/relatorio/modelo/main.tex` e `referencias.bib` (o template, alterado
+só nos campos e no conteúdo), compila com o pdflatex do TinyTeX (`.runtime/tinytex`) e grava o PDF e o fonte LaTeX em
+`.runtime/relatorios`, servidos em `/relatorios/`. A resposta traz um bloco `:::artifact` do tipo `application/pdf`:
+o PDF abre grande no painel à direita, com o botão de baixar.
+
 ## Pré-requisitos
 
-- Linux com `python3` (com `venv`), `curl`, `git` e `openssl`. Node, MongoDB e Meilisearch o `instalar.sh` baixa
-  sozinho para `.runtime/`.
+- Linux com `python3` (com `venv`), `curl`, `git` e `openssl`. Node, MongoDB, Meilisearch e o TinyTeX o `instalar.sh`
+  baixa sozinho para `.runtime/`.
 - Para o modelo próprio: GPU NVIDIA de 32 GB ou mais. Sem GPU, use o Claude pelo Bedrock ou aponte para um vLLM em
   outra máquina.
-- Internet na primeira vez (bibliotecas, binários e, no `vllm.sh`, cerca de 19 GB de pesos).
+- Internet na primeira vez (bibliotecas, binários, pacotes do LaTeX e, no `vllm.sh`, cerca de 19 GB de pesos).
 
 Nada é fixo de usuário ou de máquina: tudo fica dentro da pasta onde o repositório foi clonado (`.runtime/` para
-binários, bancos do chat, logs e vLLM; `data/` para os dados) e as escolhas locais (portas, chaves, endereço do modelo)
-ficam no `.env`.
+binários, bancos do chat, logs, relatórios e vLLM; `data/` para os dados) e as escolhas locais (portas, chaves, endereço
+do modelo) ficam no `.env`.
 
 ## Rodar
 
 ```bash
-./instalar.sh     # uma vez: .env, Node, MongoDB, Meilisearch (em .runtime/), npm e o Python das ferramentas
+./instalar.sh     # uma vez: .env, Node, MongoDB, Meilisearch, TinyTeX (em .runtime/), npm e o Python das ferramentas
 ./iniciar.sh      # sobe o chat em http://localhost:3080
 ./parar.sh
 ./vllm.sh         # numa máquina com GPU (32 GB ou mais): instala o vLLM, baixa os pesos e serve o modelo
@@ -90,7 +103,7 @@ De outra máquina, abra um túnel: `ssh -N -L 3080:127.0.0.1:3080 <máquina>`.
   tokens, cache em fp8, atenção pelo Triton, 16 conversas simultâneas) foram ajustadas para o Qwen3.8-27B INT4 numa
   RTX 5090; em outra GPU pode ser preciso mudá-las no script.
 - **Amazon Bedrock (Claude):** ponha as credenciais da AWS em `~/.aws/credentials` e reinicie o chat. No seletor, use
-  o perfil "CoppeZIP Analista (Claude)". A região está em `BEDROCK_AWS_DEFAULT_REGION`.
+  o perfil "EnergyNexus Analista (Claude)". A região está em `BEDROCK_AWS_DEFAULT_REGION`.
 
 ## Dados
 
@@ -105,7 +118,8 @@ Os dados não vão para o git. Coloque em `data/`:
 | `data/painel.json` | `.runtime/venv/bin/python data/exportar_painel.py`, depois do `construir.py` |
 | `data/placar.duckdb` | `.runtime/venv/bin/python data/extrair_placar.py` (lê as páginas de `data/docs.duckdb` e extrai pelo Bedrock; confira com `data/conferir_placar.py`) |
 
-Os bancos prontos também estão no Drive, em `bancos/`. A aba Timeline lê os parágrafos dos relatórios da tabela `blocos`
+Os bancos prontos também estão no Drive, em `bancos/`; o banco guarda o nome antigo (`coppezip.duckdb`), o mesmo do
+Drive. A aba Timeline lê os parágrafos dos relatórios da tabela `blocos`
 do `docs.duckdb`: um índice feito antes dela precisa ser refeito com `data/indexar_docs.py` (os embeddings são
 reaproveitados). O `iniciar.sh` monta a linha do tempo de cada empresa (`data/linha_do_tempo.py`) a cada início.
 
@@ -119,7 +133,7 @@ Ao lado do chat (ícones na barra lateral), só para usuários logados:
   empresa acha pelo nome, apelido, ticker ou CNPJ. Cores das séries em `--painel-1..8` do `style.css`. Lê
   `data/painel.json`, relido a cada acesso: depois de reconstruir o banco, basta rodar `data/exportar_painel.py` de novo.
 - **Busca** (`/busca`): responde "em que página está isso?" nos PDFs indexados, com o trecho, a imagem da página e o
-  PDF. Usa o mesmo índice e modelo do `coppezip-docs` (`data/docs_titan.duckdb`, Titan pelo Bedrock); o `iniciar.sh` sobe
+  PDF. Usa o mesmo índice e modelo do `energynexus-docs` (`data/docs_titan.duckdb`, Titan pelo Bedrock); o `iniciar.sh` sobe
   `proper_mcps/docs/busca.py` em `127.0.0.1:BUSCA_PORTA` e o LibreChat repassa `/api/busca`.
 - **Grafo** (`/grafo`, `?empresa=<CNPJ só com dígitos>`): grafo de conhecimento de uma empresa, trazido do CoppeZIP
   (Chainlit). Empresa → categoria (cada base do painel com dados dela, e os documentos por área) → indicadores (as
@@ -132,10 +146,10 @@ Ao lado do chat (ícones na barra lateral), só para usuários logados:
 ## Testes
 
 ```bash
-.runtime/venv/bin/python -m pytest proper_mcps data -q   # ferramentas e linha do tempo, contra os bancos de data/
+.runtime/venv/bin/python -m pytest proper_mcps data -q   # ferramentas (relatório: TinyTeX) e linha do tempo
 eval/usuario.sh                                       # uma vez: usuário de teste no LibreChat
 python3 eval/chat.py "Qual foi a receita líquida da Taesa em 2025?"
-python3 eval/regressao.py                             # perguntas de resposta conhecida; --perfil coppezip-analista-claude para o Claude
+python3 eval/regressao.py                             # perguntas de resposta conhecida; --perfil energynexus-analista-claude para o Claude
 node eval/e2e/telas.js                                # abre as telas do placar no navegador e confere fonte e recálculo
 ```
 

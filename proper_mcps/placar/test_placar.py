@@ -1,4 +1,4 @@
-"""Testes das ferramentas de coppezip-placar contra a base real (data/placar.duckdb + data/coppezip.duckdb).
+"""Testes das ferramentas de energynexus-placar contra a base real (data/placar.duckdb + data/coppezip.duckdb).
 
 Valores conferidos contra o gabarito researches/FINDINGS-claude-sonnet-5.md §3.2 (emissões por escopo, com página).
 Rodar: .runtime/venv/bin/python -m pytest proper_mcps -q

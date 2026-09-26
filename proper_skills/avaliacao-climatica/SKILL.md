@@ -49,7 +49,8 @@ relatório inclui escopo 3.
 
 Se o usuário quiser **ver ou compartilhar** o comparativo, monte a tela: `tela_ranking`, `tela_radar` ou
 `tela_carbono` gravam um HTML com o gráfico, a tabela e a fonte de cada número, e devolvem o link — mande o link e
-resuma o essencial no texto. Se pedir quadro para comitê ou documento, termine com `gerar_relatorio`.
+resuma o essencial no texto. Se pedir quadro para comitê ou documento, carregue o roteiro `relatorio-energynexus` e
+termine com `gerar_relatorio`.
 
 Números do placar vêm de leitura automática do relatório: cite sempre arquivo e página e, se o valor for decisivo
 para uma conclusão, confirme na página com `ler_pagina` antes de afirmar.

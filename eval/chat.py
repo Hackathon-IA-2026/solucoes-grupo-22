@@ -2,12 +2,12 @@
 """Cliente de linha de comando do chat (API do LibreChat), para testes e para agentes que fazem papel de usuário.
 
   eval/chat.py "pergunta"                       conversa nova com o perfil padrão
-  eval/chat.py --perfil coppezip-analista-claude "pergunta"
+  eval/chat.py --perfil energynexus-analista-claude "pergunta"
   eval/chat.py --conversa ID "pergunta"         continua a conversa ID
   eval/chat.py --aguardar ID                    espera a resposta que ainda está sendo gerada na conversa ID
 
 Cada conversa fica em <saida>/conversas/<ID>.json (mensagens brutas) e <ID>.md (transcrição com as ferramentas, SQL
-e resultados); cada pergunta vira uma linha de <saida>/log.jsonl. O usuário é teste-<persona>@coppezip.local, criado
+e resultados); cada pergunta vira uma linha de <saida>/log.jsonl. O usuário é teste-<persona>@energynexus.local, criado
 por eval/usuario.sh, com a senha de .runtime/run/usuarios.json.
 """
 import argparse
@@ -28,7 +28,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # raiz do re
 RT = os.path.join(REPO, ".runtime")
 CREDENCIAIS = os.path.join(RT, "run", "usuarios.json")
 SESSOES = os.path.join(RT, "run", "sessoes")
-ENDPOINT_VLLM = "CoppeZIP"  # nome do endpoint do vLLM no librechat.yaml
+ENDPOINT_VLLM = "EnergyNexus"  # nome do endpoint do vLLM no librechat.yaml
 
 
 def _porta():
@@ -65,7 +65,7 @@ def api(metodo, caminho, corpo=None, token=None, cookie=None):
     except urllib.error.HTTPError as e:
         status, texto, cookies = e.code, e.read().decode(errors="replace"), []
     except urllib.error.URLError as e:
-        falhar(f"o CoppeZIP não respondeu em {URL} ({e.reason}); o serviço pode estar fora do ar")
+        falhar(f"o EnergyNexus não respondeu em {URL} ({e.reason}); o serviço pode estar fora do ar")
     try:
         return status, json.loads(texto), cookies
     except json.JSONDecodeError:
@@ -83,7 +83,7 @@ class Sessao:
     """Token de acesso em cache, renovado pelo refresh token para não gastar o limite de logins (7 a cada 5 min)."""
 
     def __init__(self, persona):
-        self.persona, self.email = persona, f"teste-{persona}@coppezip.local"
+        self.persona, self.email = persona, f"teste-{persona}@energynexus.local"
         self.arquivo = os.path.join(SESSOES, f"{persona}.json")
         try:
             with open(self.arquivo) as f:
@@ -252,7 +252,7 @@ def registrar(saida, **linha):
 
 def mostrar(cid, resp, segundos, modelo):
     usadas = ferramentas(resp)
-    print(f"Conversa: {cid}   (para continuar: ./perguntar --conversa {cid} \"próxima pergunta\")")
+    print(f"Conversa: {cid}   (para continuar: eval/chat.py --conversa {cid} \"próxima pergunta\")")
     print(f"Tempo de resposta: {segundos:.0f} s · modelo: {modelo}")
     print(f"Ferramentas que o chat usou ({len(usadas)}): {', '.join(usadas) if usadas else 'nenhuma'}")
     if resp.get("error"):
@@ -267,7 +267,7 @@ def main():
     ap.add_argument("--perfil", help="nome do perfil (modelSpec) no librechat.yaml; sem ele, o padrão")
     ap.add_argument("--conversa", help="ID da conversa a continuar")
     ap.add_argument("--aguardar", metavar="ID", help="espera a resposta pendente da conversa ID")
-    ap.add_argument("--persona", default="teste", help="usuário teste-<persona>@coppezip.local (eval/usuario.sh)")
+    ap.add_argument("--persona", default="teste", help="usuário teste-<persona>@energynexus.local (eval/usuario.sh)")
     ap.add_argument("--saida", default=os.path.join(RT, "conversas"), help="pasta das transcrições")
     ap.add_argument("--busca-web", action="store_true", help="liga a busca web nativa do LibreChat (Serper + Jina)")
     ap.add_argument("--timeout", type=int, default=900, help="segundos (padrão 900)")
@@ -285,7 +285,7 @@ def main():
         msgs, resp, motivo = aguardar(sessao, a.aguardar, antes, a.timeout)
         salvar(a.saida, a.persona, a.aguardar, msgs)
         if not resp:
-            falhar(f"{motivo}; rode de novo: ./perguntar --aguardar {a.aguardar}", 2)
+            falhar(f"{motivo}; rode de novo: eval/chat.py --aguardar {a.aguardar}", 2)
         mostrar(a.aguardar, resp, time.time() - inicio, resp.get("model") or "?")
         return
 
@@ -293,7 +293,7 @@ def main():
         falhar("faltou a pergunta")
     esc = perfil(sessao, a.perfil)
     modelo, endpoint = esc["preset"]["model"], esc["preset"]["endpoint"]
-    tipo = "custom" if endpoint == ENDPOINT_VLLM else endpoint   # "CoppeZIP" é o vLLM; "bedrock" é o Claude na AWS
+    tipo = "custom" if endpoint == ENDPOINT_VLLM else endpoint   # "EnergyNexus" é o vLLM; "bedrock" é o Claude na AWS
     mcps = esc["mcpServers"]
     pai, antes = RAIZ, set()
     if a.conversa:
@@ -310,6 +310,9 @@ def main():
         "model": modelo, "isContinued": False,
         # o LibreChat aplica do lado do servidor o prompt de sistema do perfil (ele não aparece em /api/config)
         "spec": esc["name"],
+        # com enforce: false o servidor só aplica o promptPrefix, então os limites do perfil vão no pedido: sem
+        # maxOutputTokens o Bedrock corta a resposta em 4096 tokens e gerar_relatorio chega sem o conteúdo
+        **{c: esc["preset"][c] for c in ("maxContextTokens", "maxOutputTokens") if c in esc["preset"]},
         "ephemeralAgent": {"mcp": mcps, **({"web_search": True} if a.busca_web else {})},
     }
     inicio = time.time()
@@ -332,7 +335,7 @@ def main():
               erro=motivo or ("o chat devolveu erro" if resp.get("error") else None),
               tamanho_resposta=len(texto_resposta(resp)) if resp else 0)
     if not resp:
-        dica = f"rode: ./perguntar --aguardar {cid}" if motivo == "tempo esgotado" else "anote como falha do chat"
+        dica = f"rode: eval/chat.py --aguardar {cid}" if motivo == "tempo esgotado" else "anote como falha do chat"
         falhar(f"{motivo}; {dica}", 2)
     mostrar(cid, resp, segundos, modelo)
 

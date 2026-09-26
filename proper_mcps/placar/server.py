@@ -1,4 +1,4 @@
-"""Servidor MCP "coppezip-placar": consulta o Placar da Transição (dados ESG extraídos dos relatórios para
+"""Servidor MCP "energynexus-placar": consulta o Placar da Transição (dados ESG extraídos dos relatórios para
 data/placar.duckdb) e cruza com o banco estruturado (data/coppezip.duckdb) para métricas híbridas, radar de
 consistência (anti-greenwashing) e exposição a preço de carbono. Também monta as telas (artefato HTML
 autocontido em .runtime/relatorios, aberto em /relatorios/) do ranking, do radar e da exposição a carbono.
@@ -22,7 +22,7 @@ COPPEZIP = os.path.join(RAIZ, "data", "coppezip.duckdb")
 # fontes de geração consideradas renováveis (SIGA/ANEEL): hídrica, eólica, solar, biomassa
 RENOVAVEL = ("UHE", "PCH", "CGH", "EOL", "UFV", "BIO")
 
-INSTRUCOES = """Use o coppezip-placar para o Placar da Transição (ESG estruturado dos relatórios, já com página e
+INSTRUCOES = """Use o energynexus-placar para o Placar da Transição (ESG estruturado dos relatórios, já com página e
 confiança) e para três análises que cruzam relatório × dados oficiais:
 - consultar_placar(empresa[, ano]): emissões por escopo, metas, % renovável, CAPEX, frameworks e o score de
   divulgação de uma empresa, com métricas híbridas (tCO2e/receita, CAPEX/receita) — cada número com sua fonte.
@@ -38,7 +38,7 @@ texto o essencial e cite as fontes.
 Cite sempre a fonte que a ferramenta devolve (documento e página, ou tabela). Se uma empresa não estiver na base de
 relatórios, diga; o placar cobre só as empresas com relatório indexado."""
 
-mcp = MCPServer("coppezip-placar", instructions=INSTRUCOES)
+mcp = MCPServer("energynexus-placar", instructions=INSTRUCOES)
 
 
 def _con():
@@ -390,7 +390,7 @@ def exposicao_carbono(preco_por_t: float = 100.0, escopos: list[str] | None = No
 PASTA = os.path.join(RAIZ, ".runtime", "relatorios")
 URL_BASE = "/relatorios"
 
-# Tokens do tema do chat (client/src/style.css): claro em branco, escuro no roxo do CoppeZIP. A série usa o violeta
+# Tokens do tema do chat (client/src/style.css): claro em branco, escuro no roxo do EnergyNexus. A série usa o violeta
 # da marca (contraste acima de 3:1 nas duas superfícies); severidade traz ícone e rótulo, nunca só a cor.
 CSS = """
 :root{color-scheme:light;--fundo:#f7f7f8;--sup:#fff;--ink:#212121;--ink2:#424242;--mudo:#595959;
@@ -535,7 +535,7 @@ def tela_ranking(metrica: str = "score_divulgacao", ano: int | None = None, limi
              f"{_tabela(['Empresa e ano', unidade.capitalize(), 'Fonte'], detalhe, ['', 'n', 'f'])}</div>")
     html = _pagina(f"Placar da Transição — {titulo_m}",
                    f"{len(itens)} empresas com relatório indexado" + (f", ano {ano}" if ano else "") +
-                   f". Gerado pelo CoppeZIP em {datetime.now():%d/%m/%Y %H:%M}.", corpo,
+                   f". Gerado pelo EnergyNexus em {datetime.now():%d/%m/%Y %H:%M}.", corpo,
                    ["Emissões, metas, % renovável e frameworks: relatórios das empresas (arquivo e página na tabela), "
                     "extraídos com checagem de que o valor aparece na página citada.",
                     "Receita, EBITDA e lucro: kpis_financeiros (CVM, consolidado) — data/coppezip.duckdb.",
@@ -573,7 +573,7 @@ def tela_radar(empresa: str | None = None) -> dict:
         corpo += (f"<div class=\"cartao\"><h2>Declarações que não dá para confrontar</h2>"
                   f"<ul class=\"ev\">{itens}</ul></div>")
     html = _pagina("Radar de consistência" + (f" — {empresa}" if empresa else ""),
-                   f"Afirmação do relatório × dado oficial. Gerado pelo CoppeZIP em {datetime.now():%d/%m/%Y %H:%M}.",
+                   f"Afirmação do relatório × dado oficial. Gerado pelo EnergyNexus em {datetime.now():%d/%m/%Y %H:%M}.",
                    corpo,
                    ["Afirmações: relatórios das empresas (arquivo e página em cada alerta).",
                     "Capacidade em operação por fonte: capacidade_por_grupo (SIGA/ANEEL).",
@@ -633,7 +633,7 @@ def tela_carbono(preco_por_t: float = 100.0, escopos: list[str] | None = None) -
              "</tr></thead><tbody id=\"linhas\"></tbody></table></div>")
     html = _pagina("Exposição a preço de carbono",
                    f"{len(linhas)} empresas com emissões confirmadas. "
-                   f"Gerado pelo CoppeZIP em {datetime.now():%d/%m/%Y %H:%M}.", corpo,
+                   f"Gerado pelo EnergyNexus em {datetime.now():%d/%m/%Y %H:%M}.", corpo,
                    ["Emissões por escopo: relatórios das empresas (arquivo e página em consultar_placar), só valores "
                     "com a fonte confirmada na página.",
                     "EBITDA e lucro líquido: kpis_financeiros (CVM, consolidado) — data/coppezip.duckdb.",
