@@ -1,7 +1,9 @@
-"""Servidor MCP "coppezip-relatorio": grava o relatório final da análise em Markdown e DOCX, com fontes conferidas.
+"""Servidor MCP "coppezip-relatorio": grava o relatório final da análise em Markdown e DOCX, com fonte em todo número.
 
 Ferramenta: gerar_relatorio. Recebe título, sumário, seções (texto e tabelas), lacunas e a lista de fontes, e recusa o
 relatório se algum trecho com número não citar uma fonte ([F1], [F2]...) ou se uma tabela com números não tiver fonte.
+A conferência é de citação, não de valor: o servidor garante que cada número aponta para uma fonte declarada, e não
+que o número bate com ela — quem levantou o dado nas outras ferramentas responde pelo valor.
 Os arquivos vão para .runtime/relatorios, que o iniciar.sh liga em client/public/assets/relatorios do LibreChat; o
 navegador os baixa em /relatorios/.
 O DOCX é montado com a biblioteca padrão (zipfile e XML do WordprocessingML), sem python-docx.
@@ -69,6 +71,30 @@ def _blocos(texto: str) -> list[str]:
     return blocos
 
 
+def _contar_numeros(sumario, secoes, lacunas) -> dict:
+    """Quantos números o relatório traz e onde estão. Antes só o texto entrava na conta: um relatório com todos os
+    números em tabelas devolvia zero."""
+    no_texto = sum(len(_numeros(b)) for b in _blocos(sumario))
+    no_texto += sum(len(_numeros(b)) for s in secoes for b in _blocos(s.get("texto") or ""))
+    em_tabelas = sum(len(_numeros(" ".join(str(c) for lin in (t.get("linhas") or []) for c in lin)))
+                     for s in secoes for t in (s.get("tabelas") or []))
+    em_lacunas = sum(len(_numeros(b)) for l in (lacunas or []) for b in _blocos(l))
+    return {"total": no_texto + em_tabelas + em_lacunas, "no_texto": no_texto, "em_tabelas": em_tabelas,
+            "em_lacunas": em_lacunas}
+
+
+CORTE = re.compile(r"(\.\.\.|…|\[\.\.\.\]|\[truncad|\[cortad)", re.I)
+LOCALIZADOR = re.compile(r"\w+_\w+|conta\s+\d|p\.\s*\d|p[áa]gina\s*\d|https?://")
+
+
+def _cortado(texto: str) -> bool:
+    """Texto que parece ter sido colado pela metade: marca de corte, ou fim sem pontuação num trecho longo."""
+    t = (texto or "").strip()
+    if not t:
+        return False
+    return bool(CORTE.search(t[-40:])) or (len(t) > 200 and t[-1] not in ".!?:)\"'»”")
+
+
 def _validar(titulo, sumario, secoes, lacunas, fontes) -> tuple[list[str], list[str], dict]:
     erros, avisos = [], []
     ids = {}
@@ -78,8 +104,12 @@ def _validar(titulo, sumario, secoes, lacunas, fontes) -> tuple[list[str], list[
             erros.append(f"fonte {i}: id '{fid}' inválido; use F1, F2...")
         if fid in ids:
             erros.append(f"fonte {fid} repetida")
-        if not str(f.get("descricao") or "").strip():
+        descricao = str(f.get("descricao") or "").strip()
+        if not descricao:
             erros.append(f"fonte {fid}: falta a descrição (tabela e conta, ou documento e página, ou link)")
+        elif not (f.get("pagina") or f.get("url") or LOCALIZADOR.search(descricao)):
+            avisos.append(f"fonte {fid}: a descrição não diz onde achar o número (tabela da base, conta da CVM, "
+                          f"página do documento ou link): \"{descricao[:60]}\"")
         ids[fid] = f
     if not ids:
         erros.append("o relatório não tem fontes")
@@ -99,9 +129,13 @@ def _validar(titulo, sumario, secoes, lacunas, fontes) -> tuple[list[str], list[
     if not str(titulo or "").strip():
         erros.append("falta o título")
     texto("sumário", sumario)
+    if _cortado(sumario):
+        avisos.append("sumário: o texto termina no meio ou tem marca de corte ('...'); escreva o trecho inteiro")
     for i, s in enumerate(secoes or [], 1):
         nome = f"seção {i} ({s.get('titulo') or 'sem título'})"
         texto(nome, s.get("texto"))
+        if _cortado(s.get("texto")):
+            avisos.append(f"{nome}: o texto termina no meio ou tem marca de corte ('...'); escreva o trecho inteiro")
         for j, tab in enumerate(s.get("tabelas") or [], 1):
             onde = f"{nome}, tabela {j}"
             colunas, linhas = tab.get("colunas") or [], tab.get("linhas") or []
@@ -127,6 +161,9 @@ def _validar(titulo, sumario, secoes, lacunas, fontes) -> tuple[list[str], list[
                 avisos.append(f"{onde}: não achei o período (ano ou trimestre) no título, colunas ou células")
     for k, l in enumerate(lacunas or [], 1):
         texto(f"lacuna {k}", l)
+    if not lacunas:
+        avisos.append("o relatório não tem lacunas: diga o que não está na base, o que não é comparável ou o que "
+                      "precisa de outra fonte (ou repita que não há lacuna a registrar)")
     nao_citadas = [f for f in ids if f not in citadas]
     if nao_citadas:
         avisos.append(f"fontes listadas e não citadas: {', '.join(nao_citadas)}")
@@ -303,7 +340,8 @@ def gerar_relatorio(titulo: str, secoes: list[dict], fontes: list[dict], sumario
                            "linhas": [["Taesa", "4,62"]], "fontes": ["F1"]}]}]
     sumario: 3 a 5 frases com a resposta; lacunas: o que não foi encontrado ou não é comparável.
     Recusa (sem gravar) se algum trecho com número não citar fonte, se uma tabela com números não tiver fonte ou se
-    uma citação não existir na lista de fontes.
+    uma citação não existir na lista de fontes. Confere a citação, não o valor: o número é de quem o levantou.
+    Devolve numeros_com_fonte (total e quantos estão no texto, nas tabelas e nas lacunas) e avisos a resolver.
     """
     lacunas = [l for l in (lacunas or []) if str(l).strip()]
     secoes = secoes or []
@@ -321,8 +359,9 @@ def gerar_relatorio(titulo: str, secoes: list[dict], fontes: list[dict], sumario
     return {"gravado": True,
             "arquivos": {"markdown": publicar(os.path.join(PASTA, nome + ".md")),
                          "docx": publicar(os.path.join(PASTA, nome + ".docx"))},
-            "numeros_conferidos": sum(len(_numeros(b)) for b in _blocos(sumario)) +
-                                  sum(len(_numeros(b)) for s in secoes for b in _blocos(s.get("texto") or "")),
+            "numeros_com_fonte": _contar_numeros(sumario, secoes, lacunas),
+            "conferencia": "todo número citado aponta para uma fonte da lista; o valor em si não foi conferido contra "
+                           "a fonte",
             "fontes": len(ids), **({"avisos": avisos} if avisos else {}),
             "proximo_passo": "mostre ao usuário o sumário e os dois links (Markdown e Word)"}
 

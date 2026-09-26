@@ -71,6 +71,13 @@ def _con():
     return con
 
 
+def _erro_consulta(e: Exception) -> ToolError:
+    """Erro cru do DuckDB vira só "Error executing tool" para o modelo e parece falha passageira; ToolError diz o
+    motivo (índice de outra versão, sem a coluna area, sem o índice fts) e o que fazer."""
+    return ToolError(f"base de documentos indisponível: a consulta falhou no índice {os.path.basename(DB)} ({e}); "
+                     "se o índice for de uma versão antiga, refaça com data/indexar_docs_titan.py")
+
+
 def _filtro(empresa: str | None, ano: int | None, area: str | None = None) -> tuple[str, list]:
     conds, params = [], []
     if area:
@@ -115,6 +122,8 @@ def buscar_documentos(consulta: str, empresa: str | None = None, ano: int | None
         linhas = con.execute("""
             SELECT t.id, d.empresa, d.ano, d.titulo, t.arquivo, t.pagina, t.texto, d.area
             FROM trechos t JOIN documentos d USING (arquivo) WHERE t.id IN (SELECT unnest(?))""", [melhores]).fetchall()
+    except duckdb.Error as e:
+        raise _erro_consulta(e)
     finally:
         con.close()
     por_id = {r[0]: r for r in linhas}
@@ -134,6 +143,8 @@ def ler_pagina(arquivo: str, pagina: int) -> dict:
         if not doc:
             return {"erro": f"arquivo '{arquivo}' não existe; use listar_documentos"}
         linha = con.execute("SELECT texto FROM paginas WHERE arquivo = ? AND pagina = ?", [arquivo, int(pagina)]).fetchone()
+    except duckdb.Error as e:
+        raise _erro_consulta(e)
     finally:
         con.close()
     if not linha:
@@ -155,6 +166,8 @@ def listar_documentos(empresa: str | None = None, area: str | None = None, ano: 
                               WHERE {onde} ORDER BY d.ano DESC, d.empresa, d.arquivo LIMIT {MAX_LISTA}""", params)
         nomes = [c[0] for c in cur.description]
         docs = [dict(zip(nomes, r)) for r in cur.fetchall()]
+    except duckdb.Error as e:
+        raise _erro_consulta(e)
     finally:
         con.close()
     total = sum(c[3] for c in contagem)

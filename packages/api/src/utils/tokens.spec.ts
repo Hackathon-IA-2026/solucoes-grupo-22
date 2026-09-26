@@ -19,6 +19,24 @@ describe('getModelMaxTokens partial-override fallback', () => {
   });
 });
 
+describe('Claude 5 family on bedrock and anthropic', () => {
+  // The CoppeZIP profiles run `us.anthropic.claude-sonnet-5`/`claude-opus-5`; without an entry in
+  // `anthropicModels` these fall back to the generic `claude-` prefix (100k) and history gets pruned.
+  it.each([
+    ['us.anthropic.claude-sonnet-5', 1000000],
+    ['us.anthropic.claude-opus-5', 1000000],
+  ])('resolves the 1M context of %s on bedrock', (model, context) => {
+    expect(getModelMaxTokens(model, EModelEndpoint.bedrock)).toBe(context);
+  });
+
+  it.each([
+    ['claude-sonnet-5', 128000],
+    ['claude-opus-5', 128000],
+  ])('resolves the 128k max output of %s on anthropic', (model, output) => {
+    expect(getModelMaxOutputTokens(model, EModelEndpoint.anthropic)).toBe(output);
+  });
+});
+
 describe('getModelMaxOutputTokens partial-override fallback', () => {
   const partialOverride: EndpointTokenConfig = {
     'custom-model': { prompt: 1, completion: 2, context: 32000, output: 4096 },
