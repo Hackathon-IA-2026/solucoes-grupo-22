@@ -34,8 +34,12 @@ def razao(coluna, rotulo, unidade, num, den, fator=1, den_abs=False):
     return m(coluna, rotulo, unidade, "razao", num=num, den=den, fator=fator, den_abs=den_abs)
 
 
-def d(coluna, rotulo):
-    return {"coluna": coluna, "rotulo": rotulo}
+def d(coluna, rotulo, papel=None):
+    """Dimensão. papel="empresa": a linha É uma empresa e esta coluna a nomeia (uma linha por empresa e período).
+    papel="dono": a linha é um ativo ou um contrato e esta coluna nomeia quem o detém (várias linhas por CNPJ).
+    O grafo usa essa distinção: só as bases por empresa criam empresa; as por ativo entram nas que já existem."""
+    assert papel in (None, "empresa", "dono"), papel
+    return {"coluna": coluna, "rotulo": rotulo, **({"papel": papel} if papel else {})}
 
 
 NOME_ATUAL = "arg_max({nome}, {ordem}) OVER (PARTITION BY cnpj)"  # a razão social muda com os anos; a série segue o CNPJ
@@ -45,7 +49,7 @@ CONJUNTOS = [
          sql=f"""SELECT {NOME_ATUAL.format(nome='empresa', ordem='ano')} AS empresa, escopo, ano::VARCHAR AS ano, *
                  EXCLUDE (empresa, escopo, ano, contas_capex) FROM kpis_financeiros ORDER BY empresa, ano""",
          tempo=d("ano", "Ano"), granularidade="ano",
-         dimensoes=[d("empresa", "Empresa"), d("escopo", "Escopo")],
+         dimensoes=[d("empresa", "Empresa", papel="empresa"), d("escopo", "Escopo")],
          medidas=[m("receita_liquida_brl", "Receita líquida", "brl"), m("ebit_brl", "EBIT", "brl"),
                   m("ebitda_brl", "EBITDA", "brl"), m("depreciacao_amortizacao_brl", "Depreciação e amortização", "brl"),
                   m("lucro_liquido_brl", "Lucro líquido", "brl"),
@@ -73,7 +77,7 @@ CONJUNTOS = [
                  EXCLUDE (empresa, escopo, ano, trimestre, data_referencia) FROM kpis_trimestrais
                  ORDER BY empresa, periodo""",
          tempo=d("periodo", "Trimestre"), granularidade="trimestre",
-         dimensoes=[d("empresa", "Empresa"), d("escopo", "Escopo")],
+         dimensoes=[d("empresa", "Empresa", papel="empresa"), d("escopo", "Escopo")],
          medidas=[m("receita_liquida_trimestre_brl", "Receita líquida do trimestre", "brl"),
                   m("ebit_trimestre_brl", "EBIT do trimestre", "brl"),
                   m("lucro_trimestre_brl", "Lucro do trimestre", "brl"),
@@ -97,7 +101,7 @@ CONJUNTOS = [
          sql=f"""SELECT {NOME_ATUAL.format(nome='distribuidora', ordem='ano')} AS distribuidora, ano::VARCHAR AS ano, *
                  EXCLUDE (distribuidora, ano) FROM dec_fec_distribuidora_anual ORDER BY distribuidora, ano""",
          tempo=d("ano", "Ano"), granularidade="ano",
-         dimensoes=[d("distribuidora", "Distribuidora")],
+         dimensoes=[d("distribuidora", "Distribuidora", papel="empresa")],
          medidas=[m("dec_horas", "DEC (horas)", "h", "ponderada", peso="consumidores_medios"),
                   m("dec_limite_medio_ponderado_horas", "Limite de DEC (horas)", "h", "ponderada",
                     peso="consumidores_medios"),
@@ -148,7 +152,7 @@ CONJUNTOS = [
                 referencia_mwh_estimada, cnpj, fonte_calculo FROM curtailment_por_dono_mensal
                 ORDER BY proprietario, mes""",
          tempo=d("mes", "Mês"), granularidade="mes",
-         dimensoes=[d("proprietario", "Dono"), d("fonte", "Fonte")],
+         dimensoes=[d("proprietario", "Dono", papel="dono"), d("fonte", "Fonte")],
          medidas=[m("energia_cortada_mwh_estimada", "Energia cortada (estimada)", "mwh"),
                   m("referencia_mwh_estimada", "Geração de referência (estimada)", "mwh"),
                   razao("corte_pct", "Corte (% da referência)", "pct",
@@ -159,7 +163,8 @@ CONJUNTOS = [
          sql="""SELECT proprietario, origem, tipo_geracao, fase, potencia_mw, usinas, cnpj,
                 strftime(data_base, '%Y-%m-%d') AS data_base, fonte FROM capacidade_por_proprietario
                 ORDER BY potencia_mw DESC""",
-         dimensoes=[d("origem", "Origem"), d("tipo_geracao", "Tipo"), d("fase", "Fase"), d("proprietario", "Dono")],
+         dimensoes=[d("origem", "Origem"), d("tipo_geracao", "Tipo"), d("fase", "Fase"),
+                    d("proprietario", "Dono", papel="dono")],
          medidas=[m("potencia_mw", "Potência", "mw"), m("usinas", "Usinas", "n")],
          extras=[d("cnpj", "CNPJ"), d("data_base", "Data-base"), d("fonte", "Fonte")],
          padrao=dict(medida="potencia_mw", serie="origem", filtros={"fase": ["Operação"]})),
@@ -198,7 +203,7 @@ CONJUNTOS = [
          sql="""SELECT distribuidora, uf, regiao, ano::VARCHAR AS ano, tipo_obra, classe_obra, planejado_brl,
                 realizado_brl, cnpj FROM pdd_investimentos ORDER BY distribuidora, ano""",
          tempo=d("ano", "Ano"), granularidade="ano",
-         dimensoes=[d("distribuidora", "Distribuidora"), d("uf", "UF"), d("regiao", "Região"),
+         dimensoes=[d("distribuidora", "Distribuidora", papel="empresa"), d("uf", "UF"), d("regiao", "Região"),
                     d("tipo_obra", "Tipo de obra"), d("classe_obra", "Classe de obra")],
          medidas=[m("realizado_brl", "Realizado", "brl"), m("planejado_brl", "Planejado", "brl"),
                   razao("execucao_pct", "Execução (realizado / planejado)", "pct", "realizado_brl", "planejado_brl",
@@ -212,7 +217,7 @@ CONJUNTOS = [
                 FROM bndes_operacoes WHERE setor_eletrico ORDER BY data_contratacao""",
          tempo=d("ano", "Ano"), granularidade="ano",
          dimensoes=[d("subsetor_bndes", "Subsetor"), d("uf", "UF"), d("produto", "Produto"), d("porte", "Porte"),
-                    d("situacao", "Situação"), d("cliente", "Cliente")],
+                    d("situacao", "Situação"), d("cliente", "Cliente", papel="dono")],
          medidas=[m("valor_contratado_brl", "Valor contratado", "brl"),
                   m("valor_desembolsado_brl", "Valor desembolsado", "brl"),
                   m("juros_pct_aa", "Juros (% a.a., ponderado pelo valor contratado)", "pct", "ponderada",
@@ -262,6 +267,16 @@ def busca_por_dimensao(c, colunas, linhas, termos_cnpj):
     return busca
 
 
+def papel_dimensao(c, colunas, papel):
+    """Coluna da dimensão marcada com este papel em d(). Exige cnpj na consulta: sem CNPJ não há a quem ligar."""
+    marcadas = [x["coluna"] for x in c["dimensoes"] if x.get("papel") == papel]
+    assert len(marcadas) <= 1, f"{c['id']}: {len(marcadas)} dimensões com papel {papel}, o grafo espera no máximo uma"
+    if not marcadas:
+        return None
+    assert "cnpj" in colunas, f"{c['id']}: dimensão {marcadas[0]} tem papel {papel} mas a consulta não traz cnpj"
+    return marcadas[0]
+
+
 con = duckdb.connect(BANCO, read_only=True)
 existentes = {t for (t,) in con.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")
               .fetchall()}
@@ -288,6 +303,8 @@ for c in CONJUNTOS:
     descricao, fonte, ressalvas = catalogo.get(c["tabela"], ("", "", ""))
     conjuntos.append({**c, "descricao": descricao, "fonte": fonte, "ressalvas": ressalvas or "",
                       "busca": busca_por_dimensao(c, colunas, linhas, termos_cnpj),
+                      "dimensao_empresa": papel_dimensao(c, colunas, "empresa"),
+                      "dimensao_dono": papel_dimensao(c, colunas, "dono"),
                       "colunas": colunas, "linhas": linhas})
     print(f"{c['id']}: {len(linhas)} linhas")
 con.close()

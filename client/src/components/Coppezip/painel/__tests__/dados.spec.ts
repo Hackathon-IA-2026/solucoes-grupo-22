@@ -42,6 +42,8 @@ const conjunto: Conjunto = {
   extras: [],
   padrao: { medida: 'receita', serie: 'empresa' },
   busca: { empresa: { 'TAESA S.A.': '07.859.971/0001-30 Taesa TAEE11' } },
+  dimensao_empresa: 'empresa',
+  dimensao_dono: null,
   colunas: ['empresa', 'escopo', 'ano', 'receita', 'lucro', 'dec', 'consumidores'],
   linhas: [
     ['TAESA S.A.', 'consolidado', '2024', 100, 40, 10, 1],

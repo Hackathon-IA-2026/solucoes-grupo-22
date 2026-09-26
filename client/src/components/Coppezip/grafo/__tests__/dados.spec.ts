@@ -39,6 +39,8 @@ const kpis: Conjunto = {
   extras: [{ coluna: 'cnpj', rotulo: 'CNPJ' }],
   padrao: { medida: 'receita', serie: 'empresa', filtros: { escopo: ['consolidado'] } },
   busca: { empresa: { 'CIA ENERGETICA DE MINAS GERAIS': '17.155.730/0001-64 CMIG4 Cemig' } },
+  dimensao_empresa: 'empresa',
+  dimensao_dono: null,
   colunas: ['empresa', 'escopo', 'ano', 'cnpj', 'receita', 'lucro', 'margem', 'capex'],
   linhas: [
     [
@@ -85,10 +87,32 @@ const decFec: Conjunto = {
   medidas: [{ coluna: 'dec', rotulo: 'DEC (horas)', unidade: 'h', agregacao: 'media' }],
   padrao: { medida: 'dec', serie: 'distribuidora' },
   busca: { distribuidora: { CEMIG: '17.155.730/0001-64' } },
+  dimensao_empresa: 'distribuidora',
   colunas: ['distribuidora', 'ano', 'cnpj', 'dec'],
   linhas: [
     ['CEMIG', '2024', '17155730000164', 10.5],
     ['CEMIG', '2025', '17155730000164', 9.5],
+  ],
+};
+
+// Base por ativo: liga pelo CNPJ (dimensao_dono) mas não cria empresa — a SPE só aparece aqui.
+const capacidade: Conjunto = {
+  ...kpis,
+  id: 'capacidade',
+  grupo: 'Geração',
+  titulo: 'Capacidade instalada por dono',
+  fonte: 'ANEEL SIGA',
+  dimensoes: [{ coluna: 'proprietario', rotulo: 'Dono' }],
+  medidas: [{ coluna: 'potencia_mw', rotulo: 'Potência', unidade: 'mw', agregacao: 'soma' }],
+  padrao: { medida: 'potencia_mw', serie: 'proprietario' },
+  busca: {},
+  dimensao_empresa: null,
+  dimensao_dono: 'proprietario',
+  tempo: undefined,
+  colunas: ['proprietario', 'cnpj', 'potencia_mw'],
+  linhas: [
+    ['CEMIG GERACAO E TRANSMISSAO', '17155730000164', 5000],
+    ['SPE EOLICA XYZ LTDA', '22222222000122', 30],
   ],
 };
 
@@ -97,11 +121,12 @@ const cmo: Conjunto = {
   ...kpis,
   id: 'cmo',
   busca: {},
+  dimensao_empresa: null,
   colunas: ['subsistema', 'mes', 'cmo'],
   linhas: [['SE', '2024-01', 100]],
 };
 
-const painel: Painel = { gerado_em: '', banco: '', conjuntos: [kpis, decFec, cmo] };
+const painel: Painel = { gerado_em: '', banco: '', conjuntos: [kpis, decFec, capacidade, cmo] };
 
 const doc = (arquivo: string, tipo: string, ano: number): Documento => ({
   arquivo,
@@ -129,7 +154,7 @@ describe('listarEmpresas', () => {
       nome: 'Cemig',
       razaoSocial: 'CIA ENERGETICA DE MINAS GERAIS',
       cnpjFormatado: '17.155.730/0001-64',
-      grupos: ['Financeiro', 'Distribuição'],
+      grupos: ['Financeiro', 'Distribuição', 'Geração'],
       documentos: 3,
     });
     expect(empresas[1]).toMatchObject({
@@ -137,6 +162,17 @@ describe('listarEmpresas', () => {
       razaoSocial: null,
       documentos: 0,
     });
+  });
+
+  it('não cria empresa a partir de base por ativo, mas anexa a base a quem já está no acervo', () => {
+    const empresas = listarEmpresas(painel, documentos);
+    // a SPE só tem linha em capacidade (dimensao_dono): fica de fora do acervo
+    expect(empresas.map((e) => e.cnpj)).not.toContain('22222222000122');
+    expect(empresas[0].bases).toEqual([
+      'Indicadores financeiros anuais',
+      'DEC e FEC por distribuidora',
+      'Capacidade instalada por dono',
+    ]);
   });
 
   it('normaliza o CNPJ com ou sem pontuação e sem o zero à esquerda', () => {

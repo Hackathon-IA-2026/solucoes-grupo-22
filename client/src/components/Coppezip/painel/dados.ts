@@ -29,6 +29,10 @@ export type Conjunto = {
   extras: Coluna[];
   padrao: { medida: string; serie: string; filtros?: Record<string, string[]>; desde?: string };
   busca: Record<string, Record<string, string>>;
+  /** Dimensão que nomeia a empresa nas bases em que a linha É a empresa (papel="empresa" no exportador). */
+  dimensao_empresa: string | null;
+  /** Dimensão que nomeia o detentor nas bases por ativo ou contrato, com várias linhas por CNPJ (papel="dono"). */
+  dimensao_dono: string | null;
   colunas: string[];
   linhas: Linha[];
 };

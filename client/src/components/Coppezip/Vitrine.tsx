@@ -6,10 +6,14 @@ import TimelineIcon from '~/components/Timeline/TimelineIcon';
 // Vitrine: casca do site estático (build com VITE_SITE_ESTATICO=1, publicado por infra/publicar_site.py num bucket S3).
 // Sem backend não existe login, barra lateral nem chat, então esta casca só põe a navegação das abas que leem JSON.
 
-// Nome do produto num só lugar, porque a troca de CoppeZIP para EnergyNexus vem em seguida.
+// Nome do produto num só lugar.
 const MARCA = 'CoppeZIP';
 
-type Aba = { para: string; rotulo: string; Icone: ComponentType<SVGProps<SVGSVGElement>> };
+// Só as props que a aba passa: SVGProps inteiro não serve porque o ref dos ícones do lucide é RefAttributes e não o
+// LegacyRef do SVGProps, e aí nenhum dos dois tipos de ícone (lucide e TimelineIcon) casa com o outro.
+type PropsIcone = Pick<SVGProps<SVGSVGElement>, 'width' | 'height' | 'aria-hidden'>;
+
+type Aba = { para: string; rotulo: string; Icone: ComponentType<PropsIcone> };
 
 const ABAS: Aba[] = [
   { para: 'painel', rotulo: 'Painel', Icone: LayoutDashboard },
@@ -23,7 +27,7 @@ export default function Vitrine() {
     <div className="flex h-[100dvh] flex-col bg-surface-primary text-text-primary">
       <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border-medium px-4 py-2">
         <span className="flex items-center gap-2 font-semibold">
-          <img src="assets/logo.svg" alt="" width={22} height={22} />
+          <img src="assets/energynexus.png" alt="" width={22} height={22} />
           {MARCA}
         </span>
         <nav aria-label="Abas" className="flex flex-wrap gap-1">
