@@ -48,9 +48,15 @@ def cliente(threads: int):
 
 
 def embed(bedrock, texto: str) -> list[float]:
-    r = bedrock.invoke_model(modelId=MODELO, contentType="application/json", accept="application/json",
-                             body=json.dumps({"inputText": texto, "dimensions": DIMENSOES, "normalize": True}))
-    return json.loads(r["body"].read())["embedding"]
+    for tentativa in range(6):
+        try:
+            r = bedrock.invoke_model(modelId=MODELO, contentType="application/json", accept="application/json",
+                                     body=json.dumps({"inputText": texto, "dimensions": DIMENSOES, "normalize": True}))
+            return json.loads(r["body"].read())["embedding"]
+        except bedrock.exceptions.ModelErrorException:  # erro passageiro do Bedrock que o boto3 não repete sozinho
+            if tentativa == 5:
+                raise
+            time.sleep(2 ** tentativa)
 
 
 def abrir_trabalho(tudo: bool):
