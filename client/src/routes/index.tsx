@@ -56,6 +56,21 @@ const loadProjectWorkspace = () =>
     Component: m.ProjectWorkspace,
   }));
 
+const loadPainelView = () =>
+  import('~/components/Coppezip/PainelView').then((m) => ({
+    Component: m.default,
+  }));
+
+const loadBuscaView = () =>
+  import('~/components/Coppezip/BuscaView').then((m) => ({
+    Component: m.default,
+  }));
+
+const loadGrafoView = () =>
+  import('~/components/Coppezip/GrafoView').then((m) => ({
+    Component: m.default,
+  }));
+
 const baseEl = document.querySelector('base');
 const baseHref = baseEl?.getAttribute('href') || '/';
 
@@ -198,6 +213,18 @@ export const router = createBrowserRouter(
                   <AgentMarketplace />
                 </MarketplaceProvider>
               ),
+            },
+            {
+              path: 'painel',
+              lazy: loadPainelView,
+            },
+            {
+              path: 'busca',
+              lazy: loadBuscaView,
+            },
+            {
+              path: 'grafo',
+              lazy: loadGrafoView,
             },
           ],
         },

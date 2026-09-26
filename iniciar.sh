@@ -1,6 +1,7 @@
 #!/bin/bash
-# Sobe MongoDB, Meilisearch e o LibreChat (que lê librechat.yaml e .env desta pasta, inicia as ferramentas de
-# proper_mcps/ e carrega as skills de proper_skills/). O modelo é separado: ./vllm.sh ou o Bedrock.
+# Sobe MongoDB, Meilisearch, a busca nos PDFs (aba Busca) e o LibreChat (que lê librechat.yaml e .env desta pasta,
+# inicia as ferramentas de proper_mcps/ e carrega as skills de proper_skills/). O modelo é separado: ./vllm.sh ou o
+# Bedrock.
 set -euo pipefail
 cd "$(dirname "$0")"; RAIZ=$PWD; R=$RAIZ/.runtime
 set -a; . ./.env; set +a
@@ -14,6 +15,9 @@ aberta "$MONGO_PORTA" || mongod --dbpath "$R/mongo" --bind_ip 127.0.0.1 --port "
 aberta "$MEILI_PORTA" || nohup bash -c 'echo $$ > "$0"; exec setsid meilisearch "$@"' "$R/run/meili.pid" \
   --db-path "$R/meili" --http-addr "127.0.0.1:$MEILI_PORTA" --master-key "$MEILI_MASTER_KEY" --no-analytics \
   --env production > "$R/logs/meili.log" 2>&1 < /dev/null &
+# aba Busca: serviço HTTP sobre data/docs.duckdb que a rota /api/busca do LibreChat repassa
+aberta "$BUSCA_PORTA" || nohup bash -c 'echo $$ > "$0"; exec setsid "$@"' "$R/run/busca.pid" \
+  "$R/venv/bin/python" proper_mcps/docs/busca.py --porta "$BUSCA_PORTA" > "$R/logs/busca.log" 2>&1 < /dev/null &
 # relatórios do gerar_relatorio: o LibreChat serve client/public/assets na raiz do site (/relatorios/...)
 ln -sfn "$R/relatorios" client/public/assets/relatorios
 # aba Timeline: linha do tempo de cada empresa a partir dos bancos de data/, servida em /linha_do_tempo/

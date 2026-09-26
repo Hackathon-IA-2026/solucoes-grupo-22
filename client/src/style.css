@@ -78,6 +78,15 @@
 html {
   --brand-purple: #ab68ff;
   --presentation: var(--white);
+  /* séries do Painel (CoppeZIP): roxo da marca e mais 7 cores, validadas contra o branco (daltonismo e contraste) */
+  --painel-1: #7c3aed;
+  --painel-2: #eb6834;
+  --painel-3: #1baf7a;
+  --painel-4: #eda100;
+  --painel-5: #e87ba4;
+  --painel-6: #008300;
+  --painel-7: #2a78d6;
+  --painel-8: #e34948;
   --text-primary: var(--gray-800);
   --text-secondary: var(--gray-600);
   --text-secondary-alt: var(--gray-500);
@@ -141,6 +150,15 @@ html {
 .dark {
   --brand-purple: #ab68ff;
   --presentation: var(--purple-800);
+  /* as mesmas 8 séries em passos para o fundo roxo escuro (--purple-900) */
+  --painel-1: #ab68ff;
+  --painel-2: #d95926;
+  --painel-3: #199e70;
+  --painel-4: #c98500;
+  --painel-5: #d55181;
+  --painel-6: #008300;
+  --painel-7: #3987e5;
+  --painel-8: #e66767;
   --text-primary: var(--gray-100);
   --text-secondary: var(--gray-300);
   --text-secondary-alt: var(--purple-400);

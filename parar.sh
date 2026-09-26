@@ -1,7 +1,7 @@
 #!/bin/bash
-# Para o LibreChat, o Meilisearch e o MongoDB que o iniciar.sh subiu (pelos PIDs em .runtime/run).
+# Para o LibreChat, a busca nos PDFs, o Meilisearch e o MongoDB que o iniciar.sh subiu (pelos PIDs em .runtime/run).
 cd "$(dirname "$0")"; R=$PWD/.runtime
-for s in librechat meili mongod; do
+for s in librechat busca meili mongod; do
   f=$R/run/$s.pid
   [ -f "$f" ] || continue
   pid=$(cat "$f")

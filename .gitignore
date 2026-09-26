@@ -188,9 +188,11 @@ data/raw
 data/parquet
 data/modelos
 data/*.duckdb*
+data/painel.json
 !librechat.yaml
 !CLAUDE.md
 data/violations.json
 __pycache__/
 *.pyc
+data/build_*/
 proper_mcps/agentcore/cdk.out/

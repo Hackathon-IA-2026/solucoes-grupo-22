@@ -16,6 +16,7 @@ import { useConversationsInfiniteQuery, useTitleGeneration } from '~/data-provid
 import { Conversations } from '~/components/Conversations';
 import ProjectsSection from '~/components/Conversations/ProjectsSection';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
+import CoppezipNavButtons from '~/components/Nav/CoppezipNavButtons';
 import SearchBar from '~/components/Nav/SearchBar';
 import store from '~/store';
 
@@ -117,6 +118,7 @@ const ConversationsSection = memo(() => {
           </Suspense>
         )}
         {search.enabled && <SearchBar isSmallScreen={isSmallScreen} />}
+        <CoppezipNavButtons />
       </div>
       {!search.query && (
         <div className="px-3">
