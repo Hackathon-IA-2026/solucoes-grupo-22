@@ -190,3 +190,5 @@ data/*.duckdb*
 !librechat.yaml
 !CLAUDE.md
 data/violations.json
+__pycache__/
+*.pyc
