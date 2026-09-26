@@ -42,13 +42,18 @@ def _digitos(valor) -> str:
 
 
 def _aparece_na_pagina(valor: float | None, trecho: str, texto_pagina: str) -> bool:
-    """A confiança mínima: os algarismos do valor têm de estar no trecho citado, e o trecho na página."""
+    """Confiança mínima: o trecho está na página e os algarismos do valor aparecem. Aceita magnitude por extenso
+    ("R$ 9,7 bilhões" -> 9,7e9; "5,8 milhões" -> 5,8e6): a mantissa (dígitos sem os zeros do multiplicador) tem de
+    estar no trecho citado."""
+    trecho_ok = bool(trecho) and _sem_acento(trecho)[:40] in _sem_acento(texto_pagina)
     if valor is None:
-        return bool(trecho and _sem_acento(trecho)[:40] in _sem_acento(texto_pagina))
-    alvo = _digitos(valor)
-    if len(alvo) < 2:  # 1 dígito casa em qualquer lugar; exige o trecho
-        return bool(trecho) and _digitos_no_texto(alvo, trecho) and _sem_acento(trecho)[:40] in _sem_acento(texto_pagina)
-    return _digitos_no_texto(alvo, texto_pagina) or _digitos_no_texto(alvo, trecho)
+        return trecho_ok
+    cheio = _digitos(valor)
+    mantissa = cheio.rstrip("0") or cheio
+    for alvo, onde in ((cheio, texto_pagina), (cheio, trecho), (mantissa, trecho)):
+        if len(alvo) >= 2 and _digitos_no_texto(alvo, onde):
+            return True
+    return len(cheio) < 2 and trecho_ok   # valor de 1 dígito: basta o trecho na página
 
 
 def _digitos_no_texto(alvo: str, texto: str) -> bool:
@@ -269,13 +274,49 @@ def gravar(con, tabela: str, achados: list[dict], modelo: str):
         con.execute(f"INSERT INTO {tabela} ({', '.join(cols)}) VALUES ({', '.join(['?'] * len(cols))})", valores)
 
 
+# colunas que carregam o valor principal de cada tabela (a que precisa aparecer na página), em ordem de preferência
+VALOR = {
+    "esg_emissoes": ["tco2e"], "esg_metas": ["valor_alvo"],
+    "esg_renovavel": ["pct_capacidade_renovavel", "pct_geracao_renovavel"],
+    "esg_capex": ["capex_total_brl", "capex_verde_brl"], "esg_frameworks": [],
+}
+
+
+def revalidar():
+    """Recomputa a confiança de todas as tabelas a partir do trecho e do valor já gravados (sem chamar o LLM).
+    Útil ao afinar a checagem 'valor aparece na página'."""
+    docs = duckdb.connect(DOCS, read_only=True)
+    paginas = {(a, p): t for a, p, t in docs.execute("SELECT arquivo, pagina, texto FROM paginas").fetchall()}
+    docs.close()
+    con = duckdb.connect(PLACAR)
+    for tabela, cands in VALOR.items():
+        cols = [c.split()[0] for c in DDL[tabela].split(", ")]
+        linhas = [dict(zip(cols, r)) for r in con.execute(f"SELECT {', '.join(cols)} FROM {tabela}").fetchall()]
+        for d in linhas:
+            valor = next((d[c] for c in cands if d.get(c) is not None), None)
+            texto = paginas.get((d["arquivo"], d["pagina"]), "")
+            d["confianca"] = 1.0 if _aparece_na_pagina(valor, d.get("trecho"), texto) else 0.0
+        con.execute(f"DELETE FROM {tabela}")
+        for d in linhas:
+            con.execute(f"INSERT INTO {tabela} ({', '.join(cols)}) VALUES ({', '.join(['?'] * len(cols))})",
+                        [d.get(c) for c in cols])
+        ok = sum(1 for d in linhas if d["confianca"] > 0)
+        print(f"  {tabela}: {ok}/{len(linhas)} com fonte confirmada")
+    con.close()
+    print(f"ok: {PLACAR}")
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--revalidar", action="store_true", help="recomputa a confiança sem LLM e sai")
     ap.add_argument("--grupo", choices=list(GRUPOS), help="limita a um grupo (padrão: todos)")
     ap.add_argument("--empresa", help="filtra por nome de empresa (substring)")
     ap.add_argument("--limite-paginas", type=int, default=4, help="páginas candidatas por documento e grupo")
     ap.add_argument("--seco", action="store_true", help="não grava; só imprime o que extrairia")
     a = ap.parse_args()
+    if a.revalidar:
+        revalidar()
+        return
 
     docs_con = duckdb.connect(DOCS, read_only=True)
     onde = "WHERE tipo NOT IN ('regulacao', 'referencia')"

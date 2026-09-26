@@ -9,3 +9,5 @@ fastembed==0.8.1
 boto3==1.43.103
 pyyaml==6.0.3
 numpy==2.5.3
+pydantic==2.13.5
+boto3==1.43.103
