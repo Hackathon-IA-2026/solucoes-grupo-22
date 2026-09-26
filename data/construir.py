@@ -15,16 +15,21 @@ faltar um arquivo, a montagem para e diz qual. Entradas:
     ONS), MMGD, RALIE, SAMP (mercado e balanço de energia), bandeiras (acionamento e adicionais), ranking de continuidade
   ons/** — CMO, EAR, ENA, carga, balanço por subsistema, intercâmbio, geração por usina, curtailment e mapas de conjuntos
   bcb/sgs_*.json e data/parquet/*.parquet (reg_decfec, reg_capacidade)
+  aneel_ons_epe_bndes/anuario_dados_brutos.xlsx (Anuário da EPE: consumo mensal por UF, classe, tensão e faixa),
+    pde2035_dados.zip (39 abas de 8 dos 12 capítulos do PDE 2035) e pde2035_transmissao.xlsx (expansão obra a obra)
+  cvm/deb_incentivadas.xls (portarias autorizativas da Lei 12.431; .xls BIFF antigo, que só o xlrd abre)
 Arquivos de data/raw que NÃO viram tabela (são cópia de outra fonte já lida; a evidência está no comentário junto da
 tabela que os cobre): aneel_ons_epe_bndes/capacidade.csv, coff2025.csv, siga_diario.csv, naoauto_sample.csv,
 desembolsos-mensais-sample.csv, aneel/siget_rap/siget-resolucao-empreendimento-obra-modulo.csv, cad_cia_aberta.csv (o
-da raiz de raw/, fora de cvm/) e cvm/dfp_cia_aberta_2024.zip (o da raiz de cvm/, fora de cvm/dfp/). Faltam ler as
-planilhas aneel_ons_epe_bndes/anuario_dados_brutos.xlsx, pde2035_dados.zip, pde2035_transmissao.xlsx e
-cvm/deb_incentivadas.xls.
+da raiz de raw/, fora de cvm/) e cvm/dfp_cia_aberta_2024.zip (o da raiz de cvm/, fora de cvm/dfp/). Do
+pde2035_dados.zip ficam fora os capítulos 01, 05, 06 e 08 (economia, petróleo, derivados e biocombustíveis, fora do
+recorte elétrico) e as abas de resultado intermediário de simulação dos capítulos lidos; o critério aba a aba está em
+data/FONTES_PLANILHAS.md.
 Os PDFs de dicionário de dados de data/raw não são tabelas: vão para o índice de documentos (data/indexar_dados_local.py).
 Saída: data/energynexus.duckdb, trocado de forma atômica (os servidores MCP abrem só para leitura).
 """
 import csv
+import datetime
 import glob
 import os
 import re
@@ -34,6 +39,7 @@ import zipfile
 
 import duckdb
 import openpyxl
+import xlrd
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # raiz do repositório
 
@@ -89,6 +95,15 @@ def exigir_glob(padrao, dica=DICA):
     if not achados:
         raise SystemExit(f"construir.py: nenhum arquivo casa com {padrao} ({dica})")
     return achados
+
+
+def exigir_sem_nulo(nome, coluna):
+    """Coluna que não pode ter NULL depois da conversão. Serve para as traduções por lista fixa (nome de mês da EPE, por
+    exemplo): se a planilha mudar a grafia, a conversão devolve NULL e o banco sairia com a coluna em branco sem
+    ninguém perceber. Melhor parar a montagem e dizer onde."""
+    n = con.execute(f"SELECT count(*) FROM {nome} WHERE {coluna} IS NULL").fetchone()[0]
+    if n:
+        raise SystemExit(f"construir.py: {nome}.{coluna} veio com {n} NULL (a planilha de origem mudou de formato?)")
 
 
 def ons_parquets(pasta):
@@ -1859,6 +1874,730 @@ FROM d
     "data_vencimento < DATE '2100-01-01' antes de montar cronograma de vencimentos. NÃO use "
     "gerador_ou_autoprodutor_aneel como 'empresa de energia': ele inclui autoprodutor industrial, e é por isso que "
     "Vale, Sabesp e Suzano aparecem marcados ali (1.686 debêntures só têm essa marca)")
+
+# ---------------------------------------------------------------- EPE: Anuário Estatístico de Energia Elétrica
+# Base bruta do Anuário: consumo mensal realizado de 2011 a 2025, aberto por UF, classe, tensão e faixa de consumo.
+# É a única das quatro planilhas lida tipada (sem all_varchar): não há rodapé de texto, então a inferência funciona.
+# A coluna Data é um DOUBLE no formato yyyymmdd (20110101) — a macro data_br não serve aqui.
+ANUARIO = exigir(os.path.join(ANEEL, "anuario_dados_brutos.xlsx"))
+tabela("epe_anuario_consumo_mensal", f"""
+SELECT strptime(CAST(CAST("Data" AS BIGINT) AS VARCHAR), '%Y%m%d')::DATE AS mes,
+       "TipoConsumidor" AS tipo_consumidor, "Sistema" AS subsistema, "UF" AS uf,
+       "Setor Econômico - N1" AS classe, nullif("Setor Econômico - N2", 'TOTAL') AS subclasse,
+       nullif("Setor Econômico - N3", 'TOTAL') AS subclasse_detalhe,
+       "Tipo Tensão - N1" AS grupo_tensao, nullif("Tipo Tensão - N2", 'TOTAL') AS subgrupo_tensao,
+       nullif("Tipo Tensão - N3", 'TOTAL') AS subgrupo_tensao_detalhe,
+       "Faixa de Consumo N1" AS faixa_consumo, "Faixa de Consumo N2" AS faixa_consumo_detalhe,
+       CAST("Consumidores" AS BIGINT) AS consumidores, "Consumo" AS consumo_mwh
+FROM read_xlsx('{ANUARIO}', sheet='Sheet1', header=true)
+""", "Consumo de energia elétrica e número de consumidores REALIZADOS, mês a mês de 01/2011 a 12/2025, por UF, "
+     "subsistema, tipo de consumidor (Cativo ou Livre), classe de consumo em três níveis (classe, subclasse, "
+     "subclasse_detalhe), grupo e subgrupo de tensão e faixa de consumo em kWh. consumo_mwh em MWh; consumidores é o "
+     "estoque de unidades consumidoras do mês. É a série de consumo mais longa e mais detalhada do banco: começa em "
+     "2011, inclui consumidor livre e é a única com abertura por faixa de consumo e por nível de tensão.",
+    "EPE, Anuário Estatístico de Energia Elétrica, base bruta de consumo (anuario_dados_brutos.xlsx)",
+    "a unidade é MWh (a planilha não diz): a soma de 2024 dá 561,57 milhões de MWh, que é o consumo total de 561,5 TWh "
+    "publicado pela EPE. consumidores é ESTOQUE mensal: não some ao longo dos meses; para o ano use a média "
+    "(sum(consumidores)/12 = 93,29 milhões em 2024 e 94,83 em 2025). 'TOTAL' nas colunas N2/N3 da origem significa "
+    "'sem desagregação neste nível' e foi anulado com nullif — quem somar sem anular conta duas vezes. 14.640 linhas "
+    "com consumo_mwh NULL, 5.882 com consumidores NULL e 876 com consumo_mwh NEGATIVO (ajuste retroativo da "
+    "distribuidora): filtre antes de agregar. Perímetros diferentes dos de mercado_distribuidoras_mensal (por "
+    "distribuidora, de 2020 em diante, com faturamento) e de ons_carga_diaria (carga do SIN em MW médio, com perdas): "
+    "os três números não fecham entre si e não devem entrar na mesma série")
+
+# ---------------------------------------------------------------- EPE: PDE 2035 (Plano Decenal de Expansão de Energia)
+# Uma pasta de trabalho por capítulo do plano dentro do zip; os nomes dos membros têm acento e espaço. Extraímos só os
+# 8 capítulos que viram tabela: 01 (economia), 05 (petróleo e gás), 06 (derivados) e 08 (biocombustíveis) estão fora do
+# recorte de setor elétrico. O inventário aba a aba, com o motivo de cada exclusão, está em data/FONTES_PLANILHAS.md.
+PDE_ZIP = exigir(os.path.join(ANEEL, "pde2035_dados.zip"))
+PDE_MEMBROS = {
+    2: "PDE 2035_Dados_Capítulo 02_Demanda de Energia.xlsx",
+    3: "PDE 2035_Dados_Capítulo 03_Geração Centralizada de Energia Elétrica.xlsx",
+    4: "PDE 2035_Dados_Capítulo 04_Transmissão de Energia Elétrica.xlsx",
+    7: "PDE 2035_Dados_Capítulo 07_Gás Natural.xlsx",
+    9: "PDE 2035_Dados_Capítulo 09_Eficiência Energética e Recursos Energéticos Distribuídos.xlsx",
+    10: "PDE 2035_Dados_Capítulo 10_Análise Socioambiental.xlsx",
+    11: "PDE 2035_Dados_Capítulo 11_Transição Energética.xlsx",
+    12: "PDE 2035_Dados_Capítulo 12_Consolidação dos Resultados.xlsx",
+}
+with zipfile.ZipFile(PDE_ZIP) as z:
+    dentro = set(z.namelist())
+    faltando = [m for m in PDE_MEMBROS.values() if m not in dentro]
+    if faltando:
+        raise SystemExit(f"construir.py: {PDE_ZIP} não tem os membros {faltando} (a EPE republicou o zip?)")
+    for membro in PDE_MEMBROS.values():
+        z.extract(membro, trabalho)
+PDE_CAP = {cap: os.path.join(trabalho, m) for cap, m in PDE_MEMBROS.items()}
+# Layout fixo das 254 abas do PDE: L1 'Índice', L2 vazia, L3 título, L4 'Fonte:', L5 vazia, L6 cabeçalho, dados de L7.
+PDE_ANO = 'TRY_CAST("Ano" AS INTEGER) BETWEEN 1990 AND 2100'  # descarta o cabeçalho e a nota de rodapé em texto
+MESES_PDE = ("['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro',"
+             "'Novembro','Dezembro']")
+
+
+def pde(cap, aba, faixa, cabecalho="true"):
+    """Leitura de uma aba do PDE. all_varchar é obrigatório: quase toda aba tem nota de rodapé em texto abaixo dos
+    dados e sem ele a leitura morre em "Could not convert string 'Nota:' to DOUBLE". O range precisa ser um intervalo
+    completo ('A6' sozinho dá Binder Error). Depois cada coluna é tipada por TRY_CAST."""
+    return (f"read_xlsx('{PDE_CAP[cap]}', sheet='{aba}', range='{faixa}', header={cabecalho}, "
+            f"all_varchar=true, empty_as_varchar=true)")
+
+
+def pde_por_ano(cap, aba, faixa, categoria, valor, sufixo, excluir=""):
+    """Aba larga da EPE (uma linha por ano, uma coluna por série) no formato longo do banco. Atenção: no WHERE o nome
+    da categoria resolve para a coluna CRUA do UNPIVOT (ainda com o sufixo de unidade), não para o alias do SELECT —
+    por isso o filtro de exclusão repete o replace, senão a coluna de total passa e vira uma categoria falsa."""
+    ex = f" AND replace({categoria}, '{sufixo}', '') NOT IN ({excluir})" if excluir else ""
+    return f"""
+WITH bruto AS (SELECT * FROM {pde(cap, aba, faixa)} WHERE {PDE_ANO})
+SELECT CAST(ano AS INTEGER) AS ano, replace({categoria}, '{sufixo}', '') AS {categoria},
+       TRY_CAST(valor AS DOUBLE) AS {valor}
+FROM (UNPIVOT (SELECT "Ano" AS ano, * EXCLUDE ("Ano") FROM bruto) ON COLUMNS(* EXCLUDE (ano))
+      INTO NAME {categoria} VALUE valor)
+WHERE valor IS NOT NULL{ex} ORDER BY ano, {categoria}
+"""
+
+
+def fonte_pde(cap, abas):
+    return (f"EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas "
+            f"(pde2035_dados.zip), capítulo {cap:02d}, aba {abas}")
+
+
+# Vale para TODAS as tabelas epe_pde2035_*: é projeção, não realizado. Fica no começo do ressalvas de cada uma.
+PDE_PROJ = ("PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número "
+            "vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a "
+            "própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial "
+            "declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, "
+            "ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. ")
+
+# ---- capítulo 02: demanda de energia
+tabela("epe_pde2035_carga_energia_cenario",
+       pde_por_ano(2, "Figura 2-25", "A6:D40", "cenario", "carga_gwmed", " (GWmédio)"),
+       "Carga de energia do SIN projetada ano a ano (2025-2035) nos três cenários de demanda da EPE (Cenário "
+       "Inferior, Referência e Superior), em GW médio.", fonte_pde(2, "Figura 2-25"),
+       PDE_PROJ + "é CARGA, não consumo: inclui perdas e está em GW médio, então não compara com consumo_mwh de "
+       "epe_anuario_consumo_mensal nem com consumo_rede_twh de epe_pde2035_red_demanda_eletricidade. Ao citar 'a "
+       "carga projetada' diga o cenário: em 2035 o superior (138,29 GWméd) está 20,7% acima do de referência (114,61)")
+
+tabela("epe_pde2035_demanda_maxima_sin_mes", f"""
+WITH bruto AS (SELECT * FROM {pde(2, 'Figura 2-22', 'A6:C40')} WHERE "Mês" IS NOT NULL)
+SELECT CAST(regexp_extract(serie, '\\d{{4}}') AS INTEGER) AS ano,
+       list_position({MESES_PDE}, "Mês") AS mes, TRY_CAST(valor AS DOUBLE) AS demanda_maxima_gwh_h
+FROM (UNPIVOT bruto ON COLUMNS(* EXCLUDE ("Mês")) INTO NAME serie VALUE valor)
+WHERE valor IS NOT NULL ORDER BY ano, mes
+""", "Demanda máxima instantânea projetada do SIN, mês a mês, nos dois anos-limite do plano (2025 e 2035), em GWh/h "
+     "(= GW médio na hora de ponta).", fonte_pde(2, "Figura 2-22"),
+    PDE_PROJ + "só 2025 e 2035, não a série completa: a figura de origem compara os extremos do decênio. O mês vem "
+    "como nome em português na planilha e foi convertido para número")
+exigir_sem_nulo("epe_pde2035_demanda_maxima_sin_mes", "mes")
+
+tabela("epe_pde2035_curva_carga_horaria", f"""
+SELECT list_position(['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'], "Mês") AS mes,
+       CAST("Hora" AS INTEGER) AS hora, "Classe" AS classe, TRY_CAST("Carga (GWh/h)" AS DOUBLE) AS carga_gwh_h
+FROM {pde(2, 'Figura 2-23', 'A6:D2000')}
+WHERE "Mês" IS NOT NULL AND TRY_CAST("Hora" AS INTEGER) IS NOT NULL
+ORDER BY classe, mes, hora
+""", "Curva de carga horária projetada para o dia de ponta de cada mês de 2035, hora a hora (0 a 23) e por classe de "
+     "consumo, em GWh/h. 12 meses x 24 horas x 5 classes.", fonte_pde(2, "Figura 2-23"),
+    PDE_PROJ + "é só 2035 e só o DIA DE PONTA de cada mês, não curva média nem série horária do ano inteiro. A classe "
+    "'Perdas e Diferenças' não é consumo: é o fechamento do balanço, e somar as cinco classes dá a carga, não o "
+    "consumo. Nesta aba os meses vêm abreviados (Jan), ao contrário de epe_pde2035_demanda_maxima_sin_mes (Janeiro)")
+exigir_sem_nulo("epe_pde2035_curva_carga_horaria", "mes")
+
+tabela("epe_pde2035_crescimento_consumo_classe", f"""
+WITH bruto AS (SELECT * FROM {pde(2, 'Figura 2-26', 'A6:D40')} WHERE "Classe" IS NOT NULL)
+SELECT "Classe" AS classe, replace(cenario, ' (% ao ano)', '') AS cenario,
+       round(TRY_CAST(valor AS DOUBLE) * 100, 4) AS crescimento_pct_aa
+FROM (UNPIVOT bruto ON COLUMNS(* EXCLUDE ("Classe")) INTO NAME cenario VALUE valor)
+WHERE valor IS NOT NULL ORDER BY classe, cenario
+""", "Taxa média anual de crescimento do consumo de eletricidade na rede no decênio 2025-2035, por classe "
+     "(Residencial, Industrial, Comercial e Outros) e cenário de demanda, em % ao ano.", fonte_pde(2, "Figura 2-26"),
+    PDE_PROJ + "a planilha guarda FRAÇÃO (0,03039) apesar do título dizer '%': multiplicado por 100 e arredondado em "
+    "4 casas, e é por isso que a unidade está no nome da coluna. É a taxa média do decênio, não taxa ano a ano. A "
+    "classe 'Outros' agrega Rural, Poder Público, Iluminação Pública e Serviço Público, que em "
+    "epe_anuario_consumo_mensal são quatro classes separadas: não cruze classe a classe sem reagrupar")
+
+# ---- capítulo 03: geração centralizada
+tabela("epe_pde2035_capacidade_instalada_fonte",
+       pde_por_ano(3, "Figura 3-6", "A6:K40", "fonte", "potencia_gw", ""),
+       "Capacidade instalada existente e contratada do SIN por fonte, ano a ano de 2025 a 2035, em GW. 10 fontes "
+       "(UHE, PCH, EOLICA, Solar, GAS, CARVAO, NUCLEAR, BIOMASSA, PCT e DIESEL / ÓLEO).", fonte_pde(3, "Figura 3-6"),
+       PDE_PROJ + "a grafia da fonte é a da planilha, inconsistente na origem (EOLICA e CARVAO em maiúscula sem "
+       "acento convivendo com Solar em caixa mista, e 'DIESEL / ÓLEO' com espaços em volta da barra): quem cruzar com "
+       "usinas (SIGA) precisa de tabela de equivalência. 'Solar' INCLUI MMGD — marca 60,27 GW em 2025, muito acima da "
+       "solar centralizada do SIGA —, então esta tabela não é comparável com o total de usinas/capacidade_por_grupo e "
+       "somá-la com epe_pde2035_mmgd_capacidade_cenario conta a MMGD duas vezes. PCT é pequena central termelétrica e "
+       "PCH pequena central hidrelétrica; a planilha não abre a legenda")
+
+tabela("epe_pde2035_demanda_subsistema", f"""
+SELECT CAST("Ano" AS INTEGER) AS ano, TRY_CAST("Sudeste (MWmédio)" AS DOUBLE) AS sudeste_mwmed,
+       TRY_CAST("Sul (MWmédio)" AS DOUBLE) AS sul_mwmed, TRY_CAST("Nordeste (MWmédio)" AS DOUBLE) AS nordeste_mwmed,
+       TRY_CAST("Norte (MWmédio)" AS DOUBLE) AS norte_mwmed,
+       TRY_CAST("Demanda Máxima - SIN (MW)" AS DOUBLE) AS demanda_maxima_sin_mw
+FROM {pde(3, 'Figura 3-7', 'A6:F40')} WHERE {PDE_ANO} ORDER BY ano
+""", "Demanda projetada de cada subsistema (Sudeste/Centro-Oeste, Sul, Nordeste e Norte) em MW médio e demanda máxima "
+     "do SIN em MW de ponta, ano a ano de 2026 a 2035, no cenário de referência.", fonte_pde(3, "Figura 3-7"),
+    PDE_PROJ + "tabela larga de propósito: as quatro colunas de subsistema estão em MW MÉDIO e a última em MW de "
+    "PONTA — despivotar jogaria duas unidades na mesma coluna de valor. Começa em 2026, não 2025. 'Sudeste' aqui é o "
+    "submercado Sudeste/Centro-Oeste, que em epe_anuario_consumo_mensal aparece como 'Sudeste / Centro-Oeste'")
+
+tabela("epe_pde2035_mmgd_expansao_fonte", f"""
+WITH bruto AS (SELECT * FROM {pde(3, 'Figura 3-8', 'A6:K40')} WHERE {PDE_ANO})
+SELECT CAST(ano AS INTEGER) AS ano,
+       regexp_replace(serie, '^(Potência \\(MW\\)|Energia \\(MWmédio\\)) - ', '') AS fonte,
+       CASE WHEN serie LIKE 'Potência%' THEN 'potencia_mw' ELSE 'energia_mwmed' END AS grandeza,
+       TRY_CAST(valor AS DOUBLE) AS valor
+FROM (UNPIVOT (SELECT "Ano" AS ano, * EXCLUDE ("Ano") FROM bruto) ON COLUMNS(* EXCLUDE (ano))
+      INTO NAME serie VALUE valor)
+WHERE valor IS NOT NULL AND fonte <> 'Total' ORDER BY ano, fonte, grandeza
+""", "Expansão projetada da micro e minigeração distribuída (MMGD) de 2026 a 2035, por fonte (Fotovoltaica, Eólica, "
+     "Termelétrica e CGH), em potência e em energia. A unidade está na coluna grandeza: 'potencia_mw' (MW) ou "
+     "'energia_mwmed' (MW médio).", fonte_pde(3, "Figura 3-8"),
+    PDE_PROJ + "coluna valor GENÉRICA: a unidade está em grandeza, não no nome, porque a aba mede as mesmas fontes de "
+    "duas formas. SEMPRE filtre grandeza antes de agregar. A energia em MWmédio vem arredondada a inteiro na planilha "
+    "enquanto a potência tem 8 decimais: precisão diferente na mesma linha. As colunas de total foram descartadas e "
+    "são recalculáveis. Sobrepõe-se a gd_mmgd (ANEEL, cadastro de conexões realizadas) no conceito: não encadeie as "
+    "duas séries, uma é cadastro e a outra é modelo de adoção")
+
+tabela("epe_pde2035_custos_referencia_fonte", f"""
+SELECT 'capex_brl_kw' AS grandeza, "Tipo" AS tecnologia, TRY_CAST("Investimento (R$/kW)" AS DOUBLE) AS valor
+FROM {pde(3, 'Figura 3-19', 'A6:B60')} WHERE "Tipo" IS NOT NULL
+UNION ALL
+SELECT 'om_fixo_brl_kw_ano', "Tipo", TRY_CAST("O&M Anual (R$/kW.ano)" AS DOUBLE)
+FROM {pde(3, 'Figura 3-20', 'A6:B60')} WHERE "Tipo" IS NOT NULL
+UNION ALL
+SELECT 'encargos_brl_kw_ano', "Tipo", TRY_CAST("Encargos (R$/kW.ano)" AS DOUBLE)
+FROM {pde(3, 'Figura 3-21', 'A6:B60')} WHERE "Tipo" IS NOT NULL
+ORDER BY grandeza, tecnologia
+""", "Parâmetros de custo de referência que a EPE usou no modelo de expansão, por tecnologia de geração ou "
+     "armazenamento: CAPEX ('capex_brl_kw', R$/kW), O&M fixo anual ('om_fixo_brl_kw_ano', R$/kW.ano) e encargos, taxas "
+     "e impostos ('encargos_brl_kw_ano', R$/kW.ano). A unidade está na coluna grandeza.",
+    fonte_pde(3, "Figuras 3-19, 3-20 e 3-21"),
+    PDE_PROJ + "coluna valor GENÉRICA: filtre grandeza antes de comparar. As três abas NÃO têm a mesma lista de "
+    "tecnologias (32, 22 e 32 linhas; a de O&M não abre Fotovoltaica em faixas), então uma consulta que junte CAPEX e "
+    "O&M pela tecnologia perde linhas — use LEFT JOIN consciente disso. As 'Faixas' (Fotovoltaica e Bateria - Faixa "
+    "1/2/3) são faixas de custo do modelo, não de porte, e a planilha não define os limites. São parâmetros de "
+    "entrada em R$ de 2025, não custo observado em leilão")
+
+tabela("epe_pde2035_expansao_indicativa",
+       pde_por_ano(3, "Figura 3-23", "A6:K40", "fonte", "potencia_acumulada_mw", " (MW)", excluir="'Total'"),
+       "Expansão indicativa ACUMULADA da geração no horizonte 2026-2035, por fonte (Hidro, Eólica, Solar, UTE Flex, "
+       "UTE Inflex, UTE Bio, Nuclear, Armazenamento e RD), em MW. É o resultado central do capítulo de geração.",
+       fonte_pde(3, "Figura 3-23"),
+       PDE_PROJ + "é ACUMULADA: o valor de 2035 é o total do decênio e a adição de um ano é a diferença entre dois "
+       "anos consecutivos — somar a coluna ao longo dos anos é erro grosseiro. É INDICATIVA: é a expansão que o modelo "
+       "escolhe, não obra contratada, então não compare com expansao_geracao (RALIE/ANEEL, obra declarada em "
+       "andamento) nem com resultado de leilão. 'RD' é resposta da demanda e 'Armazenamento' é bateria: entram como "
+       "oferta no modelo mas não são geração. Começa em 2026 porque a expansão do primeiro ano já é a contratada, que "
+       "está em epe_pde2035_capacidade_instalada_fonte. A coluna de total da planilha foi descartada e fecha exata com "
+       "a soma das 9 fontes em todos os 10 anos")
+
+tabela("epe_pde2035_expansao_termica",
+       pde_por_ano(3, "Figura 3-24", "A6:H40", "tipo_termica", "potencia_acumulada_mw", " (MW)"),
+       "Expansão indicativa ACUMULADA das usinas térmicas de 2026 a 2035, aberta por tipo (Gás Natural Flexível, Gás "
+       "Natural Inflexível, Retrofit Térmica, Retrofit Biocombustível, Biomassa, RSU e Carvão), em MW.",
+       fonte_pde(3, "Figura 3-24"),
+       PDE_PROJ + "acumulada, como epe_pde2035_expansao_indicativa. A nota da planilha é a definição oficial dos "
+       "retrofits: 'Retrofit Térmica inclui usinas a gás natural flexíveis, carvão mineral e conversão de usinas a "
+       "óleo combustível e diesel para biocombustível' — ou seja, retrofit é conversão de usina EXISTENTE, não usina "
+       "nova. 'Carvão' fica zerado em todo o decênio (é zero real, não dado faltante). A soma das colunas desta tabela "
+       "NÃO iguala UTE Flex + UTE Inflex + UTE Bio de epe_pde2035_expansao_indicativa, porque aqui os retrofits "
+       "aparecem separados")
+
+tabela("epe_pde2035_cmo_projetado_mes", f"""
+WITH bruto AS (SELECT * FROM {pde(3, 'Figura 3-28', 'A6:D40')} WHERE "Mês" IS NOT NULL)
+SELECT CAST(regexp_extract(serie, '\\d{{4}}') AS INTEGER) AS ano, list_position({MESES_PDE}, "Mês") AS mes,
+       'SE/CO' AS subsistema, TRY_CAST(valor AS DOUBLE) AS cmo_brl_mwh
+FROM (UNPIVOT bruto ON COLUMNS(* EXCLUDE ("Mês")) INTO NAME serie VALUE valor)
+WHERE valor IS NOT NULL ORDER BY ano, mes
+""", "Custo marginal de operação (CMO) médio projetado do submercado Sudeste/Centro-Oeste, mês a mês, nos três anos de "
+     "corte do plano (2026, 2030 e 2035), em R$/MWh de 2025.", fonte_pde(3, "Figura 3-28"),
+    PDE_PROJ + "só três anos de corte (2026, 2030 e 2035) e só o SE/CO: a planilha não traz os outros submercados nem "
+    "os anos intermediários. É a MÉDIA das 2.000 séries hidrológicas do modelo, não um CMO esperado de mercado — o "
+    "salto de dezembro de 2030 (R$ 42,34) para dezembro de 2035 (R$ 217,53) é resultado de premissa de escassez, não "
+    "previsão de preço. subsistema é literal derivado do título da figura, não lido de célula. Em R$ de 2025: não "
+    "compare direto com ons_cmo_mensal nem com ons_cmo_semihora, que estão em reais correntes")
+exigir_sem_nulo("epe_pde2035_cmo_projetado_mes", "mes")
+
+tabela("epe_pde2035_geracao_hidro_termica_mes", f"""
+SELECT DATE '1899-12-30' + TRY_CAST("Mês" AS INTEGER) AS mes,
+       TRY_CAST("Geração hidrelétrica média (MWmédio)" AS DOUBLE) AS geracao_hidraulica_mwmed,
+       TRY_CAST("Geração termelétrica média (MWmédio)" AS DOUBLE) AS geracao_termica_mwmed
+FROM {pde(3, 'Figura 3-29', 'A6:C200')} WHERE TRY_CAST("Mês" AS INTEGER) > 20000 ORDER BY mes
+""", "Geração hidrelétrica e termelétrica média projetada do SIN, mês a mês de 01/2026 a 12/2035 (120 meses), em MW "
+     "médio.", fonte_pde(3, "Figura 3-29"),
+    PDE_PROJ + "a célula de mês é uma data do Excel e com all_varchar volta como o serial cru em texto ('46023'): a "
+    "conversão é DATE '1899-12-30' + inteiro, e um CAST AS DATE ingênuo devolveria NULL em todas as linhas. O filtro "
+    "serial > 20000 é o que corta cabeçalho e rodapé. Só hidráulica e térmica: eólica e solar não estão nesta figura, "
+    "então as duas colunas NÃO somam a geração total do SIN. Complementa ons_geracao_fonte_mensal (realizado)")
+
+tabela("epe_pde2035_concessoes_vincendas", f"""
+SELECT CAST("Ano" AS INTEGER) AS ano, TRY_CAST("Potência Acumulada (MW)" AS DOUBLE) AS potencia_acumulada_mw,
+       CAST(TRY_CAST("Número de contratos acumulados" AS DOUBLE) AS INTEGER) AS contratos_acumulados
+FROM {pde(3, 'Figura 3-31', 'A6:C40')} WHERE {PDE_ANO} ORDER BY ano
+""", "Potência e número de contratos de concessão de GERAÇÃO que vencem no decênio, acumulados ano a ano de 2025 a "
+     "2035 (15.462,16 MW e 45 contratos no total).", fonte_pde(3, "Figura 3-31"),
+    PDE_PROJ + "as duas colunas são ACUMULADAS: 15.462,16 MW e 45 contratos em 2035 são o total do período, não do "
+    "ano. A base declarada no título é o SIGA da ANEEL em dez/2025, um retrato datado — a tabela usinas tem o SIGA "
+    "atualizado e pode divergir. A lista usina a usina não está na planilha (está no Anexo I-6 do relatório), então "
+    "não há como abrir por usina")
+
+# ---- capítulo 04: transmissão
+tabela("epe_pde2035_cargas_conexao_rede_basica", f"""
+SELECT CAST("Ano" AS INTEGER) AS ano, TRY_CAST("Data Center (GW)" AS DOUBLE) AS data_center_gw,
+       TRY_CAST("Hidrogênio e Amônia (GW)" AS DOUBLE) AS hidrogenio_amonia_gw,
+       TRY_CAST("Carga acumulada (GW)" AS DOUBLE) AS carga_acumulada_gw
+FROM {pde(4, 'Figura 4-3', 'A6:D40')} WHERE {PDE_ANO} ORDER BY ano
+""", "Potência dos projetos de data center e de hidrogênio/amônia com processo de conexão à Rede Básica aberto no MME, "
+     "por ano de entrada pretendida, de 2026 a 2038, em GW. data_center_gw e hidrogenio_amonia_gw são a adição do ano; "
+     "carga_acumulada_gw é o estoque.", fonte_pde(4, "Figura 4-3"),
+    PDE_PROJ + "é FILA de solicitação de acesso no MME (data-base outubro de 2025), não carga confirmada nem "
+    "contratada, e a única aba recomendada cuja fonte não é 'Elaboração EPE'. O título promete abertura por UF, mas "
+    "NÃO há coluna de UF na aba — não prometa corte estadual a partir daqui. Não reconstitua o acumulado somando as "
+    "duas primeiras colunas: em 2027 o acumulado (5,177) já é maior que a soma delas (2,775), porque inclui carga de "
+    "outras naturezas. Vai até 2038, três anos além do horizonte do plano")
+
+tabela("epe_pde2035_transmissao_investimento_cenario",
+       pde_por_ano(4, "Figura 4-19", "A6:D40", "cenario", "investimento_acumulado_brl_bilhoes", " (R$ bilhões)"),
+       "Investimento ACUMULADO em transmissão ano a ano de 2026 a 2035 nos três cenários de expansão da EPE "
+       "(Otimista, Referência e Pessimista), em R$ bilhões de 2025.", fonte_pde(4, "Figura 4-19"),
+       PDE_PROJ + "os cenários de TRANSMISSÃO têm nomes e significado diferentes dos de DEMANDA: aqui são "
+       "Otimista/Referência/Pessimista (antecipação ou atraso de obra) e no capítulo 2 são "
+       "Superior/Referência/Inferior (crescimento econômico) — NÃO faça JOIN pelo nome do cenário com "
+       "epe_pde2035_carga_energia_cenario. Acumulado: o valor de 2035 (Otimista 147,83; Referência 116,90; Pessimista "
+       "98,83) é o total do decênio, e o pessimista congela em 98,83 a partir de 2032. Os três números são "
+       "reproduzíveis somando investimento_brl de epe_pde2035_transmissao_obras com o corte do ano do cenário <= 2035")
+
+tabela("epe_pde2035_transmissao_expansao_fisica", f"""
+WITH lt AS (SELECT * FROM {pde(4, 'Figura 4-24', 'A6:G40')} WHERE {PDE_ANO}),
+     se AS (SELECT * FROM {pde(4, 'Figura 4-27', 'A6:G40')} WHERE {PDE_ANO})
+SELECT CAST(ano AS INTEGER) AS ano, 'LT' AS tipo_ativo, replace(nivel_tensao, ' (km)', '') AS nivel_tensao,
+       TRY_CAST(valor AS DOUBLE) AS extensao_acumulada_km, NULL::DOUBLE AS capacidade_acumulada_mva
+FROM (UNPIVOT (SELECT "Ano" AS ano, * EXCLUDE ("Ano") FROM lt) ON COLUMNS(* EXCLUDE (ano))
+      INTO NAME nivel_tensao VALUE valor)
+WHERE valor IS NOT NULL AND nivel_tensao <> 'Total (km)'
+UNION ALL
+SELECT CAST(ano AS INTEGER), 'SE', replace(nivel_tensao, ' (MVA)', ''), NULL::DOUBLE, TRY_CAST(valor AS DOUBLE)
+FROM (UNPIVOT (SELECT "Ano" AS ano, * EXCLUDE ("Ano") FROM se) ON COLUMNS(* EXCLUDE (ano))
+      INTO NAME nivel_tensao VALUE valor)
+WHERE valor IS NOT NULL AND nivel_tensao <> 'Total (MVA)'
+ORDER BY ano, tipo_ativo, nivel_tensao
+""", "Expansão física ACUMULADA da transmissão no cenário de referência, ano a ano de 2026 a 2035 e por nível de "
+     "tensão (230 a 800 kV): km de linha quando tipo_ativo = 'LT' (extensao_acumulada_km) e MVA de transformação "
+     "quando tipo_ativo = 'SE' (capacidade_acumulada_mva).", fonte_pde(4, "Figuras 4-24 e 4-27"),
+    PDE_PROJ + "duas colunas de valor, uma sempre NULL: linha de LT não tem MVA e linha de SE não tem km (km e MVA "
+    "não são a mesma grandeza, por isso não há coluna 'valor' genérica aqui). Acumulado nos dois casos e só cenário de "
+    "referência. Os totais de 2035 (28.780,87 km e 89.018,32 MVA) NÃO batem com a soma obra a obra de "
+    "epe_pde2035_transmissao_obras no mesmo recorte (28.307 km e 79.512 MVA): a inconsistência é da própria EPE e não "
+    "tem explicação nos arquivos")
+
+tabela("epe_pde2035_transmissao_investimento_recorte", f"""
+WITH outorga AS (SELECT * FROM {pde(4, 'Figura 4-21', 'A6:D20')} WHERE "Categoria" IS NOT NULL)
+-- INTO NAME rotulo, e não categoria: a coluna "Categoria" da própria aba (LT/SE) tem o mesmo nome ignorando a caixa,
+-- e o replace acabaria lendo LT/SE em vez do rótulo da série (Com Outorga, Sem Outorga, Total).
+SELECT "Categoria" AS tipo_ativo, 'outorga' AS recorte, replace(rotulo, ' (R$ bilhões)', '') AS categoria,
+       TRY_CAST(valor AS DOUBLE) AS investimento_brl_bilhoes
+FROM (UNPIVOT outorga ON COLUMNS(* EXCLUDE ("Categoria")) INTO NAME rotulo VALUE valor) WHERE valor IS NOT NULL
+UNION ALL SELECT 'LT', 'submercado', "Categoria", TRY_CAST("Investimento (R$ bilhões)" AS DOUBLE)
+  FROM {pde(4, 'Figura 4-22', 'A6:B20')} WHERE "Categoria" IS NOT NULL
+UNION ALL SELECT 'LT', 'nivel_tensao', "Categoria", TRY_CAST("Investimento (R$ bilhões)" AS DOUBLE)
+  FROM {pde(4, 'Figura 4-23', 'A6:B20')} WHERE "Categoria" IS NOT NULL
+UNION ALL SELECT 'SE', 'submercado', "Categoria", TRY_CAST("Investimento (R$ bilhões)" AS DOUBLE)
+  FROM {pde(4, 'Figura 4-25', 'A6:B20')} WHERE "Categoria" IS NOT NULL
+UNION ALL SELECT 'SE', 'nivel_tensao', "Categoria", TRY_CAST("Investimento (R$ bilhões)" AS DOUBLE)
+  FROM {pde(4, 'Figura 4-26', 'A6:B20')} WHERE "Categoria" IS NOT NULL
+ORDER BY tipo_ativo, recorte, categoria
+""", "Investimento em transmissão do cenário de referência (decênio 2026-2035) aberto por três recortes "
+     "independentes, na coluna recorte: 'outorga' (com e sem outorga), 'submercado' e 'nivel_tensao'; e por tipo de "
+     "ativo em tipo_ativo ('LT' linha de transmissão, 'SE' subestação). Em R$ bilhões de 2025.",
+    fonte_pde(4, "Figuras 4-21, 4-22, 4-23, 4-25 e 4-26"),
+    PDE_PROJ + "os três recortes se SOBREPÕEM: nunca some a tabela inteira, filtre recorte (e tipo_ativo). Dentro de "
+    "recorte = 'outorga' a categoria 'Total' é o total do tipo de ativo e convive com 'Com Outorga' + 'Sem Outorga', "
+    "que somam o mesmo valor (LT: 68,02 + 9,95 = 77,97; SE: 30,81 + 8,12 = 38,93). Os recortes de submercado usam "
+    "'Sudeste/Centro-Oeste' (sem espaços em volta da barra), grafia diferente da Figura 3-7 e do Anuário. Os totais "
+    "dos três recortes NÃO são idênticos, e a diferença é da EPE: em LT o de submercado soma 77,97 (igual ao 'Total' "
+    "de outorga) mas o de nível de tensão soma 76,82, R$ 1,15 bi a menos; em SE dá 38,94 contra 38,76. Reconcilia com "
+    "epe_pde2035_transmissao_obras somando investimento_brl com o corte do ano do cenário de referência <= 2035: LT "
+    "73,73 + SECC LT 4,24 = 77,97 e SE 38,93, exatos")
+
+tabela("epe_pde2035_transmissao_contratos_vincendos", f"""
+SELECT DATE '1899-12-30' + TRY_CAST("Mês" AS INTEGER) AS mes,
+       CAST(TRY_CAST("Quantidade de contratos" AS DOUBLE) AS INTEGER) AS contratos,
+       TRY_CAST("RAP Total (R$ milhões)" AS DOUBLE) AS rap_brl_milhoes
+FROM {pde(4, 'Figura 4-29', 'A6:C40')} WHERE TRY_CAST("Mês" AS INTEGER) > 20000 ORDER BY mes
+""", "Cronograma dos contratos de concessão de TRANSMISSÃO a vencer e a RAP (Receita Anual Permitida) correspondente, "
+     "de dez/2022 a dez/2035, em R$ milhões de 2025. É o cronograma que a EPE usa para planejar as reanálises.",
+    fonte_pde(4, "Figura 4-29"),
+    PDE_PROJ + "o eixo é ANUAL apesar de a coluna de origem se chamar 'Mês': todos os valores caem em dezembro. As "
+    "três primeiras linhas (2022, 2023 e 2024) são PASSADO, o que faz desta a única tabela do PDE que mistura "
+    "realizado com projeção. 2025 e 2026 têm zero contratos e RAP zero, e são linhas legítimas. Mesma armadilha de "
+    "serial de data do Excel de epe_pde2035_geracao_hidro_termica_mes. Complementa transmissao_contratos, que tem o "
+    "contrato a contrato real")
+
+# ---- capítulo 07: gás natural, só o recorte que alimenta termelétrica
+tabela("epe_pde2035_demanda_gas_natural", f"""
+WITH mi AS (SELECT 'malha integrada' AS abrangencia, * FROM {pde(7, 'Figura 7-5', 'A6:G40')} WHERE {PDE_ANO}),
+     br AS (SELECT 'Brasil' AS abrangencia, * FROM {pde(7, 'Figura 7-6', 'A6:G40')} WHERE {PDE_ANO}),
+     u AS (SELECT * FROM mi UNION ALL SELECT * FROM br)
+SELECT abrangencia, CAST("Ano" AS INTEGER) AS ano,
+       TRY_CAST("Demanda Industrial, Residencial, Comercial e de Transporte (milhão m³/d)" AS DOUBLE)
+         AS demanda_nao_termica_milhoes_m3_dia,
+       TRY_CAST("Demanda Termelétrica Máxima (milhão m³/d)" AS DOUBLE) AS demanda_termeletrica_maxima_milhoes_m3_dia,
+       TRY_CAST("Demanda de Refinarias e FAFENs (milhão m³/d)" AS DOUBLE) AS demanda_refino_milhoes_m3_dia,
+       TRY_CAST("Gás de Uso do Sistema (milhão m³/d)" AS DOUBLE) AS gas_uso_sistema_milhoes_m3_dia,
+       TRY_CAST("Demanda Total Média (milhão m³/d)" AS DOUBLE) AS demanda_total_media_milhoes_m3_dia,
+       TRY_CAST("Demanda Total Máxima (milhão m³/d)" AS DOUBLE) AS demanda_total_maxima_milhoes_m3_dia
+FROM u ORDER BY abrangencia, ano
+""", "Demanda projetada de gás natural de 2025 a 2035 em milhões de m³/dia, por componente (não térmica, termelétrica "
+     "máxima, refino e FAFENs, gás de uso do sistema) e com os dois totais da EPE (média e máxima), para duas "
+     "abrangências: 'Brasil' e 'malha integrada' de gasodutos. Entra no banco pela coluna termelétrica, que é o elo "
+     "entre a expansão das UTEs a gás e a infraestrutura de gás.", fonte_pde(7, "Figuras 7-5 e 7-6"),
+    PDE_PROJ + "a demanda termelétrica é MÁXIMA e as outras são MÉDIAS: não some as colunas (em 2025 a total média é "
+    "66 e a total máxima 119, nenhuma das duas é a soma das componentes). A diferença entre 'Brasil' e 'malha "
+    "integrada' é a demanda fora da malha de gasodutos (térmicas isoladas e usos locais): em 2025 a térmica máxima é "
+    "65 no Brasil e 22 na malha. Os números vêm INTEIROS, arredondados pela EPE — não use para diferença ano a ano de "
+    "precisão fina. Do capítulo de gás só este recorte entra no banco; oferta e preço de gás ficam fora")
+
+# ---- capítulo 09: eficiência energética e recursos energéticos distribuídos (RED)
+tabela("epe_pde2035_red_demanda_eletricidade", f"""
+SELECT CAST("Ano" AS INTEGER) AS ano, TRY_CAST("Consumo Potencial (TWh)" AS DOUBLE) AS consumo_potencial_twh,
+       TRY_CAST("Consumo menos EE (TWh)" AS DOUBLE) AS consumo_menos_ee_twh,
+       TRY_CAST("Consumo menos EE e AP (TWh)" AS DOUBLE) AS consumo_menos_ee_ap_twh,
+       TRY_CAST("Consumo menos EE, AP e MMGD (TWh)" AS DOUBLE) AS consumo_rede_twh
+FROM {pde(9, 'Figura 9-1', 'A6:E40')} WHERE {PDE_ANO} ORDER BY ano
+""", "A 'escada' dos recursos energéticos distribuídos (RED): quanto do consumo potencial de eletricidade é abatido "
+     "por eficiência elétrica (EE), autoprodução não injetada (AP) e MMGD antes de sobrar o consumo que chega à rede, "
+     "ano a ano de 2025 a 2035, em TWh. consumo_rede_twh é o último degrau.", fonte_pde(9, "Figura 9-1"),
+    PDE_PROJ + "as quatro colunas são estágios CUMULATIVOS de subtração, não componentes: o abatimento de MMGD em "
+    "2035 é consumo_menos_ee_ap_twh - consumo_rede_twh (818,29 - 712,18 = 106,11 TWh) e o abatimento total é 964,05 - "
+    "712,18 = 251,87 TWh; somar as quatro colunas não significa nada. As notas da planilha definem o escopo: (1) a "
+    "energia solar térmica de aquecimento já está no consumo final, conforme o BEN 2024; (2) EE = eficiência "
+    "elétrica; (3) AP = autoprodução não injetada na rede; (4) MMGD = micro e minigeração distribuída, injetada e não "
+    "injetada. consumo_rede_twh se compara CONCEITUALMENTE com a soma de epe_anuario_consumo_mensal, mas os "
+    "perímetros diferem em ~13 TWh em 2025 (autoprodução injetada e ajustes), não é erro")
+
+# A grafia do cenário aqui vem em minúscula ('Cenário inferior (GW)', 'Cenário de referência (GW)'); normalizada para
+# Inferior/Referência/Superior, igual a epe_pde2035_mmgd_resumo_cenario, para as duas tabelas de MMGD se juntarem.
+tabela("epe_pde2035_mmgd_capacidade_cenario", f"""
+WITH bruto AS (SELECT * FROM {pde(9, 'Figura 9-18', 'A6:D60')} WHERE {PDE_ANO}),
+longo AS (SELECT CAST(ano AS INTEGER) AS ano,
+                 replace(replace(replace(cenario, 'Cenário de ', ''), 'Cenário ', ''), ' (GW)', '') AS cenario,
+                 TRY_CAST(valor AS DOUBLE) AS potencia_acumulada_gw
+          FROM (UNPIVOT (SELECT "Ano" AS ano, * EXCLUDE ("Ano") FROM bruto) ON COLUMNS(* EXCLUDE (ano))
+                INTO NAME cenario VALUE valor)
+          WHERE valor IS NOT NULL)
+SELECT ano, upper(substr(cenario, 1, 1)) || substr(cenario, 2) AS cenario, potencia_acumulada_gw
+FROM longo ORDER BY ano, cenario
+""", "Capacidade instalada ACUMULADA de MMGD (micro e minigeração distribuída) por cenário de adoção (Inferior, "
+     "Referência e Superior), ano a ano de 2013 a 2035, em GW. O cenário de referência chega a 78,10 GW em 2035, "
+     "contra 61,35 do inferior e 97,80 do superior.", fonte_pde(9, "Figura 9-18"),
+    PDE_PROJ + "esta tabela MISTURA realizado e projetado sem coluna que os separe: de 2013 a 2024 os três cenários "
+    "têm valores IDÊNTICOS (é o histórico da ANEEL) e só divergem de 2025 em diante — o teste é "
+    "count(DISTINCT potencia_acumulada_gw) = 1 no ano. Citar 'a capacidade de MMGD em 2020 no cenário superior' é "
+    "citar histórico. Acumulado, em GW. Sobrepõe-se a gd_mmgd (ANEEL, unidade consumidora a unidade consumidora) no "
+    "trecho histórico; o valor desta tabela está na projeção")
+
+tabela("epe_pde2035_mmgd_uf_2035", f"""
+SELECT "UF" AS uf, TRY_CAST("Potência (GW)" AS DOUBLE) AS potencia_gw
+FROM {pde(9, 'Figura 9-19', 'A6:B60')} WHERE length("UF") = 2 ORDER BY potencia_gw DESC
+""", "Capacidade instalada de MMGD projetada para 2035 por UF, em GW, no cenário de referência. É a única abertura "
+     "geográfica de MMGD projetada em todo o PDE (SP 15,71 GW, MG 8,13, RJ 6,17).", fonte_pde(9, "Figura 9-19"),
+    PDE_PROJ + "um único ANO (2035) e um único CENÁRIO (referência): não é série, e o ano está no nome da tabela em "
+    "vez de numa coluna constante. A soma das 27 UFs é a capacidade de 2035 do cenário de referência de "
+    "epe_pde2035_mmgd_capacidade_cenario (78,10 GW). Complementa gd_mmgd, que tem a UF no realizado")
+
+tabela("epe_pde2035_mmgd_resumo_cenario", f"""
+SELECT "Cenário" AS cenario, TRY_CAST("Adotantes (2013-2035) (milhões)" AS DOUBLE) AS adotantes_milhoes,
+       TRY_CAST("Potência (2013-2035) (GW)" AS DOUBLE) AS potencia_gw,
+       TRY_CAST("Geração (2035) (GWméd)" AS DOUBLE) AS geracao_gwmed,
+       TRY_CAST("Investimentos (2025 a 2035) (R$ bilhões)" AS DOUBLE) AS investimento_brl_bilhoes
+FROM {pde(9, 'Tabela 9-3', 'A6:E20')} WHERE "Cenário" IS NOT NULL
+""", "Resumo dos três cenários de projeção da MMGD: número de adotantes em milhões, potência em GW, geração em GW "
+     "médio e investimento em R$ bilhões de 2025. É a tabela-resumo do capítulo de RED.", fonte_pde(9, "Tabela 9-3"),
+    PDE_PROJ + "cada coluna tem PERÍODO PRÓPRIO, declarado no cabeçalho de origem: adotantes e potência são "
+    "acumulados de 2013 a 2035, geração é só o ano 2035 e investimento é 2025-2035 — não trate a linha como um ano. "
+    "Os valores vêm com UMA casa decimal, arredondados pela EPE: potencia_gw do cenário de referência (78,1) é o "
+    "mesmo número que epe_pde2035_mmgd_capacidade_cenario traz com precisão cheia (78,09943)")
+
+tabela("epe_pde2035_mmgd_segmento",
+       pde_por_ano(9, "Figura 9-20", "A6:F40", "segmento", "potencia_acumulada_gw", " (GW)"),
+       "Capacidade instalada ACUMULADA de MMGD do cenário de referência por segmento de adotante (Comercial (AT), "
+       "Comercial (BT), Comercial Remoto (AT/BT), Residencial e Residencial Remoto), ano a ano de 2025 a 2035, em GW.",
+       fonte_pde(9, "Figura 9-20"),
+       PDE_PROJ + "o título da figura diz 'em 2035' mas a aba traz a série 2025-2035 inteira (o gráfico do relatório "
+       "é que mostra só 2035). O nível de tensão fica entre parênteses no rótulo do segmento, (AT), (BT) e (AT/BT), "
+       "porque só o sufixo ' (GW)' foi removido. 'Remoto' é autoconsumo remoto e geração compartilhada. A soma dos 5 "
+       "segmentos em 2035 (78,10 GW) fecha com o cenário de referência das outras duas tabelas de MMGD")
+
+tabela("epe_pde2035_autoproducao_nao_injetada",
+       pde_por_ano(9, "Figura 9-39", "A6:C20", "segmento", "energia_twh", " (TWh)"),
+       "Autoprodução de eletricidade de grande porte NÃO injetada na rede, em TWh, nos três anos de corte do plano "
+       "(2025, 2030 e 2035), por segmento: 'Grandes Consumidores' e 'Outros'.", fonte_pde(9, "Figura 9-39"),
+       PDE_PROJ + "as duas notas da planilha são a definição: (1) 'Grandes consumidores concentra os segmentos de "
+       "siderurgia, petroquímica e papel e celulose'; (2) 'Outros não incluem MMGD' — logo esta série e a de MMGD são "
+       "somáveis sem dupla contagem, e juntas explicam o degrau consumo_menos_ee_twh -> consumo_rede_twh de "
+       "epe_pde2035_red_demanda_eletricidade. Só três anos de corte, não série anual, e a série não é monótona: em "
+       "'Outros' 2035 (57,12 TWh) é MENOR que 2030 (61,87) — não extrapole")
+
+# ---- capítulo 10: emissões (nenhuma outra tabela do banco tem emissão de GEE)
+tabela("epe_pde2035_emissoes_setor",
+       pde_por_ano(10, "Figura 10-1", "A6:K20", "setor", "emissao_mtco2eq", " (MtCO2eq)", excluir="'Total'"),
+       "Emissões de gases de efeito estufa pela produção e uso de energia, por setor (Transportes, Industrial, Setor "
+       "elétrico, Setor Energético, Agropecuário, Residencial, Emissões Fugitivas, Comercial e Público), em MtCO2eq, "
+       "nos quatro anos de corte: 2005, 2025, 2030 e 2035.", fonte_pde(10, "Figura 10-1"),
+       PDE_PROJ + "2005 é o ano-base da NDC brasileira, não uma observação do plano: são 4 anos de CORTE, não uma "
+       "série. O 'Setor elétrico' aqui (26,674 em 2005; 40,771 em 2025; 58,550 em 2030; 62,472 em 2035) INCLUI "
+       "autoprodução e sistemas isolados, que aparecem separados em epe_pde2035_emissoes_eletricidade_recorte — as "
+       "duas tabelas não podem ser unidas na mesma coluna de setor. A unidade é MtCO2EQ (equivalente), não MtCO2. A "
+       "grafia é inconsistente na própria planilha ('Setor elétrico' em minúscula e 'Setor Energético' em maiúscula) e "
+       "foi preservada. A coluna de total foi descartada e fecha exata com a soma dos 9 setores nos 4 anos")
+
+tabela("epe_pde2035_emissoes_eletricidade_recorte",
+       pde_por_ano(10, "Figura 10-2", "A6:L20", "segmento", "emissao_mtco2eq", " (MtCO2eq)"),
+       "A mesma contabilidade de emissões de epe_pde2035_emissoes_setor, mas com o setor elétrico ABERTO em SIN, "
+       "Autoprodução e Sistemas Isolados, em MtCO2eq, nos anos 2025 e 2035. 11 segmentos.",
+       fonte_pde(10, "Figura 10-2"),
+       PDE_PROJ + "só 2025 e 2035. O título de origem promete 'variações percentuais no decênio', mas a variação NÃO "
+       "está na aba — calcule de 2025 para 2035 se precisar. SIN + Autoprodução + Sistemas Isolados = 'Setor "
+       "elétrico' de epe_pde2035_emissoes_setor (13,32792 + 25,243132 + 2,199497 = 40,770549 em 2025). A coluna se "
+       "chama segmento, e não setor, justamente para impedir um UNION descuidado com a outra tabela de emissões")
+
+# ---- capítulo 11: transição energética
+tabela("epe_pde2035_minerais_criticos",
+       pde_por_ano(11, "Figura 11-7", "A6:J20", "mineral", "massa_mil_t", " (mil t)"),
+       "Composição mineral da capacidade instalada de geração de eletricidade do Brasil em 2025 e 2035, em mil "
+       "toneladas, por mineral (Cobre, Silício, Zinco, Manganês, Níquel, Cromo, Grafite, Terras Raras e Outros): é a "
+       "demanda de minerais críticos embutida na expansão do parque.", fonte_pde(11, "Figura 11-7"),
+       PDE_PROJ + "só 2025 e 2035, e é ESTOQUE embutido no parque instalado, não consumo anual de mineral nem "
+       "produção mineral brasileira. 'Grafite' é 0,0 em 2025 e 17,61 mil t em 2035: o zero é real (não há bateria de "
+       "grafite no parque de 2025), não dado faltante. 'Terras Raras' e 'Outros' são agregados. O título da figura diz "
+       "kt e o cabeçalho diz 'mil t': é a mesma unidade, e o nome da coluna segue o cabeçalho")
+
+# ---- capítulo 12: consolidação dos resultados (as três únicas abas com cabeçalho de dois níveis e hierarquia)
+# Cabeçalho em L6+L7 e sem mescla: com header=true os nomes sairiam duplicados (2025 aparece em duas colunas). Lemos
+# com header=false a partir de L8, nomeando as colunas A..G, e a seção de cada fonte vem da linha em que só A está
+# preenchida. O trim em "A" é obrigatório: a linha de total vem como ' Total', com espaço à esquerda.
+tabela("epe_pde2035_geracao_eletricidade_fonte", f"""
+WITH bruto AS (SELECT row_number() OVER () AS i, * FROM {pde(12, 'Tabela 12-3', 'A8:G25', cabecalho='false')}),
+secao AS (SELECT *, last_value(CASE WHEN "A" IS NOT NULL AND "B" IS NULL THEN "A" END IGNORE NULLS)
+                      OVER (ORDER BY i) AS segmento FROM bruto),
+dados AS (SELECT i, CASE WHEN trim("A") = 'Total' THEN NULL ELSE segmento END AS segmento,
+                 trim("A") AS fonte,
+                 CASE WHEN trim("A") = 'Total' THEN 'total'
+                      WHEN trim("A") LIKE 'Subtotal%' THEN 'subtotal' ELSE 'item' END AS tipo_linha,
+                 "B" AS t2025, "C" AS p2025, "D" AS t2030, "E" AS p2030, "F" AS t2035, "G" AS p2035
+          FROM secao WHERE "A" IS NOT NULL AND "B" IS NOT NULL)
+SELECT segmento, fonte, tipo_linha, 2025 AS ano, TRY_CAST(t2025 AS DOUBLE) AS geracao_twh,
+       round(TRY_CAST(p2025 AS DOUBLE) * 100, 4) AS participacao_pct FROM dados
+UNION ALL SELECT segmento, fonte, tipo_linha, 2030, TRY_CAST(t2030 AS DOUBLE),
+       round(TRY_CAST(p2030 AS DOUBLE) * 100, 4) FROM dados
+UNION ALL SELECT segmento, fonte, tipo_linha, 2035, TRY_CAST(t2035 AS DOUBLE),
+       round(TRY_CAST(p2035 AS DOUBLE) * 100, 4) FROM dados
+ORDER BY ano, segmento NULLS LAST, tipo_linha, fonte
+""", "Geração total de eletricidade por fonte em 2025, 2030 e 2035, em TWh e em participação percentual, separando o "
+     "segmento 'Geração Centralizada' do segmento 'Autoprodução & Geração Distribuída'. tipo_linha diz o que a linha "
+     "é: 'item' (fonte), 'subtotal' (do segmento) ou 'total' (geral, 810,62 TWh em 2025 e 1.122,14 em 2035).",
+    fonte_pde(12, "Tabela 12-3"),
+    PDE_PROJ + "tipo_linha existe para você somar sem contar duas vezes: use WHERE tipo_linha = 'item' para agregar "
+    "(os 13 itens somam 810,623 TWh em 2025, 962,874 em 2030 e 1.122,135 em 2035, os mesmos valores das linhas de "
+    "total, e as participações somam 100%). A linha de total tem segmento NULL de propósito. As notas da planilha "
+    "definem o escopo: (1) 'Hidráulica inclui parcela importada de Itaipu'; (2) 'Biomassa inclui biodiesel'; (3) "
+    "'Outros incluem Óleo Combustível, Óleo Diesel, Gás de Processo, Sistemas Isolados, RSU'; a nota (4) do arquivo "
+    "fala de um rótulo 'Outras Renováveis' que NÃO existe nesta aba (foi reaproveitada de outra tabela do relatório) "
+    "e não deve ser interpretada como escopo de 'Outros'. Os rótulos de fonte NÃO são os de "
+    "epe_pde2035_capacidade_instalada_fonte (lá UHE, EOLICA, PCT; aqui Hidráulica, Eólica, Gás Natural): não faça "
+    "JOIN por nome de fonte sem tabela de correspondência. Só três anos de corte")
+
+# A hierarquia da Tabela 12-10 está na INDENTAÇÃO da coluna A, não em colunas separadas: 0 espaço = grupo, 7 =
+# subgrupo, >= 10 = item folha. A linha de TOTAL vem indentada com espaço inquebrável (NBSP, U+00A0), cai no ELSE e é
+# por isso que nivel = 3 marca o total geral.
+tabela("epe_pde2035_investimentos", f"""
+WITH bruto AS (SELECT row_number() OVER () AS i, * FROM {pde(12, 'Tabela 12-10', 'A7:C37', cabecalho='false')}
+               WHERE "A" IS NOT NULL AND "B" IS NOT NULL),
+niv AS (SELECT i, trim("A") AS item, "B", "C",
+               CASE WHEN length("A") - length(ltrim("A")) = 0 THEN 0
+                    WHEN length("A") - length(ltrim("A")) = 7 THEN 1
+                    WHEN length("A") - length(ltrim("A")) >= 10 THEN 2 ELSE 3 END AS nivel
+        FROM bruto),
+arv AS (SELECT *, last_value(CASE WHEN nivel = 0 THEN item END IGNORE NULLS) OVER (ORDER BY i) AS grupo,
+               last_value(CASE WHEN nivel = 1 THEN item END IGNORE NULLS) OVER (ORDER BY i) AS subgrupo
+        FROM niv)
+SELECT CASE WHEN nivel = 3 THEN NULL ELSE grupo END AS grupo,
+       CASE WHEN nivel = 2 THEN subgrupo END AS subgrupo, item, nivel,
+       TRY_CAST("B" AS DOUBLE) AS investimento_brl_bilhoes,
+       round(TRY_CAST("C" AS DOUBLE) * 100, 4) AS participacao_pct
+FROM arv ORDER BY i
+""", "Investimento previsto no decênio 2025-2035 em toda a cadeia de energia, em R$ bilhões de 2025 e em participação "
+     "percentual, numa árvore de três níveis: nivel = 0 são os três grandes grupos (Oferta de Energia Elétrica, "
+     "Petróleo e Gás Natural, Oferta de Biocombustíveis Líquidos), 1 são os 11 subgrupos (Geração Centralizada, "
+     "Geração Distribuída, Transmissão, Etanol, Refino...), 2 são os 16 itens folha e 3 é a linha de TOTAL geral "
+     "(R$ 3.529,889 bilhões). grupo e subgrupo trazem o pai de cada linha.",
+    fonte_pde(12, "Tabela 12-10"),
+    PDE_PROJ + "NUNCA some investimento_brl_bilhoes sem filtrar nivel: os níveis se contêm (os 3 de nivel = 0 e os 11 "
+    "de nivel = 1 somam, cada conjunto, 3.529,889, o valor da linha de nivel = 3; e os itens de nivel = 2 somam o "
+    "valor do seu subgrupo). Nem todo subgrupo é aberto em itens: só 5 dos 11 têm filhos, e é por isso que o nivel = 2 "
+    "soma apenas 770,136. Só cerca de "
+    "17% do total é setor elétrico: 'Oferta de Energia Elétrica' são R$ 596,246 bi (16,89%) contra R$ 2.818,416 bi "
+    "(79,79%) de petróleo e gás — quem citar 'R$ 3,5 trilhões de investimento do PDE' está citando quase tudo "
+    "petróleo. Os rótulos trazem o número da nota do relatório entre parênteses ('Geração Centralizada (1)'), "
+    "preservado. O item 'Transmissão (3)' vale R$ 116,905 bi, que é o CENÁRIO DE REFERÊNCIA de "
+    "epe_pde2035_transmissao_investimento_cenario (116,90) e não o otimista (147,83): é assim que os dois capítulos "
+    "se reconciliam")
+
+# O rótulo do indicador está na linha do MEIO de cada grupo de três (a coluna A vem vazia na primeira e na terceira),
+# daí o coalesce com lead e lag. Forward-fill aqui estaria errado: atribuiria 'População Residente' às linhas do PIB.
+# O range para em M de propósito: N:P são as três colunas de 'Variação média anual', derivadas e recalculáveis.
+tabela("epe_pde2035_indicadores", f"""
+WITH bruto AS (SELECT row_number() OVER () AS i, * FROM {pde(12, 'Tabela 12-1', 'A8:M20', cabecalho='false')}),
+cheio AS (SELECT i, coalesce("A", lead("A") OVER (ORDER BY i), lag("A") OVER (ORDER BY i)) AS indicador,
+                 "B" AS unidade, * EXCLUDE (i, "A", "B") FROM bruto),
+longo AS (UNPIVOT cheio ON COLUMNS(* EXCLUDE (i, indicador, unidade)) INTO NAME col VALUE valor)
+SELECT indicador, unidade, 2025 + (ascii(col) - ascii('C')) AS ano, TRY_CAST(valor AS DOUBLE) AS valor
+FROM longo WHERE valor IS NOT NULL ORDER BY i, ano
+""", "As 13 séries de indicadores de economia e energia do plano, ano a ano de 2025 a 2035: população residente, PIB "
+     "(total, número índice e per capita), oferta interna de energia, oferta interna de eletricidade e consumo final "
+     "energético, cada um destes três em valor absoluto, per capita e por unidade de PIB. São 5 nomes de indicador e "
+     "13 séries: a chave é o par indicador + unidade, e a unidade de cada série está na coluna unidade.",
+    fonte_pde(12, "Tabela 12-1"),
+    PDE_PROJ + "coluna valor GENÉRICA com 13 unidades diferentes: a chave é indicador + unidade, NUNCA indicador só "
+    "('PIB' aparece três vezes e 'Oferta interna de energia' também, com unidades diferentes) — qualquer consulta tem "
+    "de filtrar os dois. As unidades vêm "
+    "com o expoente em texto corrido porque o superscript do Excel se perde na leitura: '(106 hab)' é 10^6 "
+    "habitantes e '(109 R$)' é 10^9 R$. As três colunas de 'Variação média anual' da planilha foram descartadas "
+    "porque são derivadas e recalculáveis (conferido: o CAGR de população fecha na sexta casa) e virariam anos falsos "
+    "na coluna ano. 'Oferta interna de eletricidade (TWh)' é 810,62 em 2025 e 1.122,14 em 2035, os mesmos totais de "
+    "epe_pde2035_geracao_eletricidade_fonte")
+
+# ---------------------------------------------------------------- EPE: expansão da transmissão do PDE 2035, obra a obra
+# Única planilha do PDE com cabeçalho na linha 1. nullif nas colunas de texto porque empty_as_varchar devolve '' (e
+# não NULL) para célula vazia: 445 obras sem código DMSE e 664 sem UF de seccionamento viriam com string vazia.
+PDE_TRANSMISSAO = exigir(os.path.join(ANEEL, "pde2035_transmissao.xlsx"))
+tabela("epe_pde2035_transmissao_obras", f"""
+SELECT "Estudo" AS estudo, nullif("Tipo do Empreendimento", '') AS tipo_empreendimento,
+       nullif("Região Geoelétrica", '') AS regiao_geoeletrica, nullif("UF Origem", '') AS uf_origem,
+       nullif("UF Destino", '') AS uf_destino, nullif("UF Secc", '') AS uf_seccionamento,
+       nullif("Característica", '') AS caracteristica, "Nome do Empreendimento" AS empreendimento,
+       nullif("Itens de obra", '') AS itens_obra, nullif("Status", '') AS status,
+       try_strptime("Data de Necessidade", '%m/%Y')::DATE AS data_necessidade,
+       TRY_CAST("km Total" AS DOUBLE) AS extensao_km,
+       TRY_CAST("Potência Total (TF / ATF )" AS DOUBLE) AS capacidade_transformacao_mva,
+       nullif("Contratação", '') AS forma_contratacao, nullif("SIGET.codDMSE", '') AS codigo_dmse,
+       try_strptime("SIGET.datPrevista (19/08/2025)", '%m/%Y')::DATE AS data_prevista_siget,
+       TRY_CAST("Total Investimento ( 2025 ) R$/1000" AS DOUBLE) AS investimento_brl,
+       nullif(CAST(TRY_CAST("Data de Tendendência - Cenário Pessimista" AS DOUBLE) AS INTEGER), 2099) AS ano_pessimista,
+       nullif(CAST(TRY_CAST("Data de Tendendência - Cenário Referência" AS DOUBLE) AS INTEGER), 2099) AS ano_referencia,
+       nullif(CAST(TRY_CAST("Data de Tendendência - Cenário Otimista" AS DOUBLE) AS INTEGER), 2099) AS ano_otimista
+FROM read_xlsx('{PDE_TRANSMISSAO}', sheet='PDE 2035', header=true, all_varchar=true, empty_as_varchar=true)
+WHERE "Estudo" IS NOT NULL
+""", "A expansão da transmissão do PDE 2035 OBRA A OBRA: uma linha por empreendimento (linha de transmissão, "
+     "subestação ou seccionamento), com o estudo de planejamento que a originou, região geoelétrica, UF de origem e "
+     "destino, itens de obra, status, extensão em km, capacidade de transformação em MVA, investimento em reais de "
+     "2025, código DMSE e data prevista no SIGET, e o ANO DE ENTRADA em cada um dos três cenários (ano_pessimista, "
+     "ano_referencia, ano_otimista). É o que diz quais obras o planejador espera que entrem, quando e em que cenário.",
+    "EPE/MME, Plano Decenal de Expansão de Energia 2035, lista de expansão da transmissão (pde2035_transmissao.xlsx, "
+    "aba 'PDE 2035'); a data-base do extrato do SIGET, 19/08/2025, vem no nome da coluna de origem",
+    PDE_PROJ + "o nome da coluna de origem do investimento diz 'R$/1000', mas os valores estão em REAIS: somando "
+    "investimento_brl com o corte ano_otimista <= 2035 dá R$ 147,83 bilhões, exatamente o valor de 2035 do cenário "
+    "otimista de epe_pde2035_transmissao_investimento_cenario (e o mesmo vale para referência, 116,90, e pessimista, "
+    "98,83; e, por tipo de empreendimento no cenário de referência, LT 73,73 + SECC LT 4,24 = 77,97 e SE 38,93, os "
+    "mesmos valores de epe_pde2035_transmissao_investimento_recorte). O corte <= 2035 é OBRIGATÓRIO para reproduzir o "
+    "capítulo 4: sem ele LT + SECC LT sobe para R$ 91,35 bi, porque inclui obras de 2036 a 2038 que estão na planilha "
+    "mas fora do decênio. O 2099 da origem é "
+    "sentinela de 'a obra não entra neste cenário' e foi anulado (depois disso max(ano_referencia) = 2038 e "
+    "max(ano_pessimista) = 2030). As QUANTIDADES FÍSICAS NÃO reconciliam com o capítulo 4 e a diferença é grande: no "
+    "cenário de referência até 2035 a soma obra a obra dá 28.307 km contra 28.780,87 de "
+    "epe_pde2035_transmissao_expansao_fisica, e 79.512 MVA contra 89.018,32 (mais de 10% de diferença) — o dinheiro "
+    "fecha, a quantidade física não, e a inconsistência é da própria EPE. 2 linhas não são obras: estudo = "
+    "'Investimento Prospectivo 2032' e 'Investimento Prospectivo 2033' (R$ 3,99 bi e R$ 4,87 bi) são reserva de "
+    "orçamento, vêm sem empreendimento, tipo_empreendimento, regiao_geoeletrica nem caracteristica e só têm "
+    "ano_otimista (entram só no total do cenário otimista) — filtre-as em qualquer análise por obra. 4 obras têm "
+    "investimento zero (custo não estimado, não erro de leitura). regiao_geoeletrica é a da EPE, não a do IBGE (um "
+    "dos 5 valores é 'Centro-Oeste e Estados do Acre e Rondônia'): não junte com uf de outras tabelas assumindo "
+    "equivalência. uf_origem e uf_destino são NOMES de estado ('Piauí', 'Mato Grosso do Sul'), enquanto o resto do "
+    "banco usa sigla de 2 letras: um JOIN com usinas.uf ou gd_mmgd.uf exige tabela de conversão. data_necessidade tem "
+    "valores no PASSADO (a partir de 01/2018): é a data em que a obra passou a ser necessária, não a de entrada — a "
+    "data de entrada projetada é ano_referencia. A ponte com transmissao_empreendimentos e rap_transmissao_modulos é "
+    "codigo_dmse (que não existe nessas tabelas hoje) e, em segundo lugar, o nome do empreendimento por texto")
+
+# ---------------------------------------------------------------- Lei 12.431: portarias que autorizaram as debêntures
+# O .xls da ANBIMA é BIFF/OLE2 (Composite Document V2), não um .xlsx: o DuckDB não abre nem por read_xlsx ("Failed to
+# open zip for reading") nem por st_read ("Could not open GDAL dataset"). Por isso a leitura é com xlrd, a única
+# biblioteca que lê o .xls antigo. R0:R7 são título e cabeçalho de três níveis; o rodapé começa na linha 'Total'.
+PORTARIAS = exigir(os.path.join(RAW, "cvm", "deb_incentivadas.xls"))
+livro_portarias = xlrd.open_workbook(PORTARIAS)
+aba_portarias = livro_portarias.sheet_by_name("ICVM 400 e 476")  # falha alto se a ANBIMA renomear a aba
+
+
+def data_xls(v):
+    """Data do .xls: serial numérico do Excel. O corte em 20000 (qualquer data de 1954 em diante) descarta texto e o
+    zero da célula vazia."""
+    if not isinstance(v, float) or v <= 20000:
+        return None
+    return datetime.date(*xlrd.xldate_as_tuple(v, livro_portarias.datemode)[:3])
+
+
+portarias = []
+for i in range(8, aba_portarias.nrows):
+    v = aba_portarias.row_values(i)
+    if not isinstance(v[0], float) or not v[0]:  # a coluna nº numerada acaba onde acabam os dados
+        continue
+    portarias.append((int(v[0]), data_xls(v[1]), v[2] or None, v[3] or None, str(v[4]).strip() or None,
+                      str(v[5]).strip() or None, data_xls(v[6]), data_xls(v[7]), v[8] or None, v[9] or None,
+                      v[10] or None, v[11] or None, v[12] or None, data_xls(v[13]), v[14] or None, v[15] or None))
+con.execute("""CREATE TEMP TABLE portarias_12431 (ordem INTEGER, data_portaria DATE, numero_portaria VARCHAR,
+  ministerio VARCHAR, titular VARCHAR, holding_spe VARCHAR, data_emissao DATE, inicio_distribuicao DATE,
+  regime_distribuicao VARCHAR, codigo_ativo VARCHAR, serie_isenta VARCHAR, volume_total VARCHAR, volume_12431 VARCHAR,
+  data_vencimento DATE, remuneracao VARCHAR, taxa VARCHAR)""")
+con.executemany("INSERT INTO portarias_12431 VALUES (" + ",".join(["?"] * 16) + ")", portarias)
+# 19 das 81 linhas são série adicional da portaria da linha anterior e a planilha deixa portaria, ministério e titular
+# em branco como "idem". O bloco é count(data_portaria) OVER (ORDER BY ordem) e dentro dele o first_value replica os
+# quatro campos; serie_adicional marca quais linhas foram preenchidas.
+tabela("debentures_incentivadas_portarias", """
+WITH b AS (SELECT *, count(data_portaria) OVER (ORDER BY ordem) AS bloco FROM portarias_12431)
+SELECT ordem,
+       first_value(data_portaria) OVER w AS data_portaria,
+       CAST(TRY_CAST(first_value(numero_portaria) OVER w AS DOUBLE) AS INTEGER) AS numero_portaria,
+       first_value(ministerio) OVER w AS ministerio, first_value(titular) OVER w AS titular,
+       data_portaria IS NULL AS serie_adicional, holding_spe, data_emissao, inicio_distribuicao,
+       regime_distribuicao, trim(codigo_ativo) AS codigo_ativo,
+       CAST(TRY_CAST(serie_isenta AS DOUBLE) AS INTEGER) AS serie_isenta,
+       TRY_CAST(volume_total AS DOUBLE) AS volume_total_brl_milhoes,
+       TRY_CAST(volume_12431 AS DOUBLE) AS volume_12431_brl_milhoes, data_vencimento, remuneracao,
+       TRY_CAST(taxa AS DOUBLE) AS taxa_pct_aa
+FROM b WINDOW w AS (PARTITION BY bloco ORDER BY ordem) ORDER BY ordem
+""", "As portarias ministeriais que AUTORIZARAM debêntures incentivadas de infraestrutura (Lei 12.431), de 2012 a "
+     "2015: número e data da portaria, ministério, titular do projeto (a SPE), controladores em holding_spe, e, quando "
+     "a debênture foi de fato emitida, o código do ativo, a série beneficiada, o volume total e a parcela incentivada "
+     "(em R$ milhões), o regime de distribuição (ICVM 400 ou 476), o vencimento, o indexador e a taxa. É a camada de "
+     "autorização que falta em debentures_snd e debentures_incentivadas: quem autorizou, quando, e quanto do "
+     "autorizado virou emissão.",
+    "ANBIMA e ministérios, planilha de debêntures incentivadas da Lei 12.431, aba 'ICVM 400 e 476' "
+    "(cvm/deb_incentivadas.xls)",
+    "O ARQUIVO ESTÁ CONGELADO EM 2015: a própria planilha diz 'Atualizado em 17/07/2015.' — esta tabela é um retrato "
+    "histórico dos três primeiros anos da Lei 12.431, NÃO o estoque atual de debêntures incentivadas (para isso use "
+    "debentures_snd, com 10.008 linhas e a marca incentivada_lei_12431). Não compare o tamanho das duas e conclua que "
+    "o mercado encolheu. 19 das 81 linhas são SÉRIE ADICIONAL da portaria da linha anterior e vinham com data, "
+    "número, ministério e titular em branco (a planilha usa o branco como 'idem'): os quatro campos foram preenchidos "
+    "por bloco e serie_adicional = true marca essas linhas — sem o preenchimento um GROUP BY ministerio perderia um "
+    "quarto dos dados. Depois do preenchimento são 62 portarias distintas e 59 titulares. 26 das 81 linhas são "
+    "autorizações que NUNCA viraram emissão (sem codigo_ativo, sem data_emissao e sem volume, todas do MME, como as "
+    "dez 'Eólica Geribatu I' a 'X'): é informação, é o funil autorização -> emissão, não lixo. O arquivo NÃO TEM "
+    "CNPJ: a ponte com o resto do banco é codigo_ativo -> debentures_snd.codigo (55 de 55 casam, e os mesmos 55 casam "
+    "com debentures_incentivadas.codigo_cetip), de onde se obtém o CNPJ por JOIN; o CNPJ não foi materializado aqui "
+    "para não congelar dado de outra fonte. Ligação por NOME é fraca e não deve ser usada (dos 59 titulares distintos "
+    "só 6 casam com agentes_aneel.razao_social). Cuidado com quem é o emissor: a portaria autoriza o PROJETO (a SPE) e "
+    "a "
+    "debênture costuma ser emitida pela HOLDING — APAR16 tem titular 'Empresa Litorânea de Transmissão de Energia "
+    "S.A. - ELTE.' e emissora 'ALUPAR INVESTIMENTO S/A' no SND, então titular e debentures_snd.emissora podem ser "
+    "empresas diferentes e o CNPJ obtido é o da holding. Volumes em R$ MILHÕES (confirmado: volume_12431 * 1e6 é "
+    "igual a debentures_snd.volume_emitido_brl nos 55 casos). Das 81 linhas, 50 são do Ministério de Minas e Energia, "
+    "21 do Ministério dos Transportes, 9 da Secretaria de Aviação Civil e 1 da Secretaria de Portos; das 55 que viraram "
+    "emissão só 19 são de setor elétrico pela classificação de debentures_snd, e "
+    "ministerio = 'Ministério de Minas e Energia' não é garantia de setor elétrico, porque o MME também autorizou "
+    "projetos de gás. regime_distribuicao vem NULL em 37 linhas (as 26 sem emissão mais 11 emitidas sem o campo "
+    "preenchido pela ANBIMA), então não o use para separar autorizado de emitido — use codigo_ativo IS NULL. "
+    "taxa_pct_aa só significa algo junto com remuneracao: quando remuneracao = 'IPCA' é o spread real sobre o IPCA "
+    "(8,75% a.a. no LTMC12) e quando é 'Prefixado' é a taxa nominal (10,1% no FERR18); nas 27 linhas com remuneracao "
+    "NULL não houve emissão")
 
 # ---------------------------------------------------------------- catálogo das tabelas (lido pelo MCP)
 con.execute("CREATE TABLE catalogo (tabela VARCHAR, descricao VARCHAR, fonte VARCHAR, ressalvas VARCHAR, linhas BIGINT)")
