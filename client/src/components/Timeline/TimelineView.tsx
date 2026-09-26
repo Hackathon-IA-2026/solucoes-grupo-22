@@ -1,6 +1,5 @@
 /* eslint-disable i18next/no-literal-string -- aba do CoppeZIP: textos em português, como os dados que ela mostra */
 import { useEffect, useMemo, useState } from 'react';
-import { History } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Spinner, useMediaQuery } from '@librechat/client';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
@@ -10,6 +9,7 @@ import Trajectories from './Trajectories';
 import EmpresaList from './EmpresaList';
 import LineChart from './LineChart';
 import YearNode from './YearNode';
+import TimelineIcon from './TimelineIcon';
 import { cn } from '~/utils';
 
 const DESTAQUES = '__destaques__';
@@ -32,7 +32,7 @@ function Escolha() {
     <div className="mx-auto flex w-full max-w-xl flex-col gap-4 pt-4">
       <div className="flex items-center gap-3">
         <span className="flex size-10 items-center justify-center rounded-xl bg-surface-tertiary">
-          <History className="size-5 text-text-primary" aria-hidden="true" />
+          <TimelineIcon className="size-5 text-text-primary" aria-hidden="true" />
         </span>
         <div>
           <h1 className="text-xl font-semibold text-text-primary">Timeline</h1>
