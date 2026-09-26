@@ -1,36 +1,96 @@
-# Nome do Projeto
+# CoppeZIP
 
-> Descrição curta (1-2 frases): o que o projeto faz e qual problema ele resolve.
+Chat de inteligência do setor elétrico brasileiro. É o LibreChat (esta pasta, v0.8.7 com o tema do CoppeZIP) mais as
+nossas peças: o modelo (o nosso Qwen3.8-27B no vLLM ou o Claude pelo Amazon Bedrock) consulta dados públicos (CVM,
+ANEEL, ONS, BNDES, ANBIMA, Banco Central) e relatórios das empresas pelas ferramentas MCP e responde com a fonte de
+cada número.
 
 ## Demo
 
-- **Link da demo:** (se houver, ex: Vercel, Netlify, etc.)
+Sem link público: o chat roda nos servidores do IMPA e é aberto por túnel SSH (veja "Rodar").
 
 ## Tecnologias utilizadas
 
-- Linguagem: (ex: Python, JavaScript, Go...)
-- Framework(s): (ex: React, Flask, Node...)
-- Banco de dados: 
-- APIs / Serviços externos: (se houver)
+- Linguagem: Python (ferramentas, dados e testes), JavaScript/Node (LibreChat), Bash (scripts)
+- Framework(s): LibreChat v0.8.7, MCP (Model Context Protocol), vLLM
+- Banco de dados: DuckDB (dados do setor e índice dos relatórios), MongoDB e Meilisearch (usuários e conversas do chat)
+- Modelos: Qwen3.8-27B INT4 (próprio, no vLLM) e Claude Sonnet 5 (Amazon Bedrock); embeddings multilingual-e5-large
+- APIs / Serviços externos: dados abertos da CVM, ANEEL, ONS, BNDES, ANBIMA e Banco Central; Amazon Bedrock; Serper e
+  Jina (busca web, opcional)
 
-## Como rodar o projeto
+## O que é nosso
 
-```bash
-# Clone o repositório
-git clone https://github.com/usuario/repo.git
-cd repo
+| Pasta ou arquivo | O que é |
+|---|---|
+| `librechat.yaml` | configuração do chat: modelos, perfis do analista (prompt), ferramentas MCP e busca web |
+| `.env.example` | modelo do `.env` (portas, segredos, endereço do vLLM, região do Bedrock) |
+| `instalar.sh`, `iniciar.sh`, `parar.sh` | instalar uma vez, subir e parar o chat |
+| `vllm.sh` | sobe o modelo próprio numa máquina com GPU |
+| `proper_mcps/` | ferramentas MCP: `dados` (banco DuckDB), `docs` (busca nos relatórios em PDF), `relatorio` (Markdown e Word) |
+| `proper_skills/` | roteiros do analista: benchmark de distribuidoras, ficha de crédito, investimento na transição, avaliação climática |
+| `data/` | coleta (`baixar.py`), montagem do banco (`construir.py`), índice dos PDFs (`indexar_docs.py`) e documentação das tabelas (`DADOS.md`); os dados em si ficam aqui, fora do git |
+| `researches/` | pesquisa de fontes de dados e dicionário de dados |
+| `eval/` | cliente do chat (`chat.py`) e regressão com perguntas de resposta conhecida (`regressao.py`) |
+| `client/src/style.css` | o tema do CoppeZIP (a única mudança no código do LibreChat) |
 
-# Instale as dependências
-# (ex: npm install / pip install -r requirements.txt)
-
-# Rode o projeto
-# (ex: npm run dev / python app.py)
-```
+O resto (`api/`, `client/`, `packages/`, `config/`...) é o LibreChat. O README original está em `README.librechat.md`.
 
 ## Pré-requisitos
 
-Liste aqui o que precisa estar instalado antes de rodar o projeto (ex: Node 18+, Python 3.10+, Docker, etc.)
+- Linux com `python3` (com `venv`), `curl`, `git` e `openssl`. Node, MongoDB e Meilisearch o `instalar.sh` baixa
+  sozinho para `.runtime/`.
+- Para o modelo próprio: GPU NVIDIA de 32 GB ou mais. Sem GPU, use o Claude pelo Bedrock ou aponte para um vLLM em
+  outra máquina.
+- Internet na primeira vez (bibliotecas, binários e, no `vllm.sh`, cerca de 19 GB de pesos).
+
+Nada é fixo de usuário ou de máquina: tudo fica dentro da pasta onde o repositório foi clonado (`.runtime/` para
+binários, bancos do chat, logs e vLLM; `data/` para os dados) e as escolhas locais (portas, chaves, endereço do modelo)
+ficam no `.env`.
+
+## Rodar
+
+```bash
+./instalar.sh     # uma vez: .env, Node, MongoDB, Meilisearch (em .runtime/), npm e o Python das ferramentas
+./iniciar.sh      # sobe o chat em http://localhost:3080
+./parar.sh
+./vllm.sh         # numa máquina com GPU (32 GB ou mais): instala o vLLM, baixa os pesos e serve o modelo
+```
+
+De outra máquina, abra um túnel: `ssh -N -L 3080:127.0.0.1:3080 <máquina>`.
+
+### Modelo
+
+- **Próprio (vLLM):** `./vllm.sh` instala o vLLM em `.runtime/vllm`, baixa os pesos para `.runtime/hf` e serve
+  `VLLM_MODELO` na porta `VLLM_PORTA`, exigindo a chave `VLLM_API_KEY`. Se ele rodar em outra máquina, ajuste
+  `VLLM_BASE_URL` no `.env` do chat; a chave tem que ser a mesma nas duas. As opções do vLLM (contexto de 256 mil
+  tokens, cache em fp8, atenção pelo Triton, 16 conversas simultâneas) foram ajustadas para o Qwen3.8-27B INT4 numa
+  RTX 5090; em outra GPU pode ser preciso mudá-las no script.
+- **Amazon Bedrock (Claude):** ponha as credenciais da AWS em `~/.aws/credentials` e reinicie o chat. No seletor, use
+  o perfil "CoppeZIP Analista (Claude)". A região está em `BEDROCK_AWS_DEFAULT_REGION`.
+
+## Dados
+
+Os dados não vão para o git. Coloque em `data/`:
+
+| Caminho | Como obter |
+|---|---|
+| `data/raw/`, `data/parquet/` | `python data/baixar.py` (fontes oficiais) e o Drive do projeto (`CoppeZIP-dados-brutos`) |
+| `data/coppezip.duckdb` | `.runtime/venv/bin/python data/construir.py`, depois `data/documentar.py` |
+| `data/modelos/multilingual-e5-large/` | o modelo `intfloat/multilingual-e5-large` do Hugging Face, copiado sem links simbólicos |
+| `data/docs.duckdb` | `.runtime/venv/bin/python data/indexar_docs.py` (PDFs em `data/raw/pdfs_esg/`) |
+
+Os bancos prontos também estão no Drive, em `bancos/`.
+
+## Testes
+
+```bash
+.runtime/venv/bin/python -m pytest proper_mcps -q     # ferramentas, contra o banco de data/
+eval/usuario.sh                                       # uma vez: usuário de teste no LibreChat
+python3 eval/chat.py "Qual foi a receita líquida da Taesa em 2025?"
+python3 eval/regressao.py                             # 27 perguntas; --perfil coppezip-analista-claude para o Claude
+```
 
 ## Licença
 
-Este projeto está sob a licença MIT — veja o arquivo [LICENSE](./LICENSE) para mais detalhes.
+Este projeto está sob a licença MIT — veja o arquivo [LICENSE](./LICENSE). O LibreChat, que é a base desta pasta,
+também é MIT: [LICENSE.librechat](./LICENSE.librechat).
