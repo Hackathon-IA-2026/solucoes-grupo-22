@@ -192,3 +192,4 @@ data/*.duckdb*
 data/violations.json
 __pycache__/
 *.pyc
+proper_mcps/agentcore/cdk.out/
