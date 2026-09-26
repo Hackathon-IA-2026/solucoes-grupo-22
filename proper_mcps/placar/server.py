@@ -34,7 +34,9 @@ mcp = MCPServer("coppezip-placar", instructions=INSTRUCOES)
 
 def _con():
     con = duckdb.connect(PLACAR, read_only=True)
-    con.execute(f"ATTACH '{COPPEZIP}' AS fin (READ_ONLY)")
+    # IF NOT EXISTS: o servidor atende chamadas concorrentes e o catálogo do banco é compartilhado no processo;
+    # sem isso, um segundo ATTACH simultâneo falharia com "fin já existe".
+    con.execute(f"ATTACH IF NOT EXISTS '{COPPEZIP}' AS fin (READ_ONLY)")
     return con
 
 
