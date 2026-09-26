@@ -37,9 +37,8 @@ def tamanho(t, n):
 
 texto = ["# Dados do CoppeZIP", "",
          f"Tabelas e visões do `coppezip.duckdb` em {datetime.date.today():%d/%m/%Y}, geradas do catálogo por "
-         "`platform/documentar_banco.py`. Não edite à mão: descrição, fonte e ressalvas vêm do catálogo em "
-         "`platform/build_duckdb.py`, o mesmo texto que o modelo lê. O formato dos arquivos brutos de cada fonte está em "
-         "`research/DATA_DICTIONARY.md`.", "",
+         "`data/documentar.py`. Não edite à mão: descrição, fonte e ressalvas vêm do catálogo em `data/construir.py`, o "
+         "mesmo texto que o modelo lê. O formato dos arquivos brutos de cada fonte está em `data/raw/README.md`.", "",
          "| Tabela | Linhas | Descrição | Fonte |", "|---|---:|---|---|"]
 texto += [f"| [`{t}`](#{t}) | {tamanho(t, n)} | {celula(d)} | {celula(f)} |" for t, d, f, _, n in catalogo]
 for t, d, f, r, n in catalogo:
@@ -50,7 +49,7 @@ for t, d, f, r, n in catalogo:
 sem_catalogo = sorted(set(tipos) - {t for t, *_ in catalogo} - {"catalogo"})
 if sem_catalogo:
     texto += ["", "## Sem descrição no catálogo", "",
-              "O modelo não vê a descrição destas tabelas; acrescente-as ao catálogo em `build_duckdb.py`:", ""]
+              "O modelo não vê a descrição destas tabelas; acrescente-as ao catálogo em `data/construir.py`:", ""]
     texto += [f"- `{t}`" for t in sem_catalogo]
 with open(os.path.join(AQUI, "DADOS.md"), "w") as saida:
     saida.write("\n".join(texto) + "\n")
