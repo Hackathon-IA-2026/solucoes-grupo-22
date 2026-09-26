@@ -8,7 +8,8 @@ interface:
 endpoints:
   # Claude pelo Amazon Bedrock (conta do hackathon); credenciais pela cadeia padrão da AWS (~/.aws/credentials)
   bedrock:
-    # só os modelos que responderam nesta conta em us-east-1 (testados um a um); o GPT 6 só funciona com global.
+    # só os modelos que responderam nesta conta em us-east-1 (testados um a um); GPT 6 e Opus 5.5 ficaram de fora: o
+    # acesso deles pelo Marketplace da AWS oscila (ora responde, ora "Model access is denied")
     availableRegions: ["us-east-1"]
     models:
       - "us.anthropic.claude-sonnet-5"
@@ -23,7 +24,6 @@ endpoints:
       - "us.anthropic.claude-opus-4-7"
       - "us.anthropic.claude-opus-4-8"
       - "us.anthropic.claude-opus-5"
-      - "us.anthropic.claude-opus-5-5"
       - "global.anthropic.claude-sonnet-4-20250514-v1:0"
       - "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
       - "us.anthropic.claude-sonnet-4-6"
@@ -34,9 +34,6 @@ endpoints:
       - "us.openai.gpt-5.6-luna"
       - "us.openai.gpt-5.6-sol"
       - "us.openai.gpt-5.6-terra"
-      - "global.openai.gpt-6-astra"
-      - "global.openai.gpt-6-luna"
-      - "global.openai.gpt-6-sol"
       - "us.writer.palmyra-x4-v1:0"
       - "us.writer.palmyra-x5-v1:0"
       - "us.xai.grok-4.6"
