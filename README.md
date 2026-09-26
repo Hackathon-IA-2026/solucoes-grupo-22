@@ -14,7 +14,7 @@ Sem link público: o chat roda nos servidores do IMPA e é aberto por túnel SSH
 - Linguagem: Python (ferramentas, dados e testes), JavaScript/Node (LibreChat), Bash (scripts)
 - Framework(s): LibreChat v0.8.7, MCP (Model Context Protocol), vLLM
 - Banco de dados: DuckDB (dados do setor e índice dos relatórios), MongoDB e Meilisearch (usuários e conversas do chat)
-- Modelos: Qwen3.8-27B INT4 (próprio, no vLLM) e Claude Sonnet 5 (Amazon Bedrock); embeddings multilingual-e5-large
+- Modelos: Qwen3.8-27B INT4 (próprio, no vLLM) e Claude Sonnet 5 (Amazon Bedrock); embeddings Amazon Titan Text Embeddings v2 (Bedrock)
 - APIs / Serviços externos: dados abertos da CVM, ANEEL, ONS, BNDES, ANBIMA e Banco Central; Amazon Bedrock; Serper e
   Jina (busca web, opcional)
 
@@ -28,7 +28,7 @@ Sem link público: o chat roda nos servidores do IMPA e é aberto por túnel SSH
 | `vllm.sh` | sobe o modelo próprio numa máquina com GPU |
 | `proper_mcps/` | ferramentas MCP: `dados` (banco DuckDB), `docs` (busca nos relatórios em PDF; `busca.py` atende a aba Busca), `relatorio` (Markdown e Word) |
 | `proper_skills/` | roteiros do analista: benchmark de distribuidoras, ficha de crédito, investimento na transição, avaliação climática |
-| `data/` | coleta (`baixar.py`), montagem do banco (`construir.py`), índice dos PDFs (`indexar_docs.py`), dados da aba Painel (`exportar_painel.py`), dados da aba Timeline (`linha_do_tempo.py`) e documentação das tabelas (`DADOS.md`); os dados em si ficam aqui, fora do git |
+| `data/` | coleta (`baixar.py`), montagem do banco (`construir.py`), índice dos PDFs (`indexar_docs_titan.py`, em uso; `indexar_docs.py` é a versão com o e5 local), dados da aba Painel (`exportar_painel.py`), dados da aba Timeline (`linha_do_tempo.py`) e documentação das tabelas (`DADOS.md`); os dados em si ficam aqui, fora do git |
 | `researches/` | pesquisa de fontes de dados e dicionário de dados |
 | `eval/` | cliente do chat (`chat.py`) e regressão com perguntas de resposta conhecida (`regressao.py`) |
 | `client/src/style.css` | o tema do CoppeZIP |
@@ -80,7 +80,7 @@ Os dados não vão para o git. Coloque em `data/`:
 | `data/raw/`, `data/parquet/` | `python data/baixar.py` (fontes oficiais) e o Drive do projeto (`CoppeZIP-dados-brutos`) |
 | `data/coppezip.duckdb` | `.runtime/venv/bin/python data/construir.py`, depois `data/documentar.py` |
 | `data/modelos/multilingual-e5-large/` | o modelo `intfloat/multilingual-e5-large` do Hugging Face, copiado sem links simbólicos |
-| `data/docs.duckdb` | `.runtime/venv/bin/python data/indexar_docs.py` (PDFs em `data/raw/sustentabilidade/<empresa>/<ano>/` e `data/raw/financeiro/<empresa>/pdfs/<ano>/`, organizados por `data/organizar.py` e descritos em `data/documentos.csv`) |
+| `data/docs_titan.duckdb` | `.runtime/venv/bin/python data/indexar_docs_titan.py`, com as credenciais da AWS em `~/.aws/credentials` (o índice em uso; `data/indexar_docs.py` monta a versão com o e5 local em `data/docs.duckdb`, que o chat não usa). PDFs em `data/raw/sustentabilidade/<empresa>/<ano>/` e `data/raw/financeiro/<empresa>/pdfs/<ano>/`, organizados por `data/organizar.py` e descritos em `data/documentos.csv` |
 | `data/painel.json` | `.runtime/venv/bin/python data/exportar_painel.py`, depois do `construir.py` |
 
 Os bancos prontos também estão no Drive, em `bancos/`. A aba Timeline lê os parágrafos dos relatórios da tabela `blocos`
@@ -97,7 +97,7 @@ Ao lado do chat (ícones na barra lateral), só para usuários logados:
   empresa acha pelo nome, apelido, ticker ou CNPJ. Cores das séries em `--painel-1..8` do `style.css`. Lê
   `data/painel.json`, relido a cada acesso: depois de reconstruir o banco, basta rodar `data/exportar_painel.py` de novo.
 - **Busca** (`/busca`): responde "em que página está isso?" nos PDFs indexados, com o trecho, a imagem da página e o
-  PDF. Usa o mesmo índice e modelo do `coppezip-docs` (`data/docs.duckdb`, `data/modelos/`); o `iniciar.sh` sobe
+  PDF. Usa o mesmo índice e modelo do `coppezip-docs` (`data/docs_titan.duckdb`, Titan pelo Bedrock); o `iniciar.sh` sobe
   `proper_mcps/docs/busca.py` em `127.0.0.1:BUSCA_PORTA` e o LibreChat repassa `/api/busca`.
 - **Grafo** (`/grafo`, `?empresa=<CNPJ só com dígitos>`): grafo de conhecimento de uma empresa, trazido do CoppeZIP
   (Chainlit). Empresa → categoria (cada base do painel com dados dela, e os documentos por área) → indicadores (as
