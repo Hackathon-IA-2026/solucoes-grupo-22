@@ -5,6 +5,7 @@ Grava em DIR/raw/ (padrão data/raw). Os arquivos do Drive
 (ANEEL, ONS, BNDES, ANBIMA, PDFs) são trazidos com rclone; este script cobre o que tem URL pública estável.
 """
 import argparse
+import base64
 import json
 import os
 import re
@@ -75,6 +76,11 @@ ONS_SERIES = {
     "geracao-usina-2": ("geracao_usina", r"GERACAO_USINA-2_(\d{4}(?:_\d{2})?)\.parquet", "2020"),
 }
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36"
+# B3: carteira teórica de um índice. A API recebe o pedido como JSON em base64 no fim da URL. O código do índice de
+# energia elétrica é IEEX; com "IEE" a B3 responde 200 com results: null (foi assim que um iee_api.json vazio entrou na
+# árvore), por isso baixar_b3 exige results preenchido antes de gravar.
+B3_INDICES = {"cvm/iee_api.json": "IEEX"}
+B3_CARTEIRA = "https://sistemaswebb3-listados.b3.com.br/indexProxy/indexCall/GetPortfolioDay/"
 
 
 def baixar(url, destino):
@@ -186,11 +192,38 @@ def baixar_bcb(dados: str, forcar: bool) -> int:
     return falhas
 
 
+def baixar_b3(dados: str, forcar: bool) -> int:
+    """Carteira teórica dos índices da B3 em JSON. Só grava resposta com results: sem isso a falha é ALTA (conta como
+    falha e não escreve arquivo), porque um JSON vazio no lugar do certo passa batido na montagem do banco."""
+    falhas = 0
+    for rel, indice in B3_INDICES.items():
+        destino = os.path.join(dados, "raw", rel)
+        if os.path.exists(destino) and os.path.getsize(destino) > 0 and not forcar:
+            continue
+        os.makedirs(os.path.dirname(destino), exist_ok=True)
+        pedido = {"language": "pt-br", "pageNumber": 1, "pageSize": 120, "index": indice, "segment": "1"}
+        url = B3_CARTEIRA + base64.b64encode(json.dumps(pedido, separators=(",", ":")).encode()).decode()
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=120) as r:
+                corpo = json.load(r)
+            if not corpo.get("results"):
+                raise ValueError(f"resposta sem results (índice {indice} existe na B3?); nada foi gravado")
+            with open(destino + ".part", "w") as f:
+                json.dump(corpo, f, ensure_ascii=False)
+            os.replace(destino + ".part", destino)
+            print(f"ok    {rel} ({len(corpo['results'])} ativos, carteira de {corpo['header']['date']})")
+        except Exception as e:
+            falhas += 1
+            print(f"FALHA b3 {indice}: {e}", file=sys.stderr)
+    return falhas
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--forcar", action="store_true", help="baixa de novo mesmo o que já existe")
-    ap.add_argument("--fonte", choices=("todas", "ons-cmo", "ons-ear", "aneel", "bcb", "ons-series"), default="todas",
-                    help="limita a coleta a uma fonte")
+    ap.add_argument("--fonte", choices=("todas", "ons-cmo", "ons-ear", "aneel", "bcb", "ons-series", "b3"),
+                    default="todas", help="limita a coleta a uma fonte")
     a = ap.parse_args()
     falhas = 0
     alvos = dict(ARQUIVOS) if a.fonte == "todas" else {}
@@ -221,6 +254,8 @@ def main():
             print(f"FALHA listar samp na ANEEL: {e}", file=sys.stderr)
     if a.fonte in ("todas", "bcb"):
         falhas += baixar_bcb(os.path.join(RAIZ, "data"), a.forcar)
+    if a.fonte in ("todas", "b3"):
+        falhas += baixar_b3(os.path.join(RAIZ, "data"), a.forcar)
     for dataset, (pasta, padrao, desde) in (ONS_SERIES.items() if a.fonte in ("todas", "ons-series") else ()):
         try:
             alvos.update(arquivos_ons_catalogo(dataset, pasta, padrao, desde))

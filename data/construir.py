@@ -7,12 +7,20 @@ faltar um arquivo, a montagem para e diz qual. Entradas:
     DMPL, composição do capital, parecer e o índice de documentos da raiz do zip
   cvm/fca/*.zip — todos os 9 CSVs cadastrais (geral, valor mobiliário, auditor, DRI, endereço, escriturador, canal de
     divulgação, departamento de acionistas, país estrangeiro) e o índice de documentos
-  cvm/cad_cia_aberta.csv, cvm/anbima_deb.xlsx, snd/debentures_caracteristicas.xls
-  aneel_ons_epe_bndes/*.csv (SIGA, leilões, SIGET, tarifas, PDD, P&D, PEE, BNDES)
-  aneel/** — DEC/FEC, agentes, societária, SIGET RAP, MMGD, RALIE, SAMP (mercado e balanço de energia), bandeiras
-    (acionamento e adicionais), ranking de continuidade
+  cvm/meta_dfp/*.txt — dicionário de dados da CVM (o que é CD_CONTA, ESCALA_MOEDA, ORDEM_EXERC...)
+  cvm/cad_cia_aberta.csv, cvm/anbima_deb.xlsx, cvm/iee_api.json (carteira do IEE na B3),
+    snd/debentures_caracteristicas.xls
+  aneel_ons_epe_bndes/*.csv (SIGA, leilões, SIGET, tarifas, PDD, P&D, PEE, BNDES: operações e desembolsos por setor)
+  aneel/** — DEC/FEC, agentes, societária, SIGET RAP (lista prévia, resolução contrato-agente e termos de liberação do
+    ONS), MMGD, RALIE, SAMP (mercado e balanço de energia), bandeiras (acionamento e adicionais), ranking de continuidade
   ons/** — CMO, EAR, ENA, carga, balanço por subsistema, intercâmbio, geração por usina, curtailment e mapas de conjuntos
   bcb/sgs_*.json e data/parquet/*.parquet (reg_decfec, reg_capacidade)
+Arquivos de data/raw que NÃO viram tabela (são cópia de outra fonte já lida; a evidência está no comentário junto da
+tabela que os cobre): aneel_ons_epe_bndes/capacidade.csv, coff2025.csv, siga_diario.csv, naoauto_sample.csv,
+desembolsos-mensais-sample.csv, aneel/siget_rap/siget-resolucao-empreendimento-obra-modulo.csv, cad_cia_aberta.csv (o
+da raiz de raw/, fora de cvm/) e cvm/dfp_cia_aberta_2024.zip (o da raiz de cvm/, fora de cvm/dfp/). Faltam ler as
+planilhas aneel_ons_epe_bndes/anuario_dados_brutos.xlsx, pde2035_dados.zip, pde2035_transmissao.xlsx e
+cvm/deb_incentivadas.xls.
 Os PDFs de dicionário de dados de data/raw não são tabelas: vão para o índice de documentos (data/indexar_dados_local.py).
 Saída: data/coppezip.duckdb, trocado de forma atômica (os servidores MCP abrem só para leitura).
 """
@@ -119,7 +127,9 @@ con.execute(r"""CREATE MACRO data_br(x) AS COALESCE(TRY_CAST(x AS DATE), TRY_CAS
 con.execute(r"""CREATE MACRO inteiro(x) AS TRY_CAST(TRY_CAST(x AS DOUBLE) AS BIGINT)""")
 
 # ---------------------------------------------------------------- cadastro, tickers e apelidos
-cad = os.path.join(RAW, "cvm", "cad_cia_aberta.csv")
+# Há um cad_cia_aberta.csv na raiz de raw/ também: é a mesma planilha baixada em 13/09, com uma companhia de menos que
+# a de cvm/ (nenhum CNPJ exclusivo). Fica de fora; o cadastro corrente é o de cvm/, que o data/baixar.py atualiza.
+cad = exigir(os.path.join(RAW, "cvm", "cad_cia_aberta.csv"))
 tabela("empresas", f"""
 SELECT CNPJ_CIA AS cnpj, DENOM_SOCIAL AS nome_social, DENOM_COMERC AS nome_comercial, CD_CVM AS cd_cvm,
        SIT AS situacao, SETOR_ATIV AS setor, CONTROLE_ACIONARIO AS controle_acionario, UF AS uf, MUN AS municipio,
@@ -273,7 +283,9 @@ SELECT CNPJ_Companhia AS cnpj, Nome_Empresarial AS empresa, Valor_Mobiliario AS 
 FROM fca_valor_mobiliario
 """, "Valores mobiliários de cada empresa (ações ON/PN, units, debêntures, BDR...): ticker, mercado, bolsa, segmento de "
      "listagem e datas de início e fim de negociação. em_negociacao = true quando não há data de fim.",
-    FCA_FONTE, FCA_RESSALVA + "; papéis sem código de negociação (debêntures, notas) também aparecem, com ticker nulo")
+    FCA_FONTE, FCA_RESSALVA + "; papéis sem código de negociação (debêntures, notas) também aparecem, com ticker nulo. "
+    "composicao_bdr_unit só se aplica a BDR unit e por isso vem preenchida em 3 das 161 linhas: nulo aqui significa "
+    "'não é BDR unit', não dado faltando")
 
 tabela("empresas_auditoria", """
 SELECT CNPJ_Companhia AS cnpj, Nome_Empresarial AS empresa, Auditor AS auditor,
@@ -285,7 +297,9 @@ SELECT CNPJ_Companhia AS cnpj, Nome_Empresarial AS empresa, Auditor AS auditor,
 FROM fca_auditor
 """, "Auditores independentes de cada empresa (uma linha por período de atuação): firma, CNPJ, código CVM, responsável "
      "técnico e datas de início e fim. Serve para ver troca de auditor e tempo de casa.",
-    FCA_FONTE, FCA_RESSALVA + "; o CPF do responsável técnico não é carregado (dado pessoal)")
+    FCA_FONTE, FCA_RESSALVA + "; o CPF do responsável técnico não é carregado (dado pessoal). fim_responsavel é NULL em "
+    "TODAS as linhas porque a CVM não publica esse campo no FCA (vem vazio nas 1.041 linhas do arquivo): NÃO leia o "
+    "nulo como 'o responsável técnico continua em atividade'. Para o auditor, fim_auditor é preenchido")
 
 ENDERECO = """Tipo_Endereco AS tipo_endereco, Logradouro AS logradouro, Complemento AS complemento, Bairro AS bairro,
        Cidade AS cidade, Sigla_UF AS uf, Pais AS pais, CEP AS cep,
@@ -431,6 +445,8 @@ capex_contas AS (
 a AS (
   SELECT cnpj, ano, any_value(escopo) AS escopo, any_value(empresa) AS empresa,
     sum(valor_brl) FILTER (demonstrativo = 'DRE' AND cd_conta = '3.01') AS receita_liquida_brl,
+    -- custo dos produtos/serviços (3.02): na DRE vem NEGATIVO. Só entra aqui para checar o sinal, não é coluna da tabela.
+    sum(valor_brl) FILTER (demonstrativo = 'DRE' AND cd_conta = '3.02') AS custo_brl,
     sum(valor_brl) FILTER (demonstrativo = 'DRE' AND cd_conta = '3.05') AS ebit_brl,
     sum(valor_brl) FILTER (demonstrativo = 'DRE' AND cd_conta = '3.06') AS resultado_financeiro_brl,
     sum(valor_brl) FILTER (demonstrativo = 'DRE' AND cd_conta = '3.06.02') AS despesas_financeiras_brl,
@@ -463,16 +479,27 @@ SELECT a.cnpj, a.empresa, a.ano, a.escopo, receita_liquida_brl, ebit_brl, deprec
        obra.custo_construcao_brl AS custo_construcao_concessao_brl,
        greatest(coalesce(k.capex_brl, 0), coalesce(obra.custo_construcao_brl, 0)) AS investimento_total_brl,
        -dividendos_jcp_fluxo_brl AS dividendos_jcp_pagos_brl,
-       round(100 * ebit_brl / nullif(receita_liquida_brl, 0), 2) AS margem_ebit_pct,
-       round(100 * (ebit_brl + depreciacao_amortizacao_brl) / nullif(receita_liquida_brl, 0), 2) AS margem_ebitda_pct,
-       round(100 * lucro_liquido_brl / nullif(receita_liquida_brl, 0), 2) AS margem_liquida_pct,
-       round((divida_bruta_brl - caixa_aplicacoes_brl) / nullif(ebit_brl + depreciacao_amortizacao_brl, 0), 2) AS divida_liquida_ebitda,
+       -- Em algumas DFPs a empresa entregou o custo (3.02) com sinal positivo e propagou o erro para baixo: o lucro
+       -- bruto sai maior que a receita e as margens saem infladas. Marcamos e anulamos as margens em vez de inverter o
+       -- sinal em silêncio, porque não se sabe até onde o erro subiu na demonstração.
+       coalesce(custo_brl, 0) > 0 AS sinal_custo_invertido,
+       CASE WHEN coalesce(custo_brl, 0) > 0 THEN NULL
+            ELSE round(100 * ebit_brl / nullif(receita_liquida_brl, 0), 2) END AS margem_ebit_pct,
+       CASE WHEN coalesce(custo_brl, 0) > 0 THEN NULL
+            ELSE round(100 * (ebit_brl + depreciacao_amortizacao_brl) / nullif(receita_liquida_brl, 0), 2)
+       END AS margem_ebitda_pct,
+       CASE WHEN coalesce(custo_brl, 0) > 0 THEN NULL
+            ELSE round(100 * lucro_liquido_brl / nullif(receita_liquida_brl, 0), 2) END AS margem_liquida_pct,
+       CASE WHEN coalesce(custo_brl, 0) > 0 THEN NULL
+            ELSE round((divida_bruta_brl - caixa_aplicacoes_brl) / nullif(ebit_brl + depreciacao_amortizacao_brl, 0), 2)
+       END AS divida_liquida_ebitda,
        round((ebit_brl + depreciacao_amortizacao_brl) / nullif(abs(despesas_financeiras_brl), 0), 2) AS cobertura_juros_ebitda,
        round(100 * lucro_liquido_brl / nullif(patrimonio_liquido_brl, 0), 2) AS roe_pct,
        k.contas_capex,
        'CVM DFP ' || a.ano || ' (' || a.escopo || '): receita 3.01, EBIT 3.05, lucro 3.11, desp. financeiras 3.06.02; '
          || 'dívida bruta 2.01.04+2.02.01; caixa 1.01.01+1.01.02; PL 2.03; D&A, caixa operacional (6.01), CAPEX (6.02) '
-         || 'e dividendos (6.03) da DFC' AS fonte
+         || 'e dividendos/JCP pagos (subcontas de 6.03 cuja descrição cita dividendo ou juros sobre capital) da DFC'
+         AS fonte
 FROM a LEFT JOIN k USING (cnpj, ano) LEFT JOIN obra USING (cnpj, ano)
 """, "Indicadores financeiros anuais por empresa (2020 em diante), em R$, prontos para comparar: receita, EBIT, "
      "EBITDA calculado, lucro, dívida bruta e líquida, caixa, CAPEX, dividendos, margens, alavancagem, cobertura de juros e ROE. "
@@ -482,7 +509,15 @@ FROM a LEFT JOIN k USING (cnpj, ano) LEFT JOIN obra USING (cnpj, ano)
     "3.05 é EBIT, nunca chame de EBITDA. Dívida bruta = empréstimos, financiamentos e debêntures (2.01.04 + 2.02.01), sem "
     "arrendamentos. capex_brl soma as saídas de caixa de imobilizado, intangível e ativo de contrato (6.02, contas em "
     "contas_capex). Concessões (IFRS 15 / ICPC 01) lançam a obra como custo de construção: custo_construcao_concessao_brl. "
-    "Para 'quanto investiu', use investimento_total_brl (o maior dos dois, sem somar para não contar duas vezes).")
+    "Para 'quanto investiu', use investimento_total_brl (o maior dos dois, sem somar para não contar duas vezes). "
+    "sinal_custo_invertido = true nas 2 linhas em que a empresa entregou à CVM o custo (3.02) com sinal POSITIVO e "
+    "propagou o erro para baixo (Itapebi 2021 e Equatorial Pará 2025, as duas só com demonstração individual): o lucro "
+    "bruto sai maior que a receita, então margem_ebit_pct, margem_ebitda_pct, margem_liquida_pct e divida_liquida_ebitda "
+    "vêm NULL nessas linhas. ebit_brl, lucro_liquido_brl, roe_pct e cobertura_juros_ebitda ainda carregam o erro ali "
+    "(Equatorial PA 2025: EBIT de R$ 20,0 bi contra receita de R$ 12,2 bi e ROE de 371%) — descarte a linha em vez de "
+    "usá-la. São os valores que a empresa publicou e ficam como estão: NÃO inverta o sinal por conta própria. Outras "
+    "empresas erraram o sinal só no individual (AES Tietê 2020, CPFL Energia 2024, Rio Alto 2024) e não aparecem aqui "
+    "porque esta tabela usa o consolidado, que veio certo.")
 
 # ---------------------------------------------------------------- CVM: demonstrações trimestrais (ITR)
 contas_itr, dmpl_itr, capital_itr, parecer_itr = cvm_membros("itr")
@@ -627,20 +662,84 @@ ORDER BY cnpj, data_referencia DESC, categoria, versao DESC
     "CVM, índice de documentos dos pacotes DFP, ITR e FCA", "só as categorias DFP, ITR e FCA; o link abre o documento "
     "completo no site da CVM (rad.cvm.gov.br)")
 
+# O zip cvm/dfp_cia_aberta_2024.zip da raiz de cvm/ é uma cópia mais antiga de cvm/dfp/dfp_cia_aberta_2024.zip: mesmos
+# 19 membros, mesmos tamanhos, e o único membro que difere (o índice) só tem uma linha em ordem diferente. O glob acima
+# é cvm/dfp/dfp_cia_aberta_*.zip, então a cópia da raiz nunca é lida duas vezes.
+
+# ---------------------------------------------------------------- CVM: dicionário de dados (o que é cada campo)
+# Blocos de texto em cp1252, um por campo: "Campo: X" e depois Descrição, Domínio, Tipo Dados e o tamanho, que vem
+# como "Tamanho" (texto e datas) ou como o par "Precisão"/"Scale" (numéricos). Estrutura fixa: bloco sem os três
+# primeiros atributos, ou sem nenhuma das duas formas de tamanho, para a montagem dizendo o arquivo e o campo.
+CAMPO_META = re.compile(r"Campo:[ \t]*(\S+)[ \t]*\r?\n-{5,}\r?\n(.*?)(?=\r?\n-{5,}\r?\n|\Z)", re.S)
+ATRIBUTO_META = re.compile(r"^[ \t]*([^:\n]+?)[ \t]*:[ \t]*(.*?)[ \t]*$")
+dicionario = []
+for arq in exigir_glob(os.path.join(RAW, "cvm", "meta_dfp", "meta_dfp_cia_aberta*.txt")):
+    nome_arquivo = os.path.basename(arq)
+    # meta_dfp_cia_aberta_BPA.txt -> BPA; meta_dfp_cia_aberta.txt (sem sufixo) descreve o índice de documentos do zip
+    sufixo = re.fullmatch(r"meta_dfp_cia_aberta_?(.*)\.txt", nome_arquivo).group(1)
+    demonstrativo = sufixo or "indice_documentos"
+    texto = open(arq, encoding="cp1252").read()
+    achados = CAMPO_META.findall(texto)
+    if not achados:
+        raise SystemExit(f"construir.py: {nome_arquivo} não tem nenhum bloco 'Campo:' (formato do dicionário mudou)")
+    for campo, corpo in achados:
+        a = dict(ATRIBUTO_META.match(l).groups() for l in corpo.splitlines() if ATRIBUTO_META.match(l))
+        faltando = [k for k in ("Descrição", "Domínio", "Tipo Dados") if k not in a]
+        if "Tamanho" not in a and not ("Precisão" in a and "Scale" in a):
+            faltando.append("Tamanho (ou o par Precisão/Scale)")
+        if faltando:
+            raise SystemExit(f"construir.py: campo {campo} em {nome_arquivo} sem {', '.join(faltando)}")
+        dicionario.append((demonstrativo, nome_arquivo, campo, a["Descrição"], a["Domínio"], a["Tipo Dados"],
+                           a.get("Tamanho"), a.get("Precisão"), a.get("Scale")))
+con.execute("""CREATE TEMP TABLE dic_bruto (demonstrativo VARCHAR, arquivo VARCHAR, campo VARCHAR, descricao VARCHAR,
+  dominio VARCHAR, tipo_dados VARCHAR, tamanho VARCHAR, precisao VARCHAR, escala VARCHAR)""")
+con.executemany("INSERT INTO dic_bruto VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", dicionario)
+tabela("dicionario_cvm", """
+SELECT demonstrativo, arquivo, campo, descricao, dominio, tipo_dados, TRY_CAST(tamanho AS INTEGER) AS tamanho,
+       TRY_CAST(precisao AS INTEGER) AS precisao, TRY_CAST(escala AS INTEGER) AS escala
+FROM dic_bruto ORDER BY demonstrativo, campo
+""", "Dicionário de dados da CVM: o que significa cada campo dos arquivos de DFP e ITR (CD_CONTA, ESCALA_MOEDA, "
+     "ORDEM_EXERC, GRUPO_DFP, ST_CONTA_FIXA...), com a descrição oficial, o domínio e o tipo. demonstrativo diz a "
+     "que arquivo o campo pertence: BPA e BPP (balanço patrimonial ativo e passivo), DRE, DRA, DFC_MI e DFC_MD "
+     "(fluxo de caixa indireto e direto), DVA, DMPL, composicao_capital, parecer e indice_documentos. Consulte aqui "
+     "antes de interpretar as colunas cruas de contas_cvm e contas_cvm_trimestral.",
+    "CVM, dicionário de dados dos pacotes de DFP (cvm/meta_dfp/*.txt)",
+    "é a documentação do arquivo ANUAL (DFP); o ITR usa os mesmos campos, com a exceção conhecida do tipo do relatório "
+    "do auditor (TP_RELAT_AUD na DFP, TP_RELAT_ESP no ITR). tamanho vale para campos de texto e data; nos numéricos o "
+    "tamanho vem como precisao e escala (casas decimais). Descreve os CSVs crus da CVM, não as colunas já renomeadas "
+    "das tabelas desta plataforma")
+
 # ---------------------------------------------------------------- ANEEL: usinas (SIGA) e seus donos
-siga = f"read_csv('{os.path.join(ANEEL, 'siga.csv')}', delim=';', header=true, all_varchar=true)"
+# siga_diario.csv é o MESMO conjunto do SIGA num retrato anterior (DatGeracaoConjuntoDados de 13/09 contra 26/09 do
+# siga.csv): mesmas 23 colunas, mesmas 25.045 linhas, e só 3 linhas diferem (sufixo de versão do CEG). Garantia física
+# e coordenadas, que seriam a razão de ler o diário, já estão no siga.csv e entram abaixo. Por isso não vira tabela: o
+# que faltava aproveitar eram as colunas de vigência da outorga e o combustível detalhado, acrescentados aqui.
+siga = f"read_csv('{exigir(os.path.join(ANEEL, 'siga.csv'))}', delim=';', header=true, all_varchar=true)"
 tabela("usinas", f"""
 SELECT CodCEG AS ceg, NomEmpreendimento AS nome, SigUFPrincipal AS uf, SigTipoGeracao AS tipo_geracao,
        DscFaseUsina AS fase, DscOrigemCombustivel AS origem, DscFonteCombustivel AS fonte_energia,
-       DscTipoOutorga AS tipo_outorga, TRY_CAST(DatEntradaOperacao AS DATE) AS data_entrada_operacao,
+       NomFonteCombustivel AS combustivel, DscTipoOutorga AS tipo_outorga,
+       -- 03/01/1900 é o marcador da ANEEL para "sem data de operação" (2.398 usinas, 2.099 delas nem começaram a obra):
+       -- vira NULL para não inventar uma safra de 1900 em gráfico de capacidade por ano.
+       nullif(TRY_CAST(DatEntradaOperacao AS DATE), DATE '1900-01-03') AS data_entrada_operacao,
        num_br(MdaPotenciaOutorgadaKw) AS potencia_outorgada_kw, num_br(MdaPotenciaFiscalizadaKw) AS potencia_fiscalizada_kw,
        num_br(MdaGarantiaFisicaKw) AS garantia_fisica_kw, num_br(NumCoordNEmpreendimento) AS latitude,
        num_br(NumCoordEEmpreendimento) AS longitude, trim(DscSubBacia) AS sub_bacia, DscMuninicpios AS municipios,
+       TRY_CAST(DatInicioVigencia AS DATE) AS inicio_vigencia_outorga,
+       TRY_CAST(DatFimVigencia AS DATE) AS fim_vigencia_outorga, IdcGeracaoQualificada = 'Sim' AS geracao_qualificada,
        DscPropriRegimePariticipacao AS proprietarios_texto, TRY_CAST(DatGeracaoConjuntoDados AS DATE) AS data_base
 FROM {siga}
 """, "Usinas de geração do Brasil (SIGA/ANEEL), uma linha por usina: tipo (UHE, PCH, CGH, EOL, UFV, UTE, UTN), fase "
-     "(Operação, Construção, Construção não iniciada), origem (Hídrica, Eólica, Solar, Fóssil, Biomassa, Nuclear), potência em kW.",
-    "ANEEL SIGA (dados abertos), data em data_base", "potência em kW (divida por 1000 para MW); donos em usinas_proprietarios")
+     "(Operação, Construção, Construção não iniciada), origem (Hídrica, Eólica, Solar, Fóssil, Biomassa, Nuclear), potência em kW. "
+     "combustivel é o insumo detalhado (Óleo Diesel, Bagaço de Cana de Açúcar, Casca de Arroz...), mais fino que "
+     "fonte_energia. fim_vigencia_outorga é quando a outorga (registro, autorização ou concessão) vence.",
+    "ANEEL SIGA (dados abertos), data em data_base", "potência em kW (divida por 1000 para MW); donos em "
+    "usinas_proprietarios. garantia_fisica_kw é a energia assegurada da usina, não a potência (em Itaipu ela supera a "
+    "potência instalada da parte brasileira, por causa do tratado). geracao_qualificada (cogeração qualificada) só "
+    "está declarada para parte das usinas: false significa 'Não' ou campo em branco no SIGA. "
+    "data_entrada_operacao é NULL em 2.398 usinas: a ANEEL preenche 03/01/1900 quando não há data (quase todas em "
+    "'Construção não iniciada'), e esse marcador foi anulado aqui. As datas anteriores a 1950 que sobram são reais "
+    "(143 CGH, PCH, UHE e UTE antigas)")
 
 PADRAO_DONO = r"([0-9]+(?:[.,][0-9]+)?)% para (.+?) - ([0-9]{2}\.[0-9]{3}\.[0-9]{3}/[0-9]{4}-[0-9]{2}|[0-9]{3}\.[0-9]{3}\.[0-9]{3}-[0-9]{2}) \(([A-Z]+)\)"
 tabela("usinas_proprietarios", f"""
@@ -664,7 +763,7 @@ CATALOGO.append(("capacidade_por_proprietario", "Capacidade instalada em MW por 
                  "pela participação de cada dono.", "ANEEL SIGA", "titular direto; grupos aparecem espalhados em SPEs", None))
 
 # ---------------------------------------------------------------- ANEEL: leilões de geração
-lei = csv_limpo(os.path.join(ANEEL, "leiloes.csv"), "cp1252")
+lei = csv_limpo(exigir(os.path.join(ANEEL, "leiloes.csv")), "cp1252")
 tabela("leiloes_geracao", f"""
 SELECT TRY_CAST(AnoLeilao AS INTEGER) AS ano, TRY_CAST(DatLeilao AS DATE) AS data_leilao, NumLeilao AS numero_leilao,
        DscNumeroLeilaoCCEE AS leilao_ccee, DscTipoLeilao AS tipo_leilao, NomEmpreendimento AS empreendimento, CodCEG AS ceg,
@@ -677,17 +776,26 @@ SELECT TRY_CAST(AnoLeilao AS INTEGER) AS ano, TRY_CAST(DatLeilao AS DATE) AS dat
 FROM {lei}
 """, "Resultados dos leilões de GERAÇÃO de energia (2005 em diante): empreendimento, fonte, potência, preço, deságio, "
      "investimento previsto e vencedor.", "ANEEL, resultado de leilões de geração",
-    "só geração; leilões de transmissão não estão nesta tabela. vencedor é texto (não tem CNPJ)")
+    "só geração; leilões de transmissão não estão nesta tabela. vencedor é texto (não tem CNPJ). O conjunto aberto da "
+    "ANEEL cobre 2005-2019, 2021, 2022 e 2025: faltam 2020, 2023 e 2024, e a falta é do conjunto, NÃO quer dizer que "
+    "não houve leilão nesses anos (houve). Não conclua queda de contratação a partir de um ano ausente")
 
 # ---------------------------------------------------------------- ANEEL: transmissão (SIGET)
-ag = csv_limpo(os.path.join(ANEEL, "siget_agente.csv"), "cp1252")
+ag = csv_limpo(exigir(os.path.join(ANEEL, "siget_agente.csv")), "cp1252")
 tabela("transmissao_contratos", f"""
 SELECT IdeCcd AS id_contrato, IdcTipoCcd AS tipo_contrato, NumCnaCcd AS numero_contrato, data_br(DatAsnCcd) AS data_assinatura,
        data_br(DatFimCcd) AS data_fim, fmt_cnpj(NumCNPJ) AS cnpj, DscRazaoSocial AS concessionaria, SigUF AS uf,
        TRY_CAST(DatGeracaoConjuntoDados AS DATE) AS data_base
 FROM {ag}
-""", "Contratos de concessão de transmissão (SIGET/ANEEL) com a concessionária e o CNPJ.", "ANEEL SIGET")
-emp = csv_limpo(os.path.join(ANEEL, "siget_empreendimento_obra_modulo.csv"), "utf-8")
+""", "Contratos de concessão de transmissão (SIGET/ANEEL) com a concessionária e o CNPJ. data_assinatura é a data em "
+     "que o contrato foi assinado e data_fim é quando a concessão vence.",
+    "ANEEL SIGET",
+    "data_assinatura NÃO é uma série anual: é a data do contrato, e não há contrato assinado em 1998, 1999, 2003 nem "
+    "2025 (a lacuna é do cadastro da ANEEL, não desta plataforma). Os atos legais que autorizaram reforços e "
+    "ampliações de cada contrato estão em transmissao_atos_legais")
+# siget-resolucao-empreendimento-obra-modulo.csv (pasta siget_rap) é um subconjunto deste arquivo: as 32 colunas são as
+# mesmas e todo IdeMdl de lá está aqui (o EXCEPT dá zero), com 10.230 módulos a mais aqui. Não vira tabela.
+emp = csv_limpo(exigir(os.path.join(ANEEL, "siget_empreendimento_obra_modulo.csv")), "utf-8")
 tabela("transmissao_empreendimentos", f"""
 SELECT e.IdeCcd AS id_contrato, c.cnpj, c.concessionaria, e.NomEpd AS empreendimento, e.DscEpd AS descricao,
        e.DscSituacaoEpd AS situacao, data_br(e.DatOprComEpd) AS data_operacao_comercial, e.DscObr AS obra,
@@ -699,7 +807,10 @@ FROM {emp} e LEFT JOIN transmissao_contratos c ON c.id_contrato = e.IdeCcd
     "confirmado: não some nem chame de RAP")
 
 # ---------------------------------------------------------------- BNDES
-bn = csv_limpo(os.path.join(ANEEL, "naoauto_full.csv"), "cp1252")
+# naoauto_sample.csv é literalmente os 3.001 primeiros bytes de naoauto_full.csv (mesmo md5 do prefixo), com a última
+# linha cortada no meio; desembolsos-mensais-sample.csv é outro conjunto do BNDES cortado do mesmo jeito, e o arquivo
+# completo dele não foi baixado. As duas amostras só servem para ver o formato: nenhuma vira tabela.
+bn = csv_limpo(exigir(os.path.join(ANEEL, "naoauto_full.csv")), "cp1252")
 tabela("bndes_operacoes", f"""
 SELECT trim(cliente) AS cliente, cnpj, trim(descricao_do_projeto) AS projeto, uf, municipio,
        TRY_CAST(data_da_contratacao AS DATE) AS data_contratacao, num_br(valor_contratado_reais) AS valor_contratado_brl,
@@ -714,6 +825,32 @@ FROM {bn}
 """, "Operações de financiamento não automáticas do BNDES (contratos diretos e indiretos), com cliente, CNPJ, projeto, "
      "valores contratado e desembolsado em R$, custo e prazos. setor_eletrico marca geração, transmissão e distribuição.",
     "BNDES dados abertos, operações não automáticas", "CNPJ é do tomador (muitas vezes SPE do grupo)")
+
+# Desembolsos totais do BNDES por macro-setor CNAE, mensais desde 1995. O arquivo vem largo (uma coluna por setor);
+# aqui ele virou longo, que é o formato em que se filtra e se soma. Os valores estão em R$ milhões na origem e são
+# convertidos para R$: a soma de 2023 dá R$ 114,4 bi, da mesma ordem dos R$ 112 bi que o BNDES divulgou no ano, e
+# confortavelmente acima dos R$ 23,7 bi de bndes_operacoes (que é só a carteira não automática).
+SETORES_BNDES = [("agropecuaria", "Agropecuária"), ("industria_extrativa", "Indústria extrativa"),
+                 ("industria_de_transformacao", "Indústria de transformação"),
+                 ("comercio_e_servicos", "Comércio e serviços")]
+cnae = csv_limpo(exigir(os.path.join(ANEEL, "desembolsos-cnae.csv")), "utf-8")
+tabela("bndes_desembolsos_setor_mensal", f"""
+WITH d AS (SELECT * FROM {cnae})
+{" UNION ALL ".join(f'''
+SELECT TRY_CAST(ano AS INTEGER) AS ano, TRY_CAST(mes AS INTEGER) AS mes,
+       CAST(make_date(TRY_CAST(ano AS INTEGER), TRY_CAST(mes AS INTEGER), 1) AS DATE) AS competencia,
+       '{rotulo}' AS setor, round(num_br({coluna}) * 1e6, 2) AS desembolso_brl
+FROM d''' for coluna, rotulo in SETORES_BNDES)}
+ORDER BY competencia, setor
+""", "Desembolsos totais do BNDES por mês e macro-setor CNAE (Agropecuária, Indústria extrativa, Indústria de "
+     "transformação, Comércio e serviços), em R$, desde janeiro de 1995. Uma linha por mês e setor: some por ano para "
+     "o desembolso anual do banco, ou filtre o setor para a série setorial. Serve de denominador para pôr o "
+     "financiamento do setor elétrico (bndes_operacoes) em perspectiva.",
+    "BNDES dados abertos, desembolsos por setor CNAE (valores da origem em R$ milhões, convertidos para R$ aqui)",
+    "são só QUATRO macro-setores: energia elétrica NÃO aparece separada (ela está dentro de 'Comércio e serviços', "
+    "onde o BNDES classifica eletricidade e gás). Para o setor elétrico use bndes_operacoes, que é a carteira não "
+    "automática por contrato e não fecha com estes totais. Valores nominais, sem correção pela inflação: não compare "
+    "1995 com 2026 sem deflacionar (use indicadores_macro_mensal). O último mês do arquivo é março de 2026")
 
 # ---------------------------------------------------------------- ANBIMA: debêntures incentivadas (Lei 12.431)
 wb = openpyxl.load_workbook(os.path.join(RAW, "cvm", "anbima_deb.xlsx"), read_only=True, data_only=True)
@@ -757,6 +894,29 @@ FROM deb
      "indexador. setor = 'Energia Elétrica' para o setor.", "ANBIMA, planilha de debêntures incentivadas (até 04/2024)",
     "emissora é texto (sem CNPJ); dados até abril de 2024; na planilha original o art. 2º mistura R$ milhões (até 2017) "
     "e R$ mil (2018 em diante), já convertidos para R$ aqui")
+
+# ---------------------------------------------------------------- B3: carteira do IEE (índice de energia elétrica)
+# A API de índices da B3 devolve a carteira do dia; o ano de dois dígitos em header.date ("28/09/26") não passa pelo
+# data_br, que só entende %d/%m/%Y. O ticker liga com empresas_apelidos (tipo = 'ticker') e de lá com o CNPJ.
+IEE = exigir(os.path.join(RAW, "cvm", "iee_api.json"), "baixe com data/baixar.py --fonte b3")
+tabela("b3_iee_carteira", f"""
+WITH j AS (SELECT header, unnest(results) AS r FROM read_json('{IEE}')),
+c AS (SELECT CAST(try_strptime(j.header.date, '%d/%m/%y') AS DATE) AS data_carteira, j.r.cod AS ticker,
+             j.r.asset AS empresa_b3, trim(j.r.type) AS tipo_acao, num_br(j.r.part) AS participacao_pct,
+             num_br(j.r.theoricalQty) AS quantidade_teorica,
+             num_br(j.header.theoricalQty) AS quantidade_teorica_total_indice FROM j)
+SELECT c.*, a.cnpj FROM c LEFT JOIN (SELECT DISTINCT apelido, cnpj FROM empresas_apelidos WHERE tipo = 'ticker') a
+  ON a.apelido = c.ticker
+ORDER BY participacao_pct DESC
+""", "Carteira teórica do IEE (Índice de Energia Elétrica da B3) na data data_carteira: as ações do setor elétrico que "
+     "compõem o índice, com o peso de cada uma em % e a quantidade teórica. É o universo de comparação do mercado para "
+     "o setor: quem está no índice, e quanto cada empresa pesa. cnpj vem do ticker (empresas_apelidos) quando a "
+     "empresa tem registro na CVM.",
+    "B3, API de índices (GetPortfolioDay, índice IEEX), https://www.b3.com.br/pt_br/market-data-e-indices/indices/"
+    "indices-de-segmentos-e-setoriais/indice-de-energia-eletrica-iee-b3.htm",
+    "é uma FOTOGRAFIA de um dia, não uma série histórica: a API só devolve a carteira vigente, e a B3 rebalanceia o "
+    "índice a cada quadrimestre (jan, mai, set). Não é o valor (pontos) do índice nem preço de ação. participacao_pct "
+    "soma 100. Só ações listadas: subsidiárias e empresas fechadas do setor não aparecem")
 
 # ---------------------------------------------------------------- ANEEL: distribuição (tarifas, PDD, P&D, eficiência, compensações)
 tabela("tarifas_distribuicao", f"""
@@ -805,7 +965,7 @@ tabela("continuidade_conjuntos", f"""
 SELECT trim(d.SigAgente) AS distribuidora, fmt_cnpj(CAST(d.NumCNPJ AS VARCHAR)) AS cnpj, d.IdeConjUndConsumidoras AS id_conjunto,
        d.DscConjUndConsumidoras AS conjunto, d.SigIndicador AS indicador, c.descricao, d.AnoIndice AS ano,
        d.NumPeriodoIndice AS mes, d.VlrIndiceEnviado AS valor
-FROM '{os.path.join(AN, 'dec_fec_2020_2029.parquet')}' d LEFT JOIN indicadores_codigos c ON c.indicador = d.SigIndicador
+FROM '{exigir(os.path.join(AN, 'dec_fec_2020_2029.parquet'))}' d LEFT JOIN indicadores_codigos c ON c.indicador = d.SigIndicador
 """, "Indicadores de continuidade por conjunto de consumidores e mês (2020 em diante): DEC em horas e FEC em interrupções, "
      "com os componentes (programada, externa, dia crítico...) e NumCon (número de consumidores do conjunto).",
     "ANEEL, indicadores coletivos de continuidade", "para a distribuidora inteira use dec_fec_distribuidora_anual")
@@ -813,8 +973,12 @@ tabela("continuidade_limites", f"""
 SELECT trim(SigAgente) AS distribuidora, fmt_cnpj(NumCNPJ) AS cnpj, TRY_CAST(IdeConjUndConsumidoras AS BIGINT) AS id_conjunto,
        DscConjUndConsumidoras AS conjunto, SigIndicador AS indicador, TRY_CAST(AnoLimiteQualidade AS INTEGER) AS ano,
        num_br(VlrLimite) AS limite
-FROM read_csv('{os.path.join(AN, 'dec_fec_limites.csv')}', delim=';', header=true, all_varchar=true)
-""", "Limites regulatórios anuais de DEC e FEC por conjunto de consumidores, definidos pela ANEEL.", "ANEEL")
+FROM read_csv('{exigir(os.path.join(AN, 'dec_fec_limites.csv'))}', delim=';', header=true, all_varchar=true)
+""", "Limites regulatórios anuais de DEC e FEC por conjunto de consumidores, definidos pela ANEEL. Compare com "
+     "continuidade_conjuntos (o realizado) para ver quem estourou o limite.", "ANEEL",
+    "a série útil começa em 1997: a única linha de 1990 é erro de digitação da ANEEL no arquivo de origem (EDP ES, "
+    "conjunto GUACUI, FEC) e 1996 tem só 78 linhas contra ~9.600 em 1997, então filtre ano >= 1997 para comparar anos. "
+    "Traz anos futuros (até 2032), que são limites já definidos e não realizado")
 con.execute("""CREATE VIEW dec_fec_distribuidora_anual AS
 WITH n AS (SELECT cnpj, id_conjunto, ano, mes, valor AS consumidores FROM continuidade_conjuntos WHERE indicador = 'NumCon'),
 m AS (  -- DEC e FEC mensais da distribuidora: média dos conjuntos ponderada pelo número de consumidores
@@ -850,7 +1014,7 @@ tabela("compensacoes_continuidade", f"""
 SELECT d.SigAgente AS distribuidora, fmt_cnpj(d.NumCNPJ) AS cnpj, d.IdeConjUndConsumidoras AS id_conjunto,
        d.DscConjUndConsumidoras AS conjunto, d.SigIndicador AS indicador, c.descricao, TRY_CAST(d.AnoIndice AS INTEGER) AS ano,
        TRY_CAST(d.NumPeriodoIndice AS INTEGER) AS mes, num_br(d.VlrIndiceEnviado) AS valor
-FROM '{os.path.join(PQ, 'reg_decfec.parquet')}' d LEFT JOIN indicadores_codigos c ON c.indicador = d.SigIndicador
+FROM '{exigir(os.path.join(PQ, 'reg_decfec.parquet'))}' d LEFT JOIN indicadores_codigos c ON c.indicador = d.SigIndicador
 """, "Compensações pagas pelas distribuidoras aos consumidores por violação dos limites de continuidade, por conjunto e "
      "mês: PGU* = valor pago em R$, QTU* = quantidade de unidades compensadas (a coluna descricao explica cada código).",
     "ANEEL, compensação por violação de continuidade", "para DEC e FEC use dec_fec_distribuidora_anual")
@@ -911,25 +1075,42 @@ FROM read_parquet('{ear_arquivos}')
     "O percentual é o valor publicado pelo ONS; a EAR considera cascatas entre subsistemas. "
     "Dados recentes podem ser revisados; não são armazenamento de uma empresa ou usina específica.")
 
+# aneel_ons_epe_bndes/capacidade.csv é a ORIGEM deste parquet, não outra fonte: mesmas 18 colunas, mesmas 5.678 linhas,
+# mesmo conjunto de chaves (usina, unidade geradora, CEG) e a mesma soma de potência efetiva (207.233,2 MW). Por isso o
+# CSV não vira tabela; o que faltava dele eram a modalidade de operação e o agente operador, lidos aqui do parquet.
 tabela("ons_capacidade", f"""
 SELECT id_subsistema AS subsistema, id_estado AS uf, nom_agenteproprietario AS agente_proprietario,
+       nom_agenteoperador AS agente_operador, nom_modalidadeoperacao AS modalidade_operacao,
        nom_tipousina AS tipo_usina, nom_usina AS usina, ceg, nom_unidadegeradora AS unidade_geradora,
        nom_combustivel AS combustivel, TRY_CAST(dat_entradaoperacao AS DATE) AS entrada_operacao,
        TRY_CAST(dat_desativacao AS DATE) AS desativacao, TRY_CAST(val_potenciaefetiva AS DOUBLE) AS potencia_efetiva_mw
-FROM '{os.path.join(PQ, 'reg_capacidade.parquet')}'
-""", "Unidades geradoras despachadas pelo ONS com agente proprietário e potência efetiva em MW.", "ONS, capacidade instalada",
-    "agente sem CNPJ; ceg liga com usinas")
+FROM '{exigir(os.path.join(PQ, 'reg_capacidade.parquet'))}'
+""", "Unidades geradoras despachadas pelo ONS com agente proprietário e potência efetiva em MW. modalidade_operacao "
+     "diz como o ONS trata a unidade: TIPO I é despacho centralizado (143,6 GW das 207,2 GW da tabela) e TIPO II-A, "
+     "II-B e II-C são as demais modalidades de operação. agente_operador é quem opera (pode diferir do proprietário).",
+    "ONS, capacidade instalada",
+    "agente sem CNPJ; ceg liga com usinas. É a capacidade que o ONS acompanha (SIN), menor que a do SIGA, que inclui "
+    "usinas fora do SIN")
 # Cortes de geração (constrained-off) eólica e solar: valores do ONS em MW médio por meia hora (energia = MWmed × 0,5 h)
+# aneel_ons_epe_bndes/coff2025.csv é junho/2025 da série eólica, linha por linha idêntico ao parquet
+# RESTRICAO_COFF_EOLICA_2025_06 lido aqui (223.536 linhas, EXCEPT vazio nos dois sentidos). Não vira tabela; as colunas
+# dele que faltavam — origem da restrição, texto da restrição e os minutos por motivo — entram na view e na tabela por
+# motivo abaixo, com o histórico inteiro e não só um mês.
 partes = [f"SELECT '{fonte}' AS fonte, * FROM read_parquet('{ons_parquets(pasta)}', union_by_name=true)"
           for pasta, fonte in (("restricao_coff_eolica_usi", "eólica"), ("restricao_coff_fotovoltaica", "solar"))]
 con.execute(f"""CREATE VIEW ons_curtailment_semihora AS
 SELECT fonte, id_subsistema AS subsistema, id_estado AS uf, nom_usina AS usina, id_ons, nullif(ceg, '-') AS ceg,
        din_instante AS instante, val_geracao AS geracao_mwmed, val_geracaoreferencia AS referencia_mwmed,
-       val_geracaonaorealizadaapurada AS nao_realizada_mwmed, cod_razaorestricao AS razao, nom_agenteoperador AS agente_operador
+       val_geracaonaorealizadaapurada AS nao_realizada_mwmed, nullif(cod_razaorestricao, '') AS razao,
+       nullif(cod_origemrestricao, '') AS origem, nullif(dsc_restricao, '') AS restricao,
+       nullif(nom_pontoconexao, '') AS ponto_conexao, num_minutos_restricao AS minutos_restricao,
+       nom_agenteoperador AS agente_operador
 FROM ({' UNION ALL BY NAME '.join(partes)})""")
 CATALOGO.append(("ons_curtailment_semihora", "Cortes de geração eólica (2023 em diante) e solar (abr/2024 em diante) por usina e "
-                 "meia hora, em MW médio: geração verificada, geração de referência e geração não realizada apurada (GNRa).",
-                 "ONS, restrição de operação por constrained-off", "para séries e rankings use ons_curtailment_mensal", None))
+                 "meia hora, em MW médio: geração verificada, geração de referência e geração não realizada apurada (GNRa), "
+                 "com o motivo do corte (razao e origem), o texto da restrição e o ponto de conexão.",
+                 "ONS, restrição de operação por constrained-off", "para séries e rankings use ons_curtailment_mensal; "
+                 "por motivo, ons_curtailment_motivo_mensal", None))
 tabela("ons_curtailment_mensal", """
 SELECT fonte, subsistema, uf, usina, id_ons, any_value(ceg) AS ceg, any_value(agente_operador) AS agente_operador,
        CAST(date_trunc('month', instante) AS DATE) AS mes,
@@ -940,9 +1121,32 @@ FROM ons_curtailment_semihora GROUP BY ALL
 """, "Cortes de geração (curtailment) por usina e mês: geração, geração de referência e energia cortada em MWh, e % cortado. "
      "fonte = eólica (2023 em diante) ou solar (abr/2024 em diante).",
     "ONS, restrição de operação por constrained-off (GNRa = geração não realizada apurada)",
-    "energia cortada = GNRa × 0,5 h; motivos em ons_curtailment_semihora.razao: REL indisponibilidade externa (rede), "
-    "CNF confiabilidade, ENE razão energética (sobra de oferta), PAR parecer de acesso; ceg liga com usinas e donos; "
-    "o mês corrente é parcial")
+    "energia cortada = GNRa × 0,5 h; motivos em ons_curtailment_motivo_mensal e em ons_curtailment_semihora.razao: "
+    "REL indisponibilidade externa (rede), CNF confiabilidade, ENE razão energética (sobra de oferta), PAR parecer de "
+    "acesso; ceg liga com usinas e donos; o mês corrente é parcial")
+
+tabela("ons_curtailment_motivo_mensal", """
+SELECT fonte, subsistema, uf, usina, id_ons, any_value(ceg) AS ceg, any_value(agente_operador) AS agente_operador,
+       CAST(date_trunc('month', instante) AS DATE) AS mes, razao, origem,
+       round(sum(coalesce(nao_realizada_mwmed, 0)) * 0.5, 1) AS energia_cortada_mwh,
+       round(sum(coalesce(referencia_mwmed, 0)) * 0.5, 1) AS referencia_mwh,
+       sum(coalesce(minutos_restricao, 0)) AS minutos_restricao, count(*) AS intervalos,
+       count(DISTINCT restricao) AS restricoes_distintas, mode(restricao) AS restricao_predominante
+FROM ons_curtailment_semihora GROUP BY ALL
+""", "Energia cortada (curtailment) por usina, mês e MOTIVO do corte, em MWh. razao: ENE razão energética (sobra de "
+     "oferta, sem quem consuma), CNF confiabilidade (limite de segurança elétrica), REL indisponibilidade externa "
+     "(equipamento da rede fora), PAR parecer de acesso. origem: SIS restrição sistêmica (do SIN como um todo) ou LOC "
+     "restrição local (da rede onde a usina está). razao e origem nulos são as meias horas SEM restrição, em que a "
+     "usina gerou livremente: filtre razao IS NOT NULL para olhar só os cortes (as linhas sem razão somam 0,001 TWh de "
+     "corte contra 78,6 TWh das com razão). restricao_predominante nomeia a linha ou o controle que causou o corte com "
+     "mais frequência no mês.",
+    "ONS, restrição de operação por constrained-off (cod_razaorestricao, cod_origemrestricao e dsc_restricao)",
+    "energia cortada = GNRa × 0,5 h. NÃO some esta tabela junto com ons_curtailment_mensal: são a mesma energia, aqui "
+    "quebrada por motivo (somando os motivos de uma usina-mês você volta ao total de lá). referencia_mwh também é "
+    "quebrada por motivo e por isso não é o total de referência do mês. minutos_restricao é o campo do ONS somado nos "
+    "intervalos, não é tempo de parada da usina. restricao_predominante só existe de junho/2025 em diante (o ONS passou "
+    "a publicar dsc_restricao então): antes disso vem nula e restricoes_distintas = 0. Série de 2023 em diante; o mês "
+    "corrente é parcial e o ONS revisa os arquivos recentes")
 
 mapas = [f"SELECT DISTINCT '{fonte}' AS fonte, id_ons_conjuntousina AS id_conjunto, nom_conjuntousina AS conjunto, "
          f"id_ons AS id_usina, nom_usina AS usina, ceg FROM '{exigir(os.path.join(ONS, arq))}'"
@@ -1206,6 +1410,73 @@ CATALOGO.append(("rap_por_grupo", "RAP de transmissão atribuída a cada grupo o
                  "lista prévia do reajuste, sem Parcela de Ajuste; concessionárias sem declaração societária ficam "
                  "fora; um grupo aparece em vários níveis (não some chaves diferentes)", None))
 
+# ---------------------------------------------------------------- ANEEL SIGET: atos legais dos empreendimentos
+# siget-resolucao-contrato-agente.csv (pasta siget_rap) não é outra lista de contratos: contrato, CNPJ e prazo dele já
+# estão em transmissao_contratos (413 contratos contra os 164 daqui) e empreendimento/situação/datas já estão em
+# transmissao_empreendimentos (2.352 empreendimentos contra os 1.652 daqui, e nenhum IdeEpd, IdeDoc ou IdeCcd deste
+# arquivo falta lá). O que só existe aqui é o ATO LEGAL: número, tipo, as três datas, a ementa e o link do cedoc da
+# resolução ou do despacho que autorizou cada empreendimento. Por isso a tabela é dos atos, com o contrato e o
+# empreendimento como contexto. Uma linha por empreendimento (IdeEpd é único); um ato costuma cobrir vários.
+atos = csv_limpo(exigir(os.path.join(AN, "siget_rap", "siget-resolucao-contrato-agente.csv")), "utf-8")
+tabela("transmissao_atos_legais", f"""
+SELECT a.CodReg AS codigo_ato, a.NumAto AS numero_ato,
+       CASE substr(a.CodReg, 1, 3) WHEN 'REA' THEN 'Resolução Autorizativa' WHEN 'DSP' THEN 'Despacho'
+            WHEN 'RES' THEN 'Resolução' ELSE substr(a.CodReg, 1, 3) END AS tipo_ato,
+       TRY_CAST(a.DatAssDoc AS DATE) AS data_assinatura_ato, TRY_CAST(a.DatEmiDoc AS DATE) AS data_emissao_ato,
+       TRY_CAST(a.DatPubDoc AS DATE) AS data_publicacao_ato, a.DscEmentaCcd AS ementa, a.DscLink AS link,
+       TRY_CAST(a.IdeDoc AS BIGINT) AS id_documento, TRY_CAST(a.IdeCcd AS BIGINT) AS id_contrato,
+       a.NumCnaCcd AS numero_contrato, fmt_cnpj(a.NumCNPJ) AS cnpj, c.concessionaria, c.uf,
+       TRY_CAST(a.DatAsnCcd AS DATE) AS data_assinatura_contrato, TRY_CAST(a.DatFimCcd AS DATE) AS fim_concessao,
+       TRY_CAST(a.IdeEpd AS BIGINT) AS id_empreendimento, a.IdeOnsEpd AS codigo_ons_empreendimento,
+       a.NomEpd AS empreendimento, a.DscEpd AS descricao, a.DscSituacaoEpd AS situacao,
+       TRY_CAST(a.DatCaoCgmAtoLgl AS DATE) AS prazo_ato_legal, TRY_CAST(a.DatOprComEpd AS DATE) AS data_operacao_comercial,
+       TRY_CAST(a.DatEfeOprComEpd AS DATE) AS data_operacao_efetiva, TRY_CAST(a.DatGeracaoConjuntoDados AS DATE) AS data_base
+FROM {atos} a LEFT JOIN transmissao_contratos c ON c.id_contrato = a.IdeCcd
+""", "Atos legais (resoluções autorizativas e despachos da ANEEL) que autorizaram reforços, melhorias e ampliações de "
+     "transmissão, um por empreendimento: número e tipo do ato, data de publicação, ementa (o texto que diz o que foi "
+     "autorizado) e link do cedoc, com o contrato de concessão, o CNPJ da concessionária e o prazo fixado. "
+     "prazo_ato_legal é a data de entrada em operação que o ato determinou e data_operacao_comercial é a que valeu: "
+     "compare as duas para medir atraso (903 dos 1.652 empreendimentos entraram depois do prazo, mediana de 24 dias). "
+     "Para o texto do ato use link; para a RAP que o ato fixou, junte ato_rap em rap_transmissao_modulos.",
+    "ANEEL SIGET, Resolução x Contrato x Agente, "
+    "https://dadosabertos.aneel.gov.br/dataset/sistema-de-gestao-da-transmissao-siget",
+    "cobre só empreendimentos com ato legal de autorização (reforços, melhorias e ampliações): são 1.652 "
+    "empreendimentos de 164 contratos, contra os 2.352 de transmissao_empreendimentos, e nenhuma linha do contrato "
+    "original licitado. Todos os contratos são do tipo CCO (Contrato de Concessão). data_operacao_efetiva vem vazia "
+    "nos 193 empreendimentos 'Em andamento' e em 62 'Em Operação'. Não some nada: não há valor de receita aqui")
+
+# ---------------------------------------------------------------- ANEEL SIGET: termos de liberação do ONS
+# O ONS emite um Termo de Liberação (TL) atestando que a obra entrou em operação; sem ele a ANEEL não libera a receita
+# no reajuste. É a ponte entre a obra e o ciclo tarifário em que a RAP dela passou a ser paga. SigAgente vem com
+# espaços à direita no arquivo (campo de tamanho fixo), por isso o trim.
+tl = csv_limpo(exigir(os.path.join(AN, "siget_rap", "siget-termo-liberacao-reajuste-rap-processado.csv")), "cp1252")
+tabela("transmissao_termos_liberacao", f"""
+-- NumAtoLegal vem em três formas: "CC 008/2005" (obra do contrato licitado original), "REA 2412/2010" e "DSP 852/2024"
+-- (obra autorizada por ato). codigo_ato reescreve as duas últimas no formato de transmissao_atos_legais.codigo_ato
+-- (REA-2010-2412), para o analista não ter de refazer a conversão; nas linhas "CC" fica nulo, que é o caso sem ato.
+SELECT trim(SigAgente) AS concessionaria, fmt_cnpj(NumCnpj) AS cnpj, NumContrato AS contrato,
+       NumAtoLegal AS ato_legal, nullif(regexp_replace(NumAtoLegal, '^(REA|DSP) (\\d+)/(\\d{{4}})$', '\\1-\\3-\\2'),
+       NumAtoLegal) AS codigo_ato, NumTL AS termo_liberacao,
+       CAST(TRY_CAST(DatTL AS TIMESTAMP) AS DATE) AS data_termo_liberacao, DscCicloTarifario AS ciclo_tarifario,
+       TRY_CAST(IdeObr AS BIGINT) AS id_obra, DscObra AS obra, TRY_CAST(IdeMdl AS BIGINT) AS id_modulo,
+       NomModulo AS modulo, IdeOnsEpd AS codigo_ons_empreendimento,
+       TRY_CAST(DatGeracaoConjuntoDados AS DATE) AS data_base
+FROM {tl}
+""", "Termos de Liberação (TL) emitidos pelo ONS para obras de transmissão, um por obra: o TL atesta que a obra entrou "
+     "em operação e é o documento que autoriza a ANEEL a incluir a receita dela no reajuste. Traz a concessionária com "
+     "CNPJ, o contrato, o ato legal que autorizou a obra, o número e a data do TL, o ciclo tarifário em que a receita "
+     "entrou e a obra e o módulo de transmissão liberados. Use para saber QUANDO cada obra passou a receber: junte "
+     "id_modulo com rap_transmissao_modulos.id_modulo para o valor da RAP (14.500 das 14.887 obras casam) e codigo_ato "
+     "com transmissao_atos_legais.codigo_ato para a ementa da autorização.",
+    "ANEEL SIGET, Termos de Liberação processados no reajuste da RAP, "
+    "https://dadosabertos.aneel.gov.br/dataset/sistema-de-gestao-da-transmissao-siget",
+    "uma linha por OBRA (id_obra é único nas 14.887 linhas), não por TL nem por módulo: um TL libera várias obras "
+    "(6.652 TLs) e um módulo pode aparecer em várias obras e ciclos (13.820 módulos distintos), então contar linhas "
+    "conta obras liberadas, não termos. Ciclos tarifários de 2010-2011 a 2026-2027 (TLs assinados desde 2006, mas o "
+    "arquivo só traz os processados nesses ciclos). codigo_ato é nulo nas 9.464 obras do contrato licitado original, "
+    "que não passam por ato autorizativo, e das 5.423 com ato 5.394 casam com transmissao_atos_legais. Não tem valor de "
+    "receita: a RAP está em rap_transmissao_modulos")
+
 # ---------------------------------------------------------------- ANEEL: micro e minigeração distribuída (MMGD)
 MMGD = os.path.join(AN, "mmgd", "empreendimento-geracao-distribuida.parquet")
 exigir(MMGD)
@@ -1213,7 +1484,8 @@ tabela("gd_mmgd", f"""
 SELECT fmt_cnpj(CAST(NumCNPJDistribuidora AS VARCHAR)) AS cnpj_distribuidora, any_value(SigAgente) AS distribuidora,
        SigUF AS uf, DscClasseConsumo AS classe, SigTipoGeracao AS tipo_geracao, DscFonteGeracao AS fonte,
        DscPorte AS porte, DscModalidadeHabilitado AS modalidade,
-       CAST(date_trunc('month', DthAtualizaCadastralEmpreend) AS DATE) AS mes_cadastro,
+       -- mesmo marcador de data ausente do SIGA (aqui 01/01/1900, em 16 empreendimentos): NULL em vez de mês de 1900
+       nullif(CAST(date_trunc('month', DthAtualizaCadastralEmpreend) AS DATE), DATE '1900-01-01') AS mes_cadastro,
        count(*) AS empreendimentos, sum(MdaPotenciaInstaladaKW) / 1000 AS potencia_mw,
        sum(QtdUCRecebeCredito) AS ucs_recebem_credito, any_value(AnmPeriodoReferencia) AS periodo_referencia
 FROM '{MMGD}' GROUP BY ALL
@@ -1224,7 +1496,8 @@ FROM '{MMGD}' GROUP BY ALL
     "ANEEL, Relação de Empreendimentos de Geração Distribuída, "
     "https://dadosabertos.aneel.gov.br/dataset/relacao-de-empreendimentos-de-geracao-distribuida",
     "mes_cadastro é a data da última atualização cadastral do empreendimento (aproxima a data de conexão, mas pode ser "
-    "posterior); a base é uma fotografia do estoque conectado em periodo_referencia. Titulares (CPF/CNPJ) não entram")
+    "posterior) e é NULL em 16 empreendimentos, onde a ANEEL gravou o marcador 01/01/1900 em vez da data; a base é uma "
+    "fotografia do estoque conectado em periodo_referencia. Titulares (CPF/CNPJ) não entram")
 
 # ---------------------------------------------------------------- ANEEL: RALIE, expansão da geração em implantação
 RALIE = os.path.join(AN, "ralie", "ralie-usina-atual.csv")
@@ -1265,7 +1538,8 @@ samp = exigir_glob(os.path.join(AN, "samp", "samp-[0-9][0-9][0-9][0-9].parquet")
 lista = ", ".join(f"'{f}'" for f in samp)
 tabela("mercado_distribuidoras_mensal", f"""
 WITH s AS (SELECT *, lower(DscDetalheMercado) AS d, NomTipoMercado ILIKE '%refaturamento%' AS refat
-           FROM read_parquet([{lista}], union_by_name=true))
+           FROM read_parquet([{lista}], union_by_name=true)),
+m AS (
 SELECT fmt_cnpj(CAST(NumCNPJAgenteDistribuidora AS VARCHAR)) AS cnpj, any_value(SigAgenteDistribuidora) AS distribuidora,
        CAST(DatCompetencia AS DATE) AS mes, DscClasseConsumoMercado AS classe, DscOpcaoEnergia AS mercado,
        sum(VlrMercado) FILTER (d = 'número de consumidores' AND NOT refat) AS consumidores,
@@ -1280,18 +1554,34 @@ SELECT fmt_cnpj(CAST(NumCNPJAgenteDistribuidora AS VARCHAR)) AS cnpj, any_value(
        round(sum(VlrMercado) FILTER (d IN ('pis/pasep (r$)', 'cofins (r$)', 'pis/cofins (r$)')), 2) AS pis_cofins_brl,
        round((sum(VlrMercado) FILTER (d IN ('receita energia (r$)', 'receita demanda (r$)')))
              / nullif(sum(VlrMercado) FILTER (d = 'energia tusd (kwh)') / 1000, 0), 2) AS tarifa_media_sem_tributos_brl_mwh
-FROM s GROUP BY ALL
+FROM s GROUP BY ALL)
+-- As duas marcas de erro de declaração saem daqui, comparando cada mês com os outros da mesma distribuidora, classe e
+-- mercado: tarifa acima de 3x a mediana da série (o caso Cemig D) e mês que repete consumidores e receita do anterior
+-- (declaração copiada). São AVISOS, não filtros: a linha fica na tabela com o valor que a ANEEL publicou.
+SELECT *, tarifa_media_sem_tributos_brl_mwh > 3 * median(tarifa_media_sem_tributos_brl_mwh)
+            OVER (PARTITION BY cnpj, classe, mercado) AS tarifa_media_suspeita,
+       consumidores = lag(consumidores) OVER w AND receita_energia_brl = lag(receita_energia_brl) OVER w
+         AND coalesce(consumidores, 0) > 0 AS mes_repetido
+FROM m
+WINDOW w AS (PARTITION BY cnpj, classe, mercado ORDER BY mes)
 """, "Mercado e faturamento mensal de cada distribuidora por classe de consumo (Residencial, Comercial, Industrial, "
-    "Rural...) e mercado (CATIVO, LIVRE, GERAÇÃO, SUPRIMENTO), de 2020 em diante: consumidores, energia faturada em "
-    "MWh, receitas de energia, demanda e bandeiras, tributos e a tarifa média sem tributos em R$/MWh. Para a tarifa "
-    "média do ano some receita_energia_brl + receita_demanda_brl e divida pela soma de energia_tusd_mwh (não tire "
+    "Rural...) e mercado (CATIVO, LIVRE, GERAÇÃO, SUPRIMENTO, DISTRIBUIÇÃO), de 2020 em diante: consumidores, energia "
+    "faturada em MWh, receitas de energia, demanda e bandeiras, tributos e a tarifa média sem tributos em R$/MWh. Para a "
+    "tarifa média do ano some receita_energia_brl + receita_demanda_brl e divida pela soma de energia_tusd_mwh (não tire "
     "média das médias mensais).",
     "ANEEL, SAMP - Sistema de Acompanhamento de Informações de Mercado, https://dadosabertos.aneel.gov.br/dataset/samp",
     "dado declarado pela distribuidora ao SAMP; mercado LIVRE paga só a TUSD (fio): não compare a tarifa média "
-    "do livre com a do cativo. Receitas sem ICMS e PIS/COFINS; refaturamentos entram nas energias e receitas mas "
-    "não no número de consumidores. O ano corrente é parcial e meses recentes podem ser revistos. Há erros de "
-    "declaração na fonte (ex.: Cemig D, Residencial, jul/2025 e out/2025, receita de energia ~10 vezes o normal): "
-    "confira a tarifa média mês a mês antes de somar o ano e aponte meses discrepantes")
+    "do livre com a do cativo. SEMPRE filtre mercado: somar a tabela inteira mistura consumo final (CATIVO e LIVRE) com "
+    "energia repassada a outro agente (DISTRIBUIÇÃO, 2.846 linhas, e SUPRIMENTO, 1.235), o que conta a mesma energia duas "
+    "vezes; GERAÇÃO não tem energia faturada. Receitas sem ICMS e PIS/COFINS; refaturamentos entram nas energias e "
+    "receitas mas não no número de consumidores. O ano corrente é parcial e meses recentes podem ser revistos. "
+    "tarifa_media_suspeita = true quando a tarifa do mês passa de 3x a mediana da própria série (distribuidora, classe e "
+    "mercado): é erro de declaração na fonte, como Cemig D Residencial em jul/2025 e out/2025 — descarte esses meses "
+    "antes de somar o ano ou some receita e energia do ano e divida no fim. mes_repetido = true quando o mês repete "
+    "consumidores E receita de energia do mês anterior, sinal de declaração copiada: não leia como estabilidade real. "
+    "As duas marcas são NULL onde não há como comparar (mes_repetido no primeiro mês de cada série, 5.173 linhas; "
+    "tarifa_media_suspeita onde a tarifa é nula, 5.810 linhas, quase todas do mercado GERAÇÃO): use "
+    "'NOT coalesce(marca, false)' e não 'NOT marca', que descartaria essas linhas em silêncio")
 
 # O balanço de energia do SAMP: de onde vem e para onde vai a energia de cada distribuidora, inclusive as perdas.
 BALANCO = exigir(os.path.join(AN, "samp", "samp-balanco.parquet"))
@@ -1369,7 +1659,9 @@ ORDER BY inicio_vigencia, bandeira
      "bandeiras_tarifarias.",
     "ANEEL, Bandeiras Tarifárias - Adicional, https://dadosabertos.aneel.gov.br/dataset/bandeiras-tarifarias",
     "vigora até a resolução seguinte (não há data de fim na fonte); a bandeira verde não aparece porque o adicional é "
-    "zero")
+    "zero. NÃO é série anual: só existe linha nas datas em que a ANEEL reviu o valor (2015, 2016, 2017, 2018, 2019 duas "
+    "vezes, 2021 duas vezes, 2022 e 2024), e a ausência de 2020 e 2023 significa que o valor não mudou nesses anos. "
+    "Para saber a bandeira e o adicional de um mês use bandeiras_tarifarias, que é mensal e completa")
 
 # ---------------------------------------------------------------- ANEEL: ranking de continuidade (DGC)
 paginas = sorted(glob.glob(os.path.join(AN, "ranking_continuidade", "ranking_*.html")))
@@ -1521,9 +1813,17 @@ def c(nome):
     return col[nome]
 tabela("debentures_snd", f"""
 WITH d AS (SELECT * FROM read_csv('{snd_csv}', delim=';', header=true, all_varchar=true, quote='"', escape='"')),
-setor AS (SELECT cnpj FROM empresas UNION SELECT cnpj FROM agentes_aneel WHERE geracao OR transmissao OR distribuicao)
+-- Três origens, em colunas separadas: "outorga de geração na ANEEL" pegava Vale, Sabesp e Suzano, que são
+-- AUTOPRODUTORAS (geram para a própria fábrica) e não empresas de energia. Por isso setor_eletrico não usa geracao.
+cvm AS (SELECT cnpj FROM empresas),
+conc AS (SELECT cnpj FROM agentes_aneel WHERE transmissao OR distribuicao),
+ger AS (SELECT cnpj FROM agentes_aneel WHERE geracao)
 SELECT d.{c('Codigo do Ativo')} AS codigo, d.{c('Empresa')} AS emissora, fmt_cnpj(d.{c('CNPJ')}) AS cnpj,
-       fmt_cnpj(d.{c('CNPJ')}) IN (SELECT cnpj FROM setor) AS setor_eletrico,
+       fmt_cnpj(d.{c('CNPJ')}) IN (SELECT cnpj FROM cvm) AS emissora_cvm,
+       fmt_cnpj(d.{c('CNPJ')}) IN (SELECT cnpj FROM conc) AS concessionaria_aneel,
+       fmt_cnpj(d.{c('CNPJ')}) IN (SELECT cnpj FROM ger) AS gerador_ou_autoprodutor_aneel,
+       fmt_cnpj(d.{c('CNPJ')}) IN (SELECT cnpj FROM cvm) OR fmt_cnpj(d.{c('CNPJ')}) IN (SELECT cnpj FROM conc)
+         AS setor_eletrico,
        d.{c('Situacao')} AS situacao, d.{c('Emissao')} AS emissao, d.{c('Serie')} AS serie, d.{c('ISIN')} AS isin,
        data_br(d.{c('Data de Emissao')}) AS data_emissao, data_br(d.{c('Data de Vencimento')}) AS data_vencimento,
        data_br(d.{c('Data de Saida / Novo Vencimento')}) AS data_saida_ou_novo_vencimento, d.{c('Motivo de Saida')} AS motivo_saida,
@@ -1533,7 +1833,9 @@ SELECT d.{c('Codigo do Ativo')} AS codigo, d.{c('Empresa')} AS emissora, fmt_cnp
        TRY_CAST(d.{c('Quantidade Emitida')} AS BIGINT) AS quantidade_emitida,
        TRY_CAST(d.{c('Quantidade em Mercado')} AS BIGINT) AS quantidade_em_mercado,
        num_br(d.{c('Valor Nominal na Emissao')}) AS valor_nominal_emissao_brl,
-       num_br(d.{c('Valor Nominal Atual')}) AS valor_nominal_atual_brl, data_br(d.{c('Data Ult. VNA')}) AS data_valor_nominal_atual,
+       num_br(d.{c('Valor Nominal Atual')}) AS valor_nominal_atual_brl,
+       -- 01/01/1900 no SND é "sem data do último VNA" (1 debênture), não uma data: NULL para não datar o saldo em 1900
+       nullif(data_br(d.{c('Data Ult. VNA')}), DATE '1900-01-01') AS data_valor_nominal_atual,
        TRY_CAST(d.{c('Quantidade Emitida')} AS BIGINT) * num_br(d.{c('Valor Nominal na Emissao')}) AS volume_emitido_brl,
        TRY_CAST(d.{c('Quantidade em Mercado')} AS BIGINT) * num_br(d.{c('Valor Nominal Atual')}) AS saldo_em_mercado_brl,
        d.{c('Resgate Antecipado')} = 'S' AS permite_resgate_antecipado, d.{c('Coordenador Lider')} AS coordenador_lider,
@@ -1541,7 +1843,10 @@ SELECT d.{c('Codigo do Ativo')} AS codigo, d.{c('Empresa')} AS emissora, fmt_cnp
 FROM d
 """, "Todas as debêntures registradas no SND (Sistema Nacional de Debêntures), com CNPJ da emissora, data de emissão "
     "e de vencimento, indexador (DI, IPCA, PRE...) e taxa, se é incentivada (Lei 12.431), garantia, quantidade e "
-    "saldo em mercado. setor_eletrico marca emissoras do setor (CVM ou agentes da ANEEL). Use para cronograma de "
+    "saldo em mercado. Três marcas de origem, independentes: emissora_cvm (1.283 debêntures de companhia de energia "
+    "registrada na CVM, tabela empresas), concessionaria_aneel (1.146, agente de transmissão ou distribuição) e "
+    "gerador_ou_autoprodutor_aneel (2.624, tem outorga de geração — inclui AUTOPRODUTOR industrial, que gera para a "
+    "própria fábrica). setor_eletrico = emissora_cvm OR concessionaria_aneel (1.629 debêntures). Use para cronograma de "
     "vencimentos e custo da dívida em debêntures de uma empresa (filtre situacao = 'Registrado' para as vigentes).",
     "SND/ANBIMA, Características das Debêntures, https://www.debentures.com.br/exploreosnd/consultaadados/"
     "emissoesdedebentures/caracteristicas_r.asp",
@@ -1549,7 +1854,11 @@ FROM d
     "acumulados (aproxima o principal, não o valor contábil); não inclui amortizações futuras por data (só o "
     "vencimento final); taxa_juros_pct_aa é a sobretaxa ou taxa pré conforme o índice (ex.: DI + 1,2% ou IPCA + 6%), "
     "e percentual_indice é o % do índice (ex.: 100% do DI). SPEs de um grupo emitem com CNPJ próprio: junte com "
-    "participacoes_societarias para somar por grupo")
+    "participacoes_societarias para somar por grupo. 4 debêntures da VESTE (LLIS10, LLIS17, LLIS18 e LLIS20) vêm com "
+    "data_vencimento 31/12/9999 no SND, que é o marcador de vencimento não definido: filtre "
+    "data_vencimento < DATE '2100-01-01' antes de montar cronograma de vencimentos. NÃO use "
+    "gerador_ou_autoprodutor_aneel como 'empresa de energia': ele inclui autoprodutor industrial, e é por isso que "
+    "Vale, Sabesp e Suzano aparecem marcados ali (1.686 debêntures só têm essa marca)")
 
 # ---------------------------------------------------------------- catálogo das tabelas (lido pelo MCP)
 con.execute("CREATE TABLE catalogo (tabela VARCHAR, descricao VARCHAR, fonte VARCHAR, ressalvas VARCHAR, linhas BIGINT)")
