@@ -1,5 +1,6 @@
 """Cria no Bedrock AgentCore Runtime os MCP coppezip-dados, coppezip-docs e coppezip-relatorio (pelo CDK: o usuário do hackathon não pode criar o runtime
-direto, só pelo CloudFormation). O código (um zip só para os três) vem do S3, enviado por empacotar.sh.
+direto, só pelo CloudFormation). O código (um zip só para os três) vem do S3, enviado por atualizar.py — que também
+republica o código nos runtimes que já existem, sem CloudFormation.
 
 Uso (em proper_mcps/agentcore/), na região em que o CDK está preparado e o bucket existe:
   npx aws-cdk deploy --app "python3 cdk_app.py" -c regiao=<região> -c bucket=<bucket> -c pool=<user pool> -c cliente=<app client>
