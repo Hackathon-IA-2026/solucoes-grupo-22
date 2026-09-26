@@ -196,3 +196,6 @@ __pycache__/
 *.pyc
 data/build_*/
 proper_mcps/agentcore/cdk.out/
+
+# build da vitrine estática (infra/publicar_site.py)
+client/dist-vitrine/
