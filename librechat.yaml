@@ -173,25 +173,49 @@ webSearch:
   rerankerType: "jina"
   scraperTimeout: 15000
   safeSearch: 1
-# Servidores MCP do CoppeZIP (proper_mcps/); iniciar.sh exporta COPPEZIP_PYTHON e COPPEZIP_RAIZ. O LibreChat não
-# expande ${VAR} em "command", só em "args": por isso /usr/bin/env.
+# Servidores MCP do CoppeZIP. Eles rodam no Amazon Bedrock AgentCore, e proper_mcps/agentcore/ponte.py é a ponte que
+# fala JSON-RPC pelo stdio com o LibreChat e HTTPS com o runtime, pegando e renovando o token do Cognito (o LibreChat
+# resolve ${VAR} uma vez no boot, então um "Authorization: Bearer ${TOKEN}" pararia de funcionar em 24 h). O argumento
+# da ponte (dados, docs, relatorio) escolhe o runtime; iniciar.sh exporta COPPEZIP_PYTHON e COPPEZIP_RAIZ.
+# O LibreChat não expande ${VAR} em "command", só em "args" e "env": por isso /usr/bin/env.
+# O filho do stdio só herda HOME, LOGNAME, PATH, SHELL, TERM e USER, então tudo que a ponte usa está em env: (uma
+# âncora só, as três pontes leem apenas o próprio ARN). O que falta é erro na partida, não fallback.
+# initTimeout vale nas reconexões; no boot quem manda é MCP_INIT_TIMEOUT_MS do .env.
 mcpServers:
   coppezip-dados:
     type: stdio
     command: /usr/bin/env
-    args: ["${COPPEZIP_PYTHON}", "${COPPEZIP_RAIZ}/proper_mcps/dados/server.py"]
+    args: ["${COPPEZIP_PYTHON}", "${COPPEZIP_RAIZ}/proper_mcps/agentcore/ponte.py", "dados"]
+    env: &ambiente_ponte
+      COPPEZIP_COGNITO_REGIAO: "${COPPEZIP_COGNITO_REGIAO}"
+      COPPEZIP_COGNITO_CLIENTE: "${COPPEZIP_COGNITO_CLIENTE}"
+      COPPEZIP_COGNITO_USUARIO: "${COPPEZIP_COGNITO_USUARIO}"
+      COPPEZIP_COGNITO_SENHA: "${COPPEZIP_COGNITO_SENHA}"
+      COPPEZIP_AGENTCORE_REGIAO: "${COPPEZIP_AGENTCORE_REGIAO}"
+      COPPEZIP_ARN_DADOS: "${COPPEZIP_ARN_DADOS}"
+      COPPEZIP_ARN_DOCS: "${COPPEZIP_ARN_DOCS}"
+      COPPEZIP_ARN_RELATORIO: "${COPPEZIP_ARN_RELATORIO}"
+      PYTHONUNBUFFERED: "1"
+    requiresOAuth: false  # sem isto a sondagem do boot bate sem token, vê o 403 do runtime e pede login por usuário
     serverInstructions: true
-    timeout: 120000
+    initTimeout: 120000
+    timeout: 300000  # cada pedido ao AgentCore custa 5 a 14 s; a ponte desiste em 240 s e devolve o erro da ferramenta
   coppezip-docs:
     type: stdio
     command: /usr/bin/env
-    args: ["${COPPEZIP_PYTHON}", "${COPPEZIP_RAIZ}/proper_mcps/docs/server.py"]
+    args: ["${COPPEZIP_PYTHON}", "${COPPEZIP_RAIZ}/proper_mcps/agentcore/ponte.py", "docs"]
+    env: *ambiente_ponte
+    requiresOAuth: false
     serverInstructions: true
-    timeout: 120000
-  # relatório em Markdown e Word, servido pelo próprio LibreChat em /relatorios/
+    initTimeout: 120000
+    timeout: 300000
+  # relatório em Markdown e Word; no AgentCore os arquivos vão para o S3 com link assinado, não para /relatorios/
   coppezip-relatorio:
     type: stdio
     command: /usr/bin/env
-    args: ["${COPPEZIP_PYTHON}", "${COPPEZIP_RAIZ}/proper_mcps/relatorio/server.py"]
+    args: ["${COPPEZIP_PYTHON}", "${COPPEZIP_RAIZ}/proper_mcps/agentcore/ponte.py", "relatorio"]
+    env: *ambiente_ponte
+    requiresOAuth: false
     serverInstructions: true
-    timeout: 60000
+    initTimeout: 120000
+    timeout: 300000
