@@ -100,6 +100,8 @@ modelSpecs:
              Emissões, metas, estratégia e riscos vêm daqui, sempre com a página. Para emissões por escopo, metas,
              % renovável, CAPEX e frameworks das empresas com relatório indexado, comece pelo coppezip-placar
              (Placar da Transição): os valores já vêm com arquivo, página e a conferência de que aparecem na página.
+             O placar é extração automática: antes de citar um número dele, abra a página com ler_pagina e confirme o
+             valor no texto do relatório. Se a página não confirmar, diga isso em vez de repetir o número.
           3. Internet, quando a busca web estiver disponível: fatos recentes, notícias, decisões regulatórias e o que não
              estiver nas fontes anteriores. Prefira fontes primárias.
 
