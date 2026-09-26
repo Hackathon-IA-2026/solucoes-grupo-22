@@ -17,7 +17,7 @@ CoppeZIP: chat de inteligência do setor elétrico. A raiz é o LibreChat v0.8.7
 ## Regras
 
 - **Estrutura fixa, sem fallbacks.** Os caminhos saem da raiz do repositório: `data/coppezip.duckdb`,
-  `data/docs.duckdb`, `data/modelos/`, `data/raw/`, `.runtime/`. Não crie variáveis de ambiente para caminho nem
+  `data/docs_titan.duckdb` (índice dos PDFs em uso, Titan), `data/docs.duckdb` (versão e5, sem uso), `data/modelos/`, `data/raw/`, `.runtime/`. Não crie variáveis de ambiente para caminho nem
   valores padrão alternativos; o que é configurável (portas, chaves, endereço do modelo) fica no `.env`.
 - **Mínimo e funcionando.** Não deixe código que não foi testado nem arquivos sem uso. Prefira mudar o que existe a
   criar camadas novas.

@@ -2,12 +2,15 @@
 demonstrações, apresentações, fatos relevantes, debêntures, rating; sustentabilidade: relatórios ESG, inventário de
 emissões, TCFD, governança) e em documentos de referência (CVM, EPE, SEEG), com documento e página para citar.
 
-Busca híbrida: palavras (BM25 do DuckDB, português) + significado (multilingual-e5-large), fundidas por posição (RRF).
-O índice é montado por indexar.py a partir de documentos.csv.
+Busca híbrida: palavras (BM25 do DuckDB, português) + significado (Amazon Titan Text Embeddings v2, pelo Bedrock),
+fundidas por posição (RRF). O índice data/docs_titan.duckdb é montado por data/indexar_docs_titan.py a partir de
+documentos.csv; credenciais da AWS em ~/.aws/credentials e região BEDROCK_AWS_DEFAULT_REGION do .env.
 """
+import json
 import os
 import threading
 
+import boto3
 import duckdb
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -15,10 +18,8 @@ from mcp.server.mcpserver.exceptions import ToolError
 RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # raiz do repositório
 
 
-DB = os.path.join(RAIZ, "data", "docs.duckdb")
-MODELO = "intfloat/multilingual-e5-large"
-# cópia simples do modelo (o onnxruntime recusa os links simbólicos do cache do Hugging Face)
-PASTA_MODELO = os.path.join(RAIZ, "data", "modelos", "multilingual-e5-large")
+DB = os.path.join(RAIZ, "data", "docs_titan.duckdb")
+MODELO = "amazon.titan-embed-text-v2:0"
 CANDIDATOS = 60  # por método, antes da fusão
 MAX_LISTA = 100
 
@@ -39,25 +40,32 @@ duas áreas; filtre por area sempre que a pergunta for de uma delas:
 5. listar_documentos mostra o que existe (filtre por empresa, area e ano); se não estiver na base, diga isso."""
 
 mcp = MCPServer("coppezip-docs", instructions=INSTRUCOES)
-_modelo = None
+_bedrock = None
 _trava = threading.Lock()
 
 
 def _embed(texto: str) -> list[float]:
-    global _modelo
+    global _bedrock
     with _trava:
-        if _modelo is None:
-            # ToolError chega ao modelo com o motivo; outra exceção vira só "Error executing tool" e parece falha passageira
-            if not os.path.exists(os.path.join(PASTA_MODELO, "model.onnx")):
-                raise ToolError(f"base de documentos indisponível: falta o modelo de embeddings em {PASTA_MODELO}")
-            from fastembed import TextEmbedding
-            _modelo = TextEmbedding(MODELO, specific_model_path=PASTA_MODELO, threads=4)
-        return next(iter(_modelo.embed([f"query: {texto}"]))).tolist()
+        if _bedrock is None:
+            # o LibreChat sobe os MCP sem as variáveis do .env: a região é lida do próprio arquivo
+            with open(os.path.join(RAIZ, ".env")) as f:
+                regiao = next((l.split("=", 1)[1].strip() for l in f if l.startswith("BEDROCK_AWS_DEFAULT_REGION=")), None)
+            if not regiao:
+                raise ToolError("base de documentos indisponível: falta BEDROCK_AWS_DEFAULT_REGION no .env")
+            _bedrock = boto3.client("bedrock-runtime", region_name=regiao)
+    try:
+        r = _bedrock.invoke_model(modelId=MODELO, contentType="application/json", accept="application/json",
+                                  body=json.dumps({"inputText": texto, "dimensions": 1024, "normalize": True}))
+    except Exception as e:  # credencial vencida, sem acesso ou throttling
+        # ToolError chega ao modelo com o motivo; outra exceção vira só "Error executing tool" e parece falha passageira
+        raise ToolError(f"base de documentos indisponível: embeddings do Bedrock falharam ({e})")
+    return json.loads(r["body"].read())["embedding"]
 
 
 def _con():
     if not os.path.exists(DB):
-        raise ToolError(f"base de documentos indisponível: o índice {DB} não existe (data/indexar_docs.py)")
+        raise ToolError(f"base de documentos indisponível: o índice {DB} não existe (data/indexar_docs_titan.py)")
     con = duckdb.connect(DB, read_only=True)
     con.execute("LOAD fts")
     return con

@@ -15,7 +15,7 @@ aberta "$MONGO_PORTA" || mongod --dbpath "$R/mongo" --bind_ip 127.0.0.1 --port "
 aberta "$MEILI_PORTA" || nohup bash -c 'echo $$ > "$0"; exec setsid meilisearch "$@"' "$R/run/meili.pid" \
   --db-path "$R/meili" --http-addr "127.0.0.1:$MEILI_PORTA" --master-key "$MEILI_MASTER_KEY" --no-analytics \
   --env production > "$R/logs/meili.log" 2>&1 < /dev/null &
-# aba Busca: serviço HTTP sobre data/docs.duckdb que a rota /api/busca do LibreChat repassa
+# aba Busca: serviço HTTP sobre data/docs_titan.duckdb que a rota /api/busca do LibreChat repassa
 aberta "$BUSCA_PORTA" || nohup bash -c 'echo $$ > "$0"; exec setsid "$@"' "$R/run/busca.pid" \
   "$R/venv/bin/python" proper_mcps/docs/busca.py --porta "$BUSCA_PORTA" > "$R/logs/busca.log" 2>&1 < /dev/null &
 # relatórios do gerar_relatorio: o LibreChat serve client/public/assets na raiz do site (/relatorios/...)

@@ -1,11 +1,11 @@
 """Busca por página nos relatórios do coppezip-docs, para a aba Busca do LibreChat (rota /api/busca, só com login).
 
 Serviço HTTP em 127.0.0.1 sobre o mesmo índice do server.py. Reaproveita os embeddings dos trechos: a nota de uma página
-é a do seu trecho mais parecido com a pergunta (multilingual-e5-large), fundida por posição (RRF) com a busca de
+é a do seu trecho mais parecido com a pergunta (Amazon Titan pelo Bedrock), fundida por posição (RRF) com a busca de
 palavras (BM25), como em buscar_documentos. Páginas sem texto extraível (só imagem) ficam de fora, como no índice.
 
-Uso: python busca.py --porta N  (o iniciar.sh sobe com BUSCA_PORTA do .env). Índice data/docs.duckdb, PDFs em
-data/raw/<area>/<empresa>/... (caminho na coluna arquivo), os mesmos do indexar_docs.py.
+Uso: python busca.py --porta N  (o iniciar.sh sobe com BUSCA_PORTA do .env). Índice data/docs_titan.duckdb, PDFs em
+data/raw/<area>/<empresa>/... (caminho na coluna arquivo), os mesmos do indexar_docs_titan.py.
 Rotas (GET): /resumo, /buscar?q=&empresa=&ano=&k=, /pagina?arquivo=&pagina=, /imagem?arquivo=&pagina=, /pdf?arquivo=
 empresa e ano podem se repetir; sem nenhum, a busca vale para todos os documentos.
 """
@@ -14,7 +14,6 @@ import json
 import os
 import shutil
 import sys
-import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -225,8 +224,6 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--porta", type=int, required=True)
     a = ap.parse_args()
-    # carrega o modelo já na subida: a primeira pergunta não espera os segundos da leitura dos pesos
-    threading.Thread(target=_embed, args=("aquecimento",), daemon=True).start()
     servidor = ThreadingHTTPServer(("127.0.0.1", a.porta), Tratador)
     servidor.daemon_threads = True
     print(f"busca em http://127.0.0.1:{a.porta} (índice {DB}, PDFs {PDFS})", file=sys.stderr, flush=True)
