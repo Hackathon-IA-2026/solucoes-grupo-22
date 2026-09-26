@@ -1,11 +1,16 @@
 """Servidor MCP "coppezip-placar": consulta o Placar da Transição (dados ESG extraídos dos relatórios para
 data/placar.duckdb) e cruza com o banco estruturado (data/coppezip.duckdb) para métricas híbridas, radar de
-consistência (anti-greenwashing) e exposição a preço de carbono.
+consistência (anti-greenwashing) e exposição a preço de carbono. Também monta as telas (artefato HTML
+autocontido em .runtime/relatorios, aberto em /relatorios/) do ranking, do radar e da exposição a carbono.
 
 Todo valor de ESG traz arquivo, página e a confiança da extração; todo valor financeiro/operacional traz a tabela
 de origem. As ferramentas só usam ESG com confianca > 0 (checado contra a página na extração).
 """
+import json
 import os
+import secrets
+from datetime import datetime
+from html import escape
 
 import duckdb
 from mcp.server.mcpserver import MCPServer
@@ -26,6 +31,10 @@ confiança) e para três análises que cruzam relatório × dados oficiais:
 - radar_consistencia(empresa): alertas anti-greenwashing (afirmação do relatório × SIGA/DFP), com severidade e as
   duas evidências.
 - exposicao_carbono(preco_por_t[, escopos]): emissões × preço de carbono contra lucro e EBITDA, com a fórmula.
+Quando o usuário quiser VER, comparar visualmente ou compartilhar, monte a tela e mande o link: tela_ranking,
+tela_radar e tela_carbono gravam um HTML autocontido (barras com o valor em cada barra, tabela com a fonte de cada
+número; na de carbono o preço é uma barra deslizante que recalcula na hora). A tela não substitui a resposta: diga no
+texto o essencial e cite as fontes.
 Cite sempre a fonte que a ferramenta devolve (documento e página, ou tabela). Se uma empresa não estiver na base de
 relatórios, diga; o placar cobre só as empresas com relatório indexado."""
 
@@ -46,6 +55,14 @@ def _filtro_empresa(alias: str, empresa: str | None):
     return (f"(strip_accents(lower({alias}.empresa)) LIKE '%' || strip_accents(lower(?)) || '%' "
             f"OR regexp_replace(coalesce({alias}.cnpj,''),'\\D','','g') = regexp_replace(?,'\\D','','g'))",
             [empresa.strip(), empresa.strip()])
+
+
+def _fonte_paginas(linhas: list[dict]) -> str:
+    """Fonte de um número agregado: os documentos e as páginas de onde saíram as parcelas."""
+    por = {}
+    for l in linhas:
+        por.setdefault(l["arquivo"], set()).add(l["pagina"])
+    return "; ".join(f"{a} p.{', '.join(str(p) for p in sorted(ps))}" for a, ps in sorted(por.items()))
 
 
 def _fin_ano(con, cnpj: str, ano: int) -> dict | None:
@@ -74,6 +91,15 @@ def _emissoes(con, empresa, ano) -> list[dict]:
         ORDER BY e.empresa, e.ano_relatorio, e.escopo""", params).fetchall()
     cols = ("empresa", "cnpj", "ano", "escopo", "tco2e", "intensidade", "unidade_intensidade", "arquivo", "pagina")
     return [dict(zip(cols, r)) for r in linhas]
+
+
+def _por_escopo(linhas: list[dict]) -> dict:
+    """Uma entrada por escopo (1, 2, 3) para somar sem contar duas vezes: quando o relatório traz o escopo 2 por
+    localização e por mercado, fica o de mercado (o que as metas e o GHG Protocol usam para a meta)."""
+    saida = {}
+    for e in sorted(linhas, key=lambda x: x["escopo"]):   # "2" antes de "2_mercado": o de mercado prevalece
+        saida[e["escopo"].replace("_mercado", "")] = e
+    return saida
 
 
 @mcp.tool()
@@ -110,15 +136,23 @@ def _coletar(con, empresa: str | None, ano: int | None) -> dict:
         hibridas = []
         chaves = {(e["cnpj"], e["ano"], e["empresa"]) for e in emissoes}
         for cnpj, ano_rel, nome in sorted(chaves, key=lambda x: (x[2], x[1])):
-            e12 = sum(e["tco2e"] or 0 for e in emissoes
-                      if e["cnpj"] == cnpj and e["ano"] == ano_rel and e["escopo"] in ("1", "2", "2_mercado"))
+            do_ano = _por_escopo([e for e in emissoes if e["cnpj"] == cnpj and e["ano"] == ano_rel])
+            usadas = [do_ano[k] for k in ("1", "2") if k in do_ano]
+            e12 = sum(e["tco2e"] or 0 for e in usadas)
             fin = _fin_ano(con, cnpj, ano_rel)
             item = {"empresa": nome, "ano": ano_rel, "escopo1_2_tco2e": round(e12, 1) if e12 else None,
-                    "fonte_emissoes": "esg_emissoes (relatório, com página)"}
+                    "fonte_emissoes": _fonte_paginas(usadas)}
             if fin and fin["receita"]:
                 item["tco2e_por_milhao_receita"] = round(e12 / (fin["receita"] / 1e6), 3) if e12 else None
-                cx = next((c["capex_total_brl"] for c in capex if c["cnpj"] == cnpj), None) or fin["investimento"]
-                item["capex_sobre_receita_pct"] = round(100 * cx / fin["receita"], 1) if cx else None
+                # investimento vem da CVM (comparável entre empresas); o relatório entra só no recorte "verde"
+                item["capex_sobre_receita_pct"] = (round(100 * fin["investimento"] / fin["receita"], 1)
+                                                   if fin["investimento"] else None)
+                verde = next((c for c in capex if c["cnpj"] == cnpj and c["ano_relatorio"] == ano_rel
+                              and c.get("capex_verde_brl")), None)
+                if verde:
+                    item["capex_verde_brl"] = verde["capex_verde_brl"]
+                    item["capex_verde_definicao"] = verde.get("definicao_verde")
+                    item["fonte_capex_verde"] = f"{verde['arquivo']} p.{verde['pagina']}"
                 item["fonte_financeiro"] = f"kpis_financeiros {fin['empresa']} {fin['ano']} (consolidado)"
             else:
                 item["aviso"] = "sem par financeiro na base (CNPJ do relatório não casa com kpis_financeiros)"
@@ -132,20 +166,28 @@ def _coletar(con, empresa: str | None, ano: int | None) -> dict:
 
 def _scores(emissoes, metas, renovavel, frameworks) -> list[dict]:
     """Score de maturidade de divulgação (0-100) por empresa/ano: cobertura de escopos + meta + framework + asseguração."""
+    def vazio():
+        return {"escopos": set(), "meta": False, "fw": set(), "asseg": False, "docs": []}
+
     por = {}
     for e in emissoes:
-        d = por.setdefault((e["empresa"], e["ano"]), {"escopos": set(), "meta": False, "fw": set(), "asseg": False})
+        d = por.setdefault((e["empresa"], e["ano"]), vazio())
         d["escopos"].add(e["escopo"].replace("_mercado", ""))
+        d["docs"].append(e)
     for m in metas:
-        por.setdefault((m["empresa"], m["ano_relatorio"]), {"escopos": set(), "meta": False, "fw": set(), "asseg": False})["meta"] = True
+        d = por.setdefault((m["empresa"], m["ano_relatorio"]), vazio())
+        d["meta"] = True
+        d["docs"].append(m)
     for f in frameworks:
-        d = por.setdefault((f["empresa"], f["ano_relatorio"]), {"escopos": set(), "meta": False, "fw": set(), "asseg": False})
+        d = por.setdefault((f["empresa"], f["ano_relatorio"]), vazio())
         d["fw"].add(f["framework"])
         d["asseg"] = d["asseg"] or bool(f["asseguracao_externa"])
+        d["docs"].append(f)
     saida = []
     for (empresa, ano), d in por.items():
         s = 15 * len(d["escopos"] & {"1", "2", "3"}) + 20 * d["meta"] + min(len(d["fw"]), 3) * 5 + 20 * d["asseg"]
         saida.append({"empresa": empresa, "ano": ano, "score": min(s, 100),
+                      "fonte": _fonte_paginas(d["docs"]),
                       "componentes": {"escopos": sorted(d["escopos"]), "tem_meta": d["meta"],
                                       "frameworks": sorted(d["fw"]), "asseguracao_externa": d["asseg"]}})
     return sorted(saida, key=lambda x: -x["score"])
@@ -158,13 +200,14 @@ def placar_ranking(metrica: str = "score_divulgacao", ano: int | None = None, li
     dados = consultar_placar(None, ano)
     if metrica == "score_divulgacao":
         itens = [{"empresa": s["empresa"], "ano": s["ano"], "valor": s["score"], "unidade": "0-100",
-                  "detalhe": s["componentes"]} for s in dados["score_divulgacao"]]
+                  "fonte": s["fonte"], "detalhe": s["componentes"]} for s in dados["score_divulgacao"]]
         ordem = True
     elif metrica in ("intensidade_receita", "escopo1_2"):
         campo = "tco2e_por_milhao_receita" if metrica == "intensidade_receita" else "escopo1_2_tco2e"
         itens = [{"empresa": h["empresa"], "ano": h["ano"], "valor": h.get(campo),
                   "unidade": "tCO2e/R$ mi" if metrica == "intensidade_receita" else "tCO2e",
-                  "fonte": h.get("fonte_financeiro", h.get("fonte_emissoes"))}
+                  "fonte": h["fonte_emissoes"] + (f" ÷ {h['fonte_financeiro']}"
+                                                  if metrica == "intensidade_receita" else "")}
                  for h in dados["metricas_hibridas"] if h.get(campo) is not None]
         ordem = True
     elif metrica == "pct_renovavel":
@@ -198,6 +241,11 @@ def _cap_por_fonte(con, cnpj: str) -> dict | None:
             "pct_renovavel": round(100 * renovavel / total, 1) if total else None}
 
 
+REGRAS = {"renovavel_vs_siga": "% renovável declarado × capacidade real (SIGA)",
+          "meta_ignora_escopo3": "Meta climática não cobre o escopo 3, que é o maior",
+          "divulgacao_sem_asseguracao": "Divulgação sem asseguração externa independente"}
+
+
 @mcp.tool()
 def radar_consistencia(empresa: str | None = None) -> dict:
     """Radar anti-greenwashing: confronta afirmações dos relatórios com dados oficiais (SIGA/DFP). Cada alerta traz
@@ -210,13 +258,22 @@ def radar_consistencia(empresa: str | None = None) -> dict:
         placar = _coletar(con, empresa, None)
         emissoes, metas, renovavel, frameworks = (placar["emissoes"], placar["metas"], placar["renovavel"],
                                                    placar["frameworks"])
-        # (1) % renovável × SIGA
+        # (1) % renovável × SIGA. Só compara base igual: o SIGA traz CAPACIDADE instalada, então um "% da geração"
+        # declarado não entra no confronto (vira ressalva), para não comparar coisas diferentes.
+        nao_comparaveis = []
         for r in renovavel:
-            afirmado = r.get("pct_geracao_renovavel") or r.get("pct_capacidade_renovavel")
+            afirmado = r.get("pct_capacidade_renovavel")
             if afirmado is None:
+                if r.get("pct_geracao_renovavel") is not None:
+                    nao_comparaveis.append(
+                        f"{r['empresa']} {r['ano_relatorio']}: declara {r['pct_geracao_renovavel']:.0f}% da GERAÇÃO "
+                        f"({r['arquivo']} p.{r['pagina']}); o SIGA traz capacidade instalada — bases diferentes, "
+                        f"não comparei")
                 continue
             cap = _cap_por_fonte(con, r["cnpj"])
             if not cap or cap["pct_renovavel"] is None:
+                nao_comparaveis.append(f"{r['empresa']} {r['ano_relatorio']}: sem capacidade em operação no SIGA "
+                                       f"para o CNPJ do relatório")
                 continue
             gap = afirmado - cap["pct_renovavel"]
             if abs(gap) >= 15:
@@ -233,14 +290,19 @@ def radar_consistencia(empresa: str | None = None) -> dict:
         for m in metas:
             if m["tipo"] not in ("net_zero", "reducao_absoluta") or "3" in str(m.get("escopo_coberto") or ""):
                 continue
-            e3 = next((e for e in emissoes if e["empresa"] == m["empresa"] and e["escopo"] == "3"), None)
-            e12 = sum(e["tco2e"] or 0 for e in emissoes if e["empresa"] == m["empresa"] and e["escopo"] in ("1", "2"))
+            do_ano = _por_escopo([e for e in emissoes if e["empresa"] == m["empresa"]
+                                  and e["ano"] == m["ano_relatorio"]])
+            e3 = do_ano.get("3")
+            e12 = sum(do_ano[k]["tco2e"] or 0 for k in ("1", "2") if k in do_ano)
             if e3 and (e3["tco2e"] or 0) > e12 > 0:
                 alertas.append({
                     "regra": "meta_ignora_escopo3", "empresa": m["empresa"], "ano": m["ano_relatorio"],
                     "severidade": "media",
-                    "explicacao": f"Meta {m['tipo']} (alvo {m.get('ano_alvo')}) cobre '{m.get('escopo_coberto')}', "
-                                  f"mas o escopo 3 ({e3['tco2e']:.0f} tCO2e) é maior que escopo 1+2 ({e12:.0f} tCO2e).",
+                    "explicacao": f"Meta {m['tipo']} (alvo {m.get('ano_alvo')}) "
+                                  + (f"cobre '{m['escopo_coberto']}'" if m.get("escopo_coberto")
+                                     else "não informa o escopo coberto")
+                                  + f", mas o escopo 3 ({e3['tco2e']:.0f} tCO2e) é maior que escopo 1+2 "
+                                    f"({e12:.0f} tCO2e).",
                     "valor_afirmado": f"meta sem escopo 3", "valor_oficial": f"escopo 3 = {e3['tco2e']:.0f} tCO2e",
                     "evidencia_doc": f"meta: {m['arquivo']} p.{m['pagina']}; escopo 3: {e3['arquivo']} p.{e3['pagina']}",
                     "evidencia_dado": "esg_emissoes / esg_metas (relatório)"})
@@ -266,8 +328,12 @@ def radar_consistencia(empresa: str | None = None) -> dict:
         alertas = unicos
         ordem = {"alta": 0, "media": 1, "baixa": 2}
         alertas.sort(key=lambda a: ordem[a["severidade"]])
-        return {"alertas": alertas, "total": len(alertas),
-                "nota": "alertas indicam divergência a investigar, não fraude; confira as duas evidências citadas"}
+        for a in alertas:
+            a["titulo"] = REGRAS[a["regra"]]
+        return {"alertas": alertas, "total": len(alertas), "nao_comparaveis": nao_comparaveis,
+                "nota": "alertas indicam divergência a investigar, não fraude; confira as duas evidências citadas. "
+                        "O que está em nao_comparaveis não virou alerta porque a base do número declarado é outra "
+                        "(geração × capacidade) ou falta o dado oficial."}
     finally:
         con.close()
 
@@ -282,17 +348,21 @@ def exposicao_carbono(preco_por_t: float = 100.0, escopos: list[str] | None = No
         emissoes = _emissoes(con, None, None)
         por = {}
         for e in emissoes:
-            if e["escopo"].replace("_mercado", "") in escopos:
-                por.setdefault((e["cnpj"], e["ano"], e["empresa"]), 0.0)
-                por[(e["cnpj"], e["ano"], e["empresa"])] += e["tco2e"] or 0
+            por.setdefault((e["cnpj"], e["ano"], e["empresa"]), []).append(e)
         itens = []
-        for (cnpj, ano, nome), tco2e in por.items():
+        for (cnpj, ano, nome), linhas in por.items():
+            do_ano = _por_escopo(linhas)
+            usadas = [do_ano[k] for k in escopos if k in do_ano]
+            if not usadas:
+                continue
+            tco2e = sum(e["tco2e"] or 0 for e in usadas)
             fin = _fin_ano(con, cnpj, ano)
             exposicao = tco2e * preco_por_t
-            item = {"empresa": nome, "ano": ano, "escopos": escopos, "tco2e": round(tco2e, 1),
+            item = {"empresa": nome, "cnpj": cnpj, "ano": ano, "escopos": escopos,
+                    "tco2e": round(tco2e, 1),
                     "exposicao_brl": round(exposicao, 0),
                     "formula": f"{tco2e:.0f} tCO2e × R$ {preco_por_t:.0f}/t = R$ {exposicao/1e6:.1f} mi",
-                    "fonte_emissoes": "esg_emissoes (relatório)"}
+                    "fonte_emissoes": _fonte_paginas(usadas)}
             if fin and fin["ebitda"]:
                 item["pct_ebitda"] = round(100 * exposicao / fin["ebitda"], 1)
                 item["pct_lucro"] = round(100 * exposicao / fin["lucro"], 1) if fin["lucro"] else None
@@ -307,6 +377,264 @@ def exposicao_carbono(preco_por_t: float = 100.0, escopos: list[str] | None = No
     finally:
         con.close()
 
+
+# ------------------------------------------------------------------ telas: artefato HTML autocontido
+# O iniciar.sh liga .runtime/relatorios em client/public/assets/relatorios: o navegador abre em /relatorios/<nome>.
+PASTA = os.path.join(RAIZ, ".runtime", "relatorios")
+URL_BASE = "/relatorios"
+
+# Tokens do tema do chat (client/src/style.css): claro em branco, escuro no roxo do CoppeZIP. A série usa o violeta
+# da marca (contraste acima de 3:1 nas duas superfícies); severidade traz ícone e rótulo, nunca só a cor.
+CSS = """
+:root{color-scheme:light;--fundo:#f7f7f8;--sup:#fff;--ink:#212121;--ink2:#424242;--mudo:#595959;
+--linha:#e3e3e3;--serie:#7c3aed;--trilha:#ede9fe;--alta:#d03b3b;--media:#c2410c;--baixa:#595959}
+@media (prefers-color-scheme:dark){:root:where(:not([data-tema="claro"])){color-scheme:dark;--fundo:#120a1f;
+--sup:#1a1029;--ink:#ececec;--ink2:#cdcdcd;--mudo:#9d8bbd;--linha:#2e1d47;--serie:#ab68ff;--trilha:#2e1d47;
+--alta:#f87171;--media:#ec835a;--baixa:#9d8bbd}}
+:root[data-tema="escuro"]{color-scheme:dark;--fundo:#120a1f;--sup:#1a1029;--ink:#ececec;--ink2:#cdcdcd;
+--mudo:#9d8bbd;--linha:#2e1d47;--serie:#ab68ff;--trilha:#2e1d47;--alta:#f87171;--media:#ec835a;--baixa:#9d8bbd}
+*{box-sizing:border-box}
+body{margin:0;padding:32px 16px 48px;background:var(--fundo);color:var(--ink);
+font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:920px;margin:0 auto}
+h1{font-size:23px;margin:0 0 4px;letter-spacing:-.01em}
+.sub{color:var(--ink2);margin:0 0 24px;font-size:14px}
+.cartao{background:var(--sup);border:1px solid var(--linha);border-radius:12px;padding:20px;margin-bottom:16px}
+h2{font-size:15px;margin:0 0 16px;color:var(--ink)}
+.barras{display:flex;flex-direction:column;gap:6px}
+.item{display:grid;grid-template-columns:minmax(96px,22%) 1fr auto;gap:12px;align-items:center;position:relative}
+.rot{color:var(--ink2);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trilha{background:var(--trilha);border-radius:4px;height:22px;overflow:hidden}
+.barra{display:block;height:100%;background:var(--serie);border-radius:0 4px 4px 0;min-width:2px;
+transition:width .18s ease}
+.val{font-variant-numeric:tabular-nums;font-size:13px;color:var(--ink);white-space:nowrap}
+.dica{position:absolute;left:0;bottom:calc(100% + 6px);z-index:2;background:var(--sup);color:var(--ink);
+border:1px solid var(--linha);border-radius:8px;padding:6px 10px;font-size:12px;opacity:0;pointer-events:none;
+transition:opacity .12s;box-shadow:0 4px 14px rgba(0,0,0,.14);max-width:min(560px,92%)}
+.item:hover .dica,.item:focus-within .dica{opacity:1}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--linha);vertical-align:top}
+th{color:var(--mudo);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.f,.fonte{color:var(--ink2);font-size:12px}
+.sev{display:inline-flex;gap:6px;align-items:center;font-weight:600;font-size:12px;text-transform:uppercase;
+letter-spacing:.04em}
+.sev.alta{color:var(--alta)}.sev.media{color:var(--media)}.sev.baixa{color:var(--baixa)}
+.alerta{border:1px solid var(--linha);border-left:3px solid var(--linha);border-radius:8px;padding:14px 16px;
+margin-bottom:10px;background:var(--sup)}
+.alerta.alta{border-left-color:var(--alta)}.alerta.media{border-left-color:var(--media)}
+.alerta.baixa{border-left-color:var(--baixa)}
+.alerta p{margin:6px 0 0}
+.ev{margin:8px 0 0;padding:0;list-style:none;color:var(--ink2);font-size:12px}
+.ev li{margin:2px 0}
+.ctrl{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+.ctrl input[type=range]{flex:1 1 220px;accent-color:var(--serie)}
+.ctrl output{font-variant-numeric:tabular-nums;font-weight:600}
+footer{max-width:920px;margin:0 auto;color:var(--mudo);font-size:12px;border-top:1px solid var(--linha);
+padding-top:12px}
+footer p{margin:4px 0}
+@media (max-width:560px){.item{grid-template-columns:1fr auto}.trilha{grid-column:1/-1}}
+"""
+
+
+def _esc(v) -> str:
+    return escape("" if v is None else str(v), quote=True)
+
+
+def _num(v, dec: int = 1) -> str:
+    """Número no formato do Brasil (1.234,5). Sem valor, travessão."""
+    if v is None:
+        return "—"
+    return f"{float(v):,.{dec}f}".replace(",", "\x00").replace(".", ",").replace("\x00", ".")
+
+
+def _pagina(titulo: str, subtitulo: str, corpo: str, fontes: list[str], script: str = "") -> str:
+    rodape = "".join(f"<p>{_esc(f)}</p>" for f in fontes)
+    js = f"<script>{script}</script>" if script else ""
+    return (f"<!doctype html>\n<html lang=\"pt-BR\"><head><meta charset=\"utf-8\">"
+            f"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+            f"<title>{_esc(titulo)}</title><style>{CSS}</style></head><body>"
+            f"<main><h1>{_esc(titulo)}</h1><p class=\"sub\">{_esc(subtitulo)}</p>{corpo}</main>"
+            f"<footer><p><strong>Fontes</strong></p>{rodape}</footer>{js}</body></html>\n")
+
+
+def _barras(itens: list[dict], unidade: str, dec: int = 1) -> str:
+    """Barras horizontais: rótulo, barra proporcional ao maior valor, valor direto e a fonte no hover."""
+    maior = max((abs(i["valor"]) for i in itens if i.get("valor") is not None), default=0) or 1
+    fora = []
+    for i in itens:
+        largura = 100 * abs(i["valor"] or 0) / maior
+        dica = f"{i['rotulo']} · {_num(i['valor'], dec)} {unidade} · {i['fonte']}"
+        fora.append(f"<div class=\"item\" tabindex=\"0\"><span class=\"rot\" title=\"{_esc(i['rotulo'])}\">"
+                    f"{_esc(i['rotulo'])}</span><span class=\"trilha\"><span class=\"barra\" "
+                    f"style=\"width:{largura:.4g}%\"></span></span>"
+                    f"<span class=\"val\">{_num(i['valor'], dec)}</span>"
+                    f"<span class=\"dica\">{_esc(dica)}</span></div>")
+    return f"<div class=\"barras\">{''.join(fora)}</div>"
+
+
+def _tabela(colunas: list[str], linhas: list[list], classes: list[str] | None = None) -> str:
+    """Tabela com as células JÁ escapadas (quem chama controla o que é número e o que é fonte)."""
+    classes = classes or []
+    cab = "".join(f"<th>{_esc(c)}</th>" for c in colunas)
+    corpo = ""
+    for lin in linhas:
+        corpo += "<tr>" + "".join(
+            f"<td class=\"{classes[k] if k < len(classes) else ''}\">{c}</td>" for k, c in enumerate(lin)) + "</tr>"
+    return f"<table><thead><tr>{cab}</tr></thead><tbody>{corpo}</tbody></table>"
+
+
+def _gravar(prefixo: str, html: str) -> str:
+    os.makedirs(PASTA, exist_ok=True)
+    nome = f"{datetime.now():%Y%m%d-%H%M%S}-{prefixo}-{secrets.token_hex(3)}.html"
+    with open(os.path.join(PASTA, nome), "w", encoding="utf-8") as f:
+        f.write(html)
+    return f"{URL_BASE}/{nome}"
+
+
+def _sem_fonte(itens: list[dict]) -> list[str]:
+    """Nenhum número sem fonte: quem chega sem fonte não entra na tela."""
+    return [f"{i.get('rotulo')}: {_num(i.get('valor'))}" for i in itens if not str(i.get("fonte") or "").strip()]
+
+
+NOMES = {"score_divulgacao": ("Score de divulgação ESG", "0-100", 0),
+         "intensidade_receita": ("Intensidade de emissões", "tCO2e por R$ mi de receita", 3),
+         "escopo1_2": ("Emissões de escopo 1+2", "tCO2e", 1),
+         "pct_renovavel": ("Percentual renovável declarado", "%", 1)}
+
+
+@mcp.tool()
+def tela_ranking(metrica: str = "score_divulgacao", ano: int | None = None, limite: int = 15) -> dict:
+    """Monta a TELA do ranking do Placar (artefato HTML com gráfico de barras, valor em cada barra e a fonte de cada
+    número) e devolve o link para abrir. Mesmas métricas de placar_ranking: 'score_divulgacao',
+    'intensidade_receita', 'escopo1_2', 'pct_renovavel'. Use quando o usuário quiser ver, comparar ou compartilhar."""
+    dados = placar_ranking(metrica, ano, limite)
+    if dados.get("erro"):
+        return dados
+    titulo_m, unidade, dec = NOMES.get(metrica, (metrica, "", 1))
+    itens = [{"rotulo": f"{i['empresa']} {i['ano']}", "valor": i["valor"], "fonte": i.get("fonte") or ""}
+             for i in dados["ranking"]]
+    faltando = _sem_fonte(itens)
+    if faltando:
+        return {"gravado": False, "erros": faltando,
+                "como_corrigir": "a tela não mostra número sem fonte; use placar_ranking e cite os valores no texto"}
+    if not itens:
+        return {"gravado": False, "erros": ["o ranking veio vazio"],
+                "como_corrigir": "confira a métrica e o ano; o placar cobre só as empresas com relatório indexado"}
+    detalhe = [[_esc(i["rotulo"]), _num(i["valor"], dec), _esc(i["fonte"])] for i in itens]
+    corpo = (f"<div class=\"cartao\"><h2>{_esc(titulo_m)} ({_esc(unidade)})</h2>"
+             f"{_barras(itens, unidade, dec)}</div>"
+             f"<div class=\"cartao\"><h2>Cada número e sua fonte</h2>"
+             f"{_tabela(['Empresa e ano', unidade.capitalize(), 'Fonte'], detalhe, ['', 'n', 'f'])}</div>")
+    html = _pagina(f"Placar da Transição — {titulo_m}",
+                   f"{len(itens)} empresas com relatório indexado" + (f", ano {ano}" if ano else "") +
+                   f". Gerado pelo CoppeZIP em {datetime.now():%d/%m/%Y %H:%M}.", corpo,
+                   ["Emissões, metas, % renovável e frameworks: relatórios das empresas (arquivo e página na tabela), "
+                    "extraídos com checagem de que o valor aparece na página citada.",
+                    "Receita, EBITDA e lucro: kpis_financeiros (CVM, consolidado) — data/coppezip.duckdb.",
+                    dados.get("nota") or ""])
+    return {"gravado": True, "tela": _gravar(f"placar-{metrica}", html), "empresas": len(itens),
+            "metrica": metrica, "proximo_passo": "mostre o link ao usuário e resuma o topo do ranking no texto"}
+
+
+ICONE = {"alta": "▲", "media": "●", "baixa": "○"}
+
+
+@mcp.tool()
+def tela_radar(empresa: str | None = None) -> dict:
+    """Monta a TELA do radar de consistência (anti-greenwashing): um cartão por alerta, com severidade (ícone e
+    rótulo, não só cor), a explicação e as DUAS evidências (documento/página e tabela oficial). Devolve o link."""
+    dados = radar_consistencia(empresa)
+    alertas = dados["alertas"]
+    if not alertas:
+        corpo = ("<div class=\"cartao\"><h2>Nenhum alerta</h2><p>Nas regras de hoje (% renovável × SIGA, meta sem "
+                 "escopo 3 e divulgação sem asseguração) não há divergência para investigar"
+                 f"{' em ' + _esc(empresa) if empresa else ''}.</p></div>")
+    else:
+        cartoes = []
+        for a in alertas:
+            cartoes.append(
+                f"<div class=\"alerta {_esc(a['severidade'])}\"><span class=\"sev {_esc(a['severidade'])}\">"
+                f"{ICONE.get(a['severidade'], '•')} severidade {_esc(a['severidade'])}</span>"
+                f"<p><strong>{_esc(a['empresa'])} {_esc(a['ano'])}</strong> — {_esc(a['titulo'])}</p>"
+                f"<p>{_esc(a['explicacao'])}</p>"
+                f"<ul class=\"ev\"><li>Evidência no relatório: {_esc(a['evidencia_doc'])}</li>"
+                f"<li>Evidência na base: {_esc(a['evidencia_dado'])}</li></ul></div>")
+        corpo = f"<div class=\"cartao\"><h2>{len(alertas)} alerta(s)</h2>{''.join(cartoes)}</div>"
+    if dados.get("nao_comparaveis"):
+        itens = "".join(f"<li>{_esc(x)}</li>" for x in dados["nao_comparaveis"])
+        corpo += (f"<div class=\"cartao\"><h2>Declarações que não dá para confrontar</h2>"
+                  f"<ul class=\"ev\">{itens}</ul></div>")
+    html = _pagina("Radar de consistência" + (f" — {empresa}" if empresa else ""),
+                   f"Afirmação do relatório × dado oficial. Gerado pelo CoppeZIP em {datetime.now():%d/%m/%Y %H:%M}.",
+                   corpo,
+                   ["Afirmações: relatórios das empresas (arquivo e página em cada alerta).",
+                    "Capacidade em operação por fonte: capacidade_por_grupo (SIGA/ANEEL).",
+                    dados["nota"]])
+    return {"gravado": True, "tela": _gravar("radar", html), "alertas": len(alertas),
+            "proximo_passo": "mostre o link e, no texto, os alertas de severidade alta com as duas evidências"}
+
+
+JS_CARBONO = """
+const D=__DADOS__;const fx=(v,d)=>v==null?'—':v.toLocaleString('pt-BR',{minimumFractionDigits:d,
+maximumFractionDigits:d});
+function desenhar(){const p=+document.getElementById('preco').value;document.getElementById('vp').value=
+'R$ '+fx(p,0)+'/t';const l=D.map(d=>({...d,exp:d.tco2e*p})).map(d=>({...d,pct:d.ebitda?100*d.exp/d.ebitda:null}));
+l.sort((a,b)=>(b.pct??-1)-(a.pct??-1));const m=Math.max(...l.map(d=>d.pct||0),0.0001);
+document.getElementById('barras').innerHTML=l.map(d=>`<div class="item" tabindex="0"><span class="rot">${d.empresa}
+ ${d.ano}</span><span class="trilha"><span class="barra" style="width:${100*(d.pct||0)/m}%"></span></span>
+<span class="val">${d.pct==null?'sem EBITDA':fx(d.pct,1)+'%'}</span><span class="dica">${d.empresa} ${d.ano} · ${
+fx(d.tco2e,0)} tCO2e × R$ ${fx(p,0)}/t = R$ ${fx(d.exp/1e6,1)} mi · ${d.fonte_emissoes}${d.fonte_financeiro?' · '+
+d.fonte_financeiro:''}</span></div>`).join('');
+document.getElementById('linhas').innerHTML=l.map(d=>`<tr><td>${d.empresa} ${d.ano}</td><td class="n">${
+fx(d.tco2e,0)}</td><td class="n">${fx(d.exp/1e6,1)}</td><td class="n">${d.pct==null?'—':fx(d.pct,1)}</td>
+<td class="n">${d.lucro?fx(100*d.exp/d.lucro,1):'—'}</td><td class="f">${
+fx(d.tco2e,0)} tCO2e × R$ ${fx(p,0)}/t · ${d.fonte_emissoes}${d.fonte_financeiro?' · '+d.fonte_financeiro:
+' · sem financeiro na base'}</td></tr>`).join('');}
+document.getElementById('preco').addEventListener('input',desenhar);desenhar();
+"""
+
+
+@mcp.tool()
+def tela_carbono(preco_por_t: float = 100.0, escopos: list[str] | None = None) -> dict:
+    """Monta a TELA da exposição a preço de carbono, com barra deslizante de preço (R$/tCO2e) que recalcula na hora
+    no navegador: emissões × preço contra EBITDA e lucro, com a fórmula e a fonte de cada número. Devolve o link."""
+    dados = exposicao_carbono(preco_por_t, escopos)
+    con = _con()
+    try:
+        linhas = []
+        for i in dados["ranking"]:
+            fin = _fin_ano(con, i["cnpj"], i["ano"])
+            linhas.append({"empresa": i["empresa"], "ano": i["ano"], "tco2e": i["tco2e"],
+                           "ebitda": (fin or {}).get("ebitda"), "lucro": (fin or {}).get("lucro"),
+                           "fonte_emissoes": i["fonte_emissoes"],
+                           "fonte_financeiro": i.get("fonte_financeiro", "")})
+    finally:
+        con.close()
+    if not linhas:
+        return {"gravado": False, "erros": ["nenhuma empresa com emissões confirmadas nos escopos pedidos"],
+                "como_corrigir": "tente escopos=['1','2'] ou confira o placar com consultar_placar"}
+    corpo = ("<div class=\"cartao\"><h2>Preço de carbono</h2><div class=\"ctrl\">"
+             "<label for=\"preco\">R$ por tonelada de CO2e</label>"
+             f"<input id=\"preco\" type=\"range\" min=\"0\" max=\"600\" step=\"10\" value=\"{int(preco_por_t)}\">"
+             "<output id=\"vp\"></output></div>"
+             f"<p class=\"fonte\">Exposição como % do EBITDA, escopos {', '.join(dados['escopos'])}. "
+             "Arraste para ver outro preço; a conta é refeita na hora com os dados desta página.</p>"
+             "<div class=\"barras\" id=\"barras\"></div></div>"
+             "<div class=\"cartao\"><h2>Conta de cada empresa</h2><table><thead><tr><th>Empresa e ano</th>"
+             "<th>tCO2e</th><th>Exposição (R$ mi)</th><th>% EBITDA</th><th>% lucro</th><th>Fórmula e fontes</th>"
+             "</tr></thead><tbody id=\"linhas\"></tbody></table></div>")
+    html = _pagina("Exposição a preço de carbono",
+                   f"{len(linhas)} empresas com emissões confirmadas. "
+                   f"Gerado pelo CoppeZIP em {datetime.now():%d/%m/%Y %H:%M}.", corpo,
+                   ["Emissões por escopo: relatórios das empresas (arquivo e página em consultar_placar), só valores "
+                    "com a fonte confirmada na página.",
+                    "EBITDA e lucro líquido: kpis_financeiros (CVM, consolidado) — data/coppezip.duckdb.",
+                    dados["nota"]],
+                   JS_CARBONO.replace("__DADOS__", json.dumps(linhas, ensure_ascii=False).replace("</", "<\\/")))
+    return {"gravado": True, "tela": _gravar("carbono", html), "empresas": len(linhas),
+            "preco_inicial": preco_por_t, "escopos": dados["escopos"],
+            "proximo_passo": "mostre o link, diga que o preço é ajustável na tela e cite as duas maiores exposições"}
 
 if __name__ == "__main__":
     mcp.run()
