@@ -36,10 +36,14 @@ const keys = require('./keys');
 const user = require('./user');
 const mcp = require('./mcp');
 const rum = require('./rum');
+const painel = require('./painel');
+const busca = require('./busca');
 
 module.exports = {
   rum,
   mcp,
+  painel,
+  busca,
   auth,
   adminAuth,
   adminConfig,

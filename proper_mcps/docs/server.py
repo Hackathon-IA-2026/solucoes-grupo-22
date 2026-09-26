@@ -1,5 +1,6 @@
-"""Servidor MCP "coppezip-docs": busca nos relatórios das empresas (sustentabilidade, relato integrado, inventário de
-emissões, TCFD, plano climático) e em documentos de referência (CVM, EPE, SEEG), com documento e página para citar.
+"""Servidor MCP "coppezip-docs": busca nos documentos das empresas, divididos em duas áreas (financeiro: releases,
+demonstrações, apresentações, fatos relevantes, debêntures, rating; sustentabilidade: relatórios ESG, inventário de
+emissões, TCFD, governança) e em documentos de referência (CVM, EPE, SEEG), com documento e página para citar.
 
 Busca híbrida: palavras (BM25 do DuckDB, português) + significado (multilingual-e5-large), fundidas por posição (RRF).
 O índice é montado por indexar.py a partir de documentos.csv.
@@ -18,18 +19,23 @@ MODELO = "intfloat/multilingual-e5-large"
 # cópia simples do modelo (o onnxruntime recusa os links simbólicos do cache do Hugging Face)
 PASTA_MODELO = os.path.join(RAIZ, "data", "modelos", "multilingual-e5-large")
 CANDIDATOS = 60  # por método, antes da fusão
+MAX_LISTA = 100
 
-INSTRUCOES = """Use estas ferramentas para o que está nos relatórios das empresas e não nas tabelas: emissões de gases de
-efeito estufa por escopo, intensidade de carbono, metas climáticas e SBTi, plano de transição, riscos climáticos, CAPEX
-verde, P&D e inovação, estratégia, indicadores sociais e de governança; e para regulação e referências (Resoluções CVM
-193 e 244 sobre IFRS S1/S2, Balanço Energético Nacional, SEEG).
+INSTRUCOES = """Use estas ferramentas para o que está nos documentos das empresas e não nas tabelas. Os documentos têm
+duas áreas; filtre por area sempre que a pergunta for de uma delas:
+- area="financeiro": press releases de resultados, demonstrações financeiras completas e 20-F, apresentações a
+  investidores, fatos relevantes, orçamento e proventos, debêntures (escrituras, prospectos, avisos, agente fiduciário) e
+  relatórios de rating. Use para guidance, contexto de resultados, eventos corporativos, covenants e condições de dívida.
+- area="sustentabilidade": relatórios de sustentabilidade e relato integrado, inventário de emissões, TCFD, plano
+  climático, políticas e governança (estatuto, regimentos, código de conduta, partes relacionadas, remuneração) e as
+  referências de regulação (CVM, EPE, SEEG). Use para emissões por escopo, metas climáticas, riscos, indicadores sociais.
 1. Chame buscar_documentos com uma consulta objetiva em português (ex.: "emissões escopo 1 2025 tCO2e") e filtre por
-   empresa e ano quando souber. Se o dado não aparecer, tente 2 ou 3 formulações diferentes antes de desistir.
+   empresa, area e ano quando souber. Se o dado não aparecer, tente 2 ou 3 formulações diferentes antes de desistir.
 2. Números de tabelas: leia a página inteira com ler_pagina antes de citar, porque os trechos cortam tabelas.
 3. Cite documento, ano e página (ex.: Cemig, Relatório Anual de Sustentabilidade 2025, p. 87) e deixe claro que é um
-   número reportado pela empresa.
+   número reportado pela empresa. Número contábil oficial vem das tabelas da CVM; o documento dá o contexto.
 4. Regulação e referências setoriais: filtre empresa="CVM" (Resoluções 193 e 244), "EPE" (BEN) ou "SEEG".
-5. listar_documentos mostra o que existe; se a empresa ou o ano não estiver na base, diga isso."""
+5. listar_documentos mostra o que existe (filtre por empresa, area e ano); se não estiver na base, diga isso."""
 
 mcp = MCPServer("coppezip-docs", instructions=INSTRUCOES)
 _modelo = None
@@ -51,8 +57,11 @@ def _con():
     return con
 
 
-def _filtro(empresa: str | None, ano: int | None) -> tuple[str, list]:
+def _filtro(empresa: str | None, ano: int | None, area: str | None = None) -> tuple[str, list]:
     conds, params = [], []
+    if area:
+        conds.append("d.area = ?")
+        params.append(area.strip().lower())
     if empresa:
         conds.append("""(strip_accents(lower(d.empresa)) LIKE '%' || strip_accents(lower(?)) || '%'
                          OR regexp_replace(coalesce(d.cnpj, ''), '\\D', '', 'g') = regexp_replace(?, '\\D', '', 'g'))""")
@@ -64,11 +73,13 @@ def _filtro(empresa: str | None, ano: int | None) -> tuple[str, list]:
 
 
 @mcp.tool()
-def buscar_documentos(consulta: str, empresa: str | None = None, ano: int | None = None, k: int = 8) -> dict:
-    """Busca trechos nos relatórios das empresas e documentos de referência. Devolve texto, empresa, ano, título,
-    arquivo e página de cada trecho. empresa filtra por nome (Cemig, Engie, Axia...) ou CNPJ; ano é o ano do relatório."""
+def buscar_documentos(consulta: str, empresa: str | None = None, ano: int | None = None, area: str | None = None,
+                      k: int = 8) -> dict:
+    """Busca trechos nos documentos das empresas e de referência. Devolve texto, empresa, ano, área, título, arquivo e
+    página de cada trecho. empresa filtra por nome (Cemig, Engie, Axia...) ou CNPJ; ano é o ano do documento; area é
+    "financeiro" ou "sustentabilidade"."""
     k = max(1, min(int(k), 20))
-    onde, params = _filtro(empresa, ano)
+    onde, params = _filtro(empresa, ano, area)
     vetor = _embed(consulta)
     con = _con()
     try:
@@ -88,13 +99,13 @@ def buscar_documentos(consulta: str, empresa: str | None = None, ano: int | None
         if not melhores:
             return {"resultados": [], "aviso": "nada encontrado; tente outras palavras ou confira listar_documentos"}
         linhas = con.execute("""
-            SELECT t.id, d.empresa, d.ano, d.titulo, t.arquivo, t.pagina, t.texto
+            SELECT t.id, d.empresa, d.ano, d.titulo, t.arquivo, t.pagina, t.texto, d.area
             FROM trechos t JOIN documentos d USING (arquivo) WHERE t.id IN (SELECT unnest(?))""", [melhores]).fetchall()
     finally:
         con.close()
     por_id = {r[0]: r for r in linhas}
-    return {"resultados": [{"empresa": r[1], "ano": r[2], "documento": r[3], "arquivo": r[4], "pagina": r[5],
-                            "trecho": r[6], "relevancia": round(pontos[i] * 1000, 1)}
+    return {"resultados": [{"empresa": r[1], "ano": r[2], "area": r[7], "documento": r[3], "arquivo": r[4],
+                            "pagina": r[5], "trecho": r[6], "relevancia": round(pontos[i] * 1000, 1)}
                            for i in melhores if (r := por_id.get(i))]}
 
 
@@ -118,17 +129,26 @@ def ler_pagina(arquivo: str, pagina: int) -> dict:
 
 
 @mcp.tool()
-def listar_documentos(empresa: str | None = None) -> list[dict]:
-    """Lista os documentos da base (empresa, ano, tipo, título, páginas, arquivo), opcionalmente de uma empresa."""
-    onde, params = _filtro(empresa, None)
+def listar_documentos(empresa: str | None = None, area: str | None = None, ano: int | None = None) -> dict:
+    """Lista os documentos da base (empresa, área, ano, tipo, título, páginas, arquivo), os mais recentes primeiro, com
+    a contagem por empresa, área e tipo. Filtre por empresa, area ("financeiro" ou "sustentabilidade") e ano."""
+    onde, params = _filtro(empresa, ano, area)
     con = _con()
     try:
-        cur = con.execute(f"""SELECT d.empresa, d.ano, d.tipo, d.titulo, d.paginas, d.arquivo FROM documentos d
-                              WHERE {onde} ORDER BY d.empresa, d.ano""", params)
+        contagem = con.execute(f"""SELECT d.empresa, d.area, d.tipo, count(*) AS documentos FROM documentos d
+                                   WHERE {onde} GROUP BY ALL ORDER BY ALL""", params).fetchall()
+        cur = con.execute(f"""SELECT d.empresa, d.area, d.ano, d.tipo, d.titulo, d.paginas, d.arquivo FROM documentos d
+                              WHERE {onde} ORDER BY d.ano DESC, d.empresa, d.arquivo LIMIT {MAX_LISTA}""", params)
         nomes = [c[0] for c in cur.description]
-        return [dict(zip(nomes, r)) for r in cur.fetchall()]
+        docs = [dict(zip(nomes, r)) for r in cur.fetchall()]
     finally:
         con.close()
+    total = sum(c[3] for c in contagem)
+    resposta = {"total": total, "por_tipo": [dict(zip(("empresa", "area", "tipo", "documentos"), c)) for c in contagem],
+                "documentos": docs}
+    if total > MAX_LISTA:
+        resposta["aviso"] = f"mostrando os {MAX_LISTA} mais recentes de {total}; filtre por empresa, area ou ano"
+    return resposta
 
 
 if __name__ == "__main__":

@@ -187,6 +187,9 @@ data/raw
 data/parquet
 data/modelos
 data/*.duckdb*
+data/painel.json
 !librechat.yaml
 !CLAUDE.md
 data/violations.json
+data/build_*/
+__pycache__/

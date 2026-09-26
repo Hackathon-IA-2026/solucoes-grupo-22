@@ -1,7 +1,9 @@
 """Indexa os PDFs de relatórios para o coppezip-docs: texto por página, trechos, índice de palavras (BM25) e embeddings.
 
 Uso: python data/indexar_docs.py [--threads N] [--tudo]
-Entrada: os PDFs de data/raw/pdfs_esg descritos em data/documentos.csv (empresa, cnpj, ano, tipo, título, url). PDF fora do CSV é ignorado.
+Entrada: os PDFs de data/raw/financeiro e data/raw/sustentabilidade (organizados por data/organizar.py) descritos em
+data/documentos.csv (arquivo = caminho a partir de data/raw, empresa, cnpj, ano, tipo, título, url); area é a primeira pasta
+do caminho. PDF fora do CSV é ignorado.
 Saída: data/docs.duckdb com documentos, paginas e trechos (embedding FLOAT[1024] do multilingual-e5-large), trocado de forma
 atômica. Incremental: reaproveita os embeddings dos PDFs que não mudaram (mesmo nome e tamanho) do índice anterior.
 """
@@ -17,7 +19,8 @@ import pyarrow as pa
 from fastembed import TextEmbedding
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # raiz do repositório
-PDFS = os.path.join(RAIZ, "data", "raw", "pdfs_esg")
+PDFS = os.path.join(RAIZ, "data", "raw")
+AREAS = ("financeiro", "sustentabilidade")
 SAIDA = os.path.join(RAIZ, "data", "docs.duckdb")
 
 
@@ -55,7 +58,9 @@ def main():
 
     with open(os.path.join(AQUI, "documentos.csv"), newline="") as f:
         docs = list(csv.DictReader(f, delimiter=";"))
-    presentes = {os.path.basename(p) for p in os.listdir(PDFS) if p.endswith(".pdf")}
+    presentes = {os.path.relpath(os.path.join(pasta, p), PDFS).replace(os.sep, "/")
+                 for area in AREAS for pasta, _, arquivos in os.walk(os.path.join(PDFS, area))
+                 for p in arquivos if p.endswith(".pdf")}
     for faltando in sorted({d["arquivo"] for d in docs} - presentes):
         print(f"aviso: {faltando} está no documentos.csv mas não na pasta")
     for sobra in sorted(presentes - {d["arquivo"] for d in docs}):
@@ -106,11 +111,11 @@ def main():
     if os.path.exists(tmp):
         os.remove(tmp)
     con = duckdb.connect(tmp)
-    con.execute("""CREATE TABLE documentos (arquivo VARCHAR PRIMARY KEY, empresa VARCHAR, cnpj VARCHAR, ano INTEGER,
-                   tipo VARCHAR, titulo VARCHAR, url VARCHAR, paginas INTEGER, bytes BIGINT)""")
-    con.executemany("INSERT INTO documentos VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [(d["arquivo"], d["empresa"], d["cnpj"] or None, int(d["ano"]), d["tipo"], d["titulo"], d["url"],
-                      d.get("paginas"), d.get("bytes")) for d in docs if d.get("paginas")])
+    con.execute("""CREATE TABLE documentos (arquivo VARCHAR PRIMARY KEY, area VARCHAR, empresa VARCHAR, cnpj VARCHAR,
+                   ano INTEGER, tipo VARCHAR, titulo VARCHAR, url VARCHAR, paginas INTEGER, bytes BIGINT)""")
+    con.executemany("INSERT INTO documentos VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [(d["arquivo"], d["arquivo"].split("/")[0], d["empresa"], d["cnpj"] or None, int(d["ano"]), d["tipo"],
+                      d["titulo"], d["url"] or None, d.get("paginas"), d.get("bytes")) for d in docs if d.get("paginas")])
     con.execute("CREATE TABLE paginas (arquivo VARCHAR, pagina INTEGER, texto VARCHAR)")
     con.executemany("INSERT INTO paginas VALUES (?, ?, ?)", paginas)
     tabela = pa.table({

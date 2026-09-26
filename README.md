@@ -26,14 +26,16 @@ Sem link público: o chat roda nos servidores do IMPA e é aberto por túnel SSH
 | `.env.example` | modelo do `.env` (portas, segredos, endereço do vLLM, região do Bedrock) |
 | `instalar.sh`, `iniciar.sh`, `parar.sh` | instalar uma vez, subir e parar o chat |
 | `vllm.sh` | sobe o modelo próprio numa máquina com GPU |
-| `proper_mcps/` | ferramentas MCP: `dados` (banco DuckDB), `docs` (busca nos relatórios em PDF), `relatorio` (Markdown e Word) |
+| `proper_mcps/` | ferramentas MCP: `dados` (banco DuckDB), `docs` (busca nos relatórios em PDF; `busca.py` atende a aba Busca), `relatorio` (Markdown e Word) |
 | `proper_skills/` | roteiros do analista: benchmark de distribuidoras, ficha de crédito, investimento na transição, avaliação climática |
-| `data/` | coleta (`baixar.py`), montagem do banco (`construir.py`), índice dos PDFs (`indexar_docs.py`) e documentação das tabelas (`DADOS.md`); os dados em si ficam aqui, fora do git |
+| `data/` | coleta (`baixar.py`), montagem do banco (`construir.py`), índice dos PDFs (`indexar_docs.py`), dados da aba Painel (`exportar_painel.py`) e documentação das tabelas (`DADOS.md`); os dados em si ficam aqui, fora do git |
 | `researches/` | pesquisa de fontes de dados e dicionário de dados |
 | `eval/` | cliente do chat (`chat.py`) e regressão com perguntas de resposta conhecida (`regressao.py`) |
-| `client/src/style.css` | o tema do CoppeZIP (a única mudança no código do LibreChat) |
+| `client/src/style.css` | o tema do CoppeZIP |
+| abas Painel e Busca | `client/src/components/Coppezip/`, `client/src/components/Nav/CoppezipNavButtons.tsx`, as rotas `/painel` e `/busca` em `client/src/routes/index.tsx`, e `api/server/routes/painel.js` e `busca.js` (registradas em `api/server/index.js` e `routes/index.js`) |
 
-O resto (`api/`, `client/`, `packages/`, `config/`...) é o LibreChat. O README original está em `README.librechat.md`.
+O resto (`api/`, `client/`, `packages/`, `config/`...) é o LibreChat. Mudou algo em `client/`? Recompile com
+`PATH=$PWD/.runtime/bin:$PATH npm run frontend` (o Node do sistema pode ser antigo demais). O README original está em `README.librechat.md`.
 
 ## Pré-requisitos
 
@@ -77,9 +79,23 @@ Os dados não vão para o git. Coloque em `data/`:
 | `data/raw/`, `data/parquet/` | `python data/baixar.py` (fontes oficiais) e o Drive do projeto (`CoppeZIP-dados-brutos`) |
 | `data/coppezip.duckdb` | `.runtime/venv/bin/python data/construir.py`, depois `data/documentar.py` |
 | `data/modelos/multilingual-e5-large/` | o modelo `intfloat/multilingual-e5-large` do Hugging Face, copiado sem links simbólicos |
-| `data/docs.duckdb` | `.runtime/venv/bin/python data/indexar_docs.py` (PDFs em `data/raw/pdfs_esg/`) |
+| `data/docs.duckdb` | `.runtime/venv/bin/python data/indexar_docs.py` (PDFs em `data/raw/sustentabilidade/<empresa>/<ano>/` e `data/raw/financeiro/<empresa>/pdfs/<ano>/`, organizados por `data/organizar.py` e descritos em `data/documentos.csv`) |
+| `data/painel.json` | `.runtime/venv/bin/python data/exportar_painel.py`, depois do `construir.py` |
 
 Os bancos prontos também estão no Drive, em `bancos/`.
+
+### Abas Painel e Busca
+
+Ao lado do chat (ícones na barra lateral), só para usuários logados:
+
+- **Painel** (`/painel`): dashboards das tabelas do banco que o analista consulta (indicadores financeiros, DEC/FEC,
+  CMO, EAR, curtailment, capacidade, usinas, leilões, PDD, BNDES, debêntures): um cartão com tendência para cada medida
+  numérica, evolução no tempo (até 8 empresas comparadas), ranking e as linhas da base com download em CSV. O filtro de
+  empresa acha pelo nome, apelido, ticker ou CNPJ. Cores das séries em `--painel-1..8` do `style.css`. Lê
+  `data/painel.json`, relido a cada acesso: depois de reconstruir o banco, basta rodar `data/exportar_painel.py` de novo.
+- **Busca** (`/busca`): responde "em que página está isso?" nos PDFs indexados, com o trecho, a imagem da página e o
+  PDF. Usa o mesmo índice e modelo do `coppezip-docs` (`data/docs.duckdb`, `data/modelos/`); o `iniciar.sh` sobe
+  `proper_mcps/docs/busca.py` em `127.0.0.1:BUSCA_PORTA` e o LibreChat repassa `/api/busca`.
 
 ## Testes
 
