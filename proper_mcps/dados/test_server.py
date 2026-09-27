@@ -340,7 +340,8 @@ def test_dre_coerente_nao_gera_ressalva(contas):
 
 def test_indicadores_da_equatorial_para_trazem_a_ressalva_de_2025():
     r = s.indicadores_financeiros("Equatorial Pará")
-    assert any(a["ano"] == 2025 and a["margem_ebit_pct"] > 100 for a in r["anos"])
+    # a empresa entregou o custo (3.02) com sinal positivo: as margens de 2025 vêm NULL, não infladas acima de 100%
+    assert any(a["ano"] == 2025 and a["margem_ebit_pct"] is None for a in r["anos"])
     assert any("2025" in x and "3.02" in x for x in r["ressalvas_cvm"])
 
 
