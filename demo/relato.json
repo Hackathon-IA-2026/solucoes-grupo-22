@@ -1,0 +1,103 @@
+{
+ "fps": 25,
+ "largura": 1920,
+ "altura": 1080,
+ "cenas": [
+  {
+   "nome": "01_abertura",
+   "frames": 31,
+   "segundos": 1.24,
+   "marcas": {}
+  },
+  {
+   "nome": "02_pergunta",
+   "frames": 76,
+   "segundos": 3.04,
+   "marcas": {
+    "pergunta_completa": 65,
+    "enviado": 76
+   }
+  },
+  {
+   "nome": "03_ferramentas",
+   "frames": 185,
+   "segundos": 7.4,
+   "marcas": {
+    "ferramentas_na_tela": 135,
+    "resposta_pronta": 173
+   }
+  },
+  {
+   "nome": "04_conclusao",
+   "frames": 62,
+   "segundos": 2.48,
+   "marcas": {}
+  },
+  {
+   "nome": "05_tabela",
+   "frames": 174,
+   "segundos": 6.96,
+   "marcas": {
+    "tabela_na_tela": 104
+   }
+  },
+  {
+   "nome": "06_fonte",
+   "frames": 62,
+   "segundos": 2.48,
+   "marcas": {}
+  },
+  {
+   "nome": "07_relatorio",
+   "frames": 155,
+   "segundos": 6.2,
+   "marcas": {
+    "pedido_enviado": 31,
+    "pdf_ao_lado": 155
+   }
+  },
+  {
+   "nome": "08_grafo",
+   "frames": 43,
+   "segundos": 1.72,
+   "marcas": {
+    "grafo_montado": 14
+   }
+  },
+  {
+   "nome": "09_painel",
+   "frames": 83,
+   "segundos": 3.32,
+   "marcas": {
+    "painel_visao": 42
+   }
+  },
+  {
+   "nome": "10_timeline",
+   "frames": 81,
+   "segundos": 3.24,
+   "marcas": {
+    "timeline_visao": 40
+   }
+  },
+  {
+   "nome": "11_busca",
+   "frames": 148,
+   "segundos": 5.92,
+   "marcas": {
+    "buscou": 58,
+    "resultados": 58
+   }
+  }
+ ],
+ "textos": {
+  "modelo": "us.anthropic.claude-sonnet-5",
+  "resposta": "Conclusão (modo conclusivo): entre as três, a Cemig está em situação financeira mais confortável em 2024 — menor alavancagem (dívida líquida/EBITDA de 0,89x, contra 2,37x da Copel e 3,33x da Energisa), maior margem EBITDA e maior cobertura de juros. É uma conclusão bem sustentada pelos números abaixo, todos do mesmo critério (CVM DFP 2024, consolidado das holdings).\n\nO que os dados mostram\n\nTodos os números são das holdings consolidadas (Cemig S.A., Copel S.A., Energisa S.A.), ano fiscal 2024, fonte CVM DFP 2024 (consolidado): receita conta 3.01, EBIT conta 3.05, EBITDA = EBIT + depreciação/amortização da DFC (calculado pela base, pode diferir do EBITDA ajustado que cada empresa divulga no RI), dívida bruta = 2.01.04+2.02.01 (sem arrendamentos), investimento total = CAPEX da DFC (conta 6.02).\n\nIndicador\tCemig\tCopel\tEnergisa\nReceita líquida (R$ bi)\t39,82\t22,65\t33,72\nEBITDA (R$ bi)\t11,25\t5,53\t7,97\nMargem EBITDA (%)\t28,26\t24,41\t23,64\nDívida líquida/EBITDA (x)\t0,89\t2,37\t3,33\nCobertura de juros (EBITDA/desp. financeira, x)\t5,77\t2,36\t2,22\nInvestimento total (R$ bi)\t5,36\t6,41\t5,68\nROE (%)\t26,00\t10,92\t20,94\nPor que isso leva à conclusão\nAlavancagem: a diferença é grande — a Cemig fecha 2024 com dívida líquida equivalente a menos de 1 ano de EBITDA (0,89x), enquanto Copel e Energisa estão entre 2,4x e 3,3x. Isso é o fator de maior peso para \"situação financeira\", porque mostra folga para tomar dívida nova ou absorver choque de custo de capital.\nCobertura de juros: Cemig gera 5,77x seu EBITDA sobre a despesa financeira, quase o triplo de Copel (2,36x) e Energisa (2,22x) — indica menor pressão do serviço da dívida sobre o caixa operacional.\nMargem e retorno: Cemig também lidera em margem EBITDA (28,3% vs. ∼24% nas outras duas) e ROE (26,0% vs. 20,9% Energisa e 10,9% Copel).\nContraponto: Copel investiu mais em termos absolutos (R$ 6,41 bi vs. R$ 5,36 bi da Cemig), o que pode indicar um ciclo de expansão maior — mas isso não muda o quadro de alavancagem atual, e maior CAPEX financiado com mais dívida é parte do motivo do índice mais alto de Copel e Energisa.\nEnergisa tem a maior dívida líquida em valor absoluto (R$ 26,6 bi) e a maior relação dívida líquida/EBITDA (3,33x) das três, mesmo com bom ROE (20,9%), o que sugere estrutura de capital mais alavancada, típica do perfil de crescimento via aquisições do grupo.\nO que mudaria a conclusão\nEste é o critério contábil da CVM (DFP), consolidado das holdings; não é o EBITDA ajustado ou a dívida líquida gerencial que cada empresa divulga no seu Relatório de Resultados — se o usuário quiser comparar com esses números do RI, a diferença de definição pode mudar a magnitude (não necessariamente a ordem).\nA base tem trimestres (ITR) mais recentes até 2026T2: a Cemig, por exemplo, já mostra dívida líquida/EBITDA subindo para 2,26x no 2T26 (últimos 12 meses) — sinal de que a distância para as outras duas vem diminuindo desde 2024. Se o interesse for a posição mais atual (não fechamento anual), posso trazer o comparativo trimestral das três.\nNão avaliei aqui perfil de vencimento da dívida, rating, garantias regulatórias (RAB) nem risco de concessão — que também entram numa análise de crédito mais completa (ficha de crédito).",
+  "ferramentas": "4 ferramentas usadas",
+  "linha_alavancagem": "Dívida líquida/EBITDA (x) 0,89 2,37 3,33",
+  "fonte": "",
+  "pdf_por_botao": true,
+  "pdf_abriu": true,
+  "busca_primeiro": "Cemig (2025) — Inventário Corporativo de Emissões de GEE 2026 (ano base 2025) pág. 54/81 · similaridade 0.6946 ANÁLISE DAS METAS SCIENCE-BASED TARGETS A Cemig teve suas metas de redução de emissões de GEE aprovadas pela Science Based Target"
+ }
+}

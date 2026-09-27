@@ -1,0 +1,23 @@
+{
+ "fps": 25,
+ "cenas": [
+  {
+   "nome": "07b_pdf",
+   "frames": 77,
+   "segundos": 3.08,
+   "marcas": {
+    "cartao_na_tela": 22
+   }
+  },
+  {
+   "nome": "07c_folhas",
+   "frames": 216,
+   "segundos": 8.64,
+   "marcas": {
+    "capa": 50,
+    "folheado": 182
+   }
+  }
+ ],
+ "textos": {}
+}

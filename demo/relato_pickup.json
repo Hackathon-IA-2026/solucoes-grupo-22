@@ -1,0 +1,49 @@
+{
+ "fps": 25,
+ "cenas": [
+  {
+   "nome": "05_tabela",
+   "frames": 198,
+   "segundos": 7.92,
+   "marcas": {
+    "tabela_na_tela": 118
+   }
+  },
+  {
+   "nome": "06_fonte",
+   "frames": 80,
+   "segundos": 3.2,
+   "marcas": {}
+  },
+  {
+   "nome": "07b_pdf",
+   "frames": 161,
+   "segundos": 6.44,
+   "marcas": {
+    "pdf_ao_lado": 61
+   }
+  },
+  {
+   "nome": "08_grafo",
+   "frames": 192,
+   "segundos": 7.68,
+   "marcas": {
+    "grafo_montado": 30,
+    "categoria_aberta": 76,
+    "indicador_revelado": 110
+   }
+  }
+ ],
+ "textos": {
+  "url": "http://127.0.0.1:3090/c/47bc2396-d438-4b06-b95c-96f6dcb3a901",
+  "linha_alavancagem": "Dívida líquida/EBITDA (x) 0,89 2,37 3,33",
+  "fonte": "Conclusão (modo conclusivo): entre as três, a Cemig está em situação financeira mais confortável em 2024 — menor alavancagem (dívida líquida/EBITDA de 0,89x, contra 2,37x da Copel e 3,33x da Energisa), maior margem EBITDA e maior cobertura de juros. É uma conclusão bem sustentada pelos números abaix",
+  "pdf_ok": true,
+  "grafo": {
+   "ok": true,
+   "titulo": "",
+   "ano": "2024 0,89x",
+   "fonte": ""
+  }
+ }
+}

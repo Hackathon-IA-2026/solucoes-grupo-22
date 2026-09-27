@@ -1,0 +1,25 @@
+{
+ "fps": 25,
+ "cenas": [
+  {
+   "nome": "09_painel",
+   "frames": 146,
+   "segundos": 5.84,
+   "marcas": {
+    "painel_visao": 46
+   }
+  },
+  {
+   "nome": "11_busca",
+   "frames": 143,
+   "segundos": 5.72,
+   "marcas": {
+    "buscou": 55,
+    "resultados": 55
+   }
+  }
+ ],
+ "textos": {
+  "busca_primeiro": "Cemig (2025) — Inventário Corporativo de Emissões de GEE 2026 (ano base 2025) pág. 54/81 · similaridade 0.6946 ANÁLISE DAS METAS SCIENCE-BASED TARGETS A Cemig teve suas metas de redução de emissões de GEE aprovadas pela Science Based Target"
+ }
+}

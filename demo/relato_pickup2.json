@@ -1,0 +1,57 @@
+{
+ "fps": 25,
+ "cenas": [
+  {
+   "nome": "04_conclusao",
+   "frames": 90,
+   "segundos": 3.6,
+   "marcas": {}
+  },
+  {
+   "nome": "05_tabela",
+   "frames": 215,
+   "segundos": 8.6,
+   "marcas": {
+    "tabela_na_tela": 130
+   }
+  },
+  {
+   "nome": "06_fonte",
+   "frames": 90,
+   "segundos": 3.6,
+   "marcas": {}
+  },
+  {
+   "nome": "07b_pdf",
+   "frames": 267,
+   "segundos": 10.68,
+   "marcas": {
+    "cartao_na_tela": 20,
+    "pdf_na_tela": 67,
+    "pdf_rolado": 232
+   }
+  },
+  {
+   "nome": "08_grafo",
+   "frames": 226,
+   "segundos": 9.04,
+   "marcas": {
+    "grafo_montado": 30,
+    "categoria_aberta": 74,
+    "indicador_revelado": 108
+   }
+  }
+ ],
+ "textos": {
+  "url": "http://127.0.0.1:3090/c/47bc2396-d438-4b06-b95c-96f6dcb3a901",
+  "veredito": "Conclusão (modo conclusivo): entre as três, a Cemig está em situação financeira mais confortável em 2024 — menor alavancagem (dívida líquida/EBITDA de 0,89x, contra 2,37x da Copel e 3,33x da Energisa)",
+  "linha_alavancagem": "Dívida líquida/EBITDA (x) 0,89 2,37 3,33",
+  "fonte": "Todos os números são das holdings consolidadas (Cemig S.A., Copel S.A., Energisa S.A.), ano fiscal 2024, fonte CVM DFP 2024 (consolidado): receita conta 3.01, EBIT conta 3.05, EBITDA = EBIT + depreciação/amortização da DFC (calculado pela base, pode diferir do EBITDA ajustado que cada empresa divulg",
+  "pdf_ok": true,
+  "grafo": {
+   "ok": true,
+   "ano": "2024 0,89x"
+  },
+  "grafo_fonte": "CVM DFP 2025 (consolidado): receita 3.01, EBIT 3.05, lucro 3.11, desp. financeiras 3.06.02; dívida bruta 2.01.04+2.02.01; caixa 1.01.01+1.01.02; PL 2.03; D&A, c"
+ }
+}

@@ -1,0 +1,60 @@
+{
+ "cartelas": [
+  {
+   "nome": "c10_pergunta",
+   "rotulo": "01 · A pergunta",
+   "titulo": "Uma pergunta de comitê,<br>escrita em português.",
+   "sub": "Sem planilha, sem SQL, sem esperar o time de análise."
+  },
+  {
+   "nome": "c20_apuracao",
+   "rotulo": "02 · A apuração",
+   "titulo": "Sete ferramentas acionadas.<br>Nenhuma planilha.",
+   "sub": "CVM, ANEEL, ONS, BNDES e EPE — 19 ferramentas à disposição do agente."
+  },
+  {
+   "nome": "c30_veredito",
+   "rotulo": "03 · A resposta",
+   "titulo": "Não devolve dados.<br>Devolve um veredito.",
+   "sub": "Com a tabela completa e o porquê de cada conclusão."
+  },
+  {
+   "nome": "c40_prova",
+   "rotulo": "04 · A prova",
+   "titulo": "Cada número com a sua fonte.",
+   "sub": "CVM DFP 2024, conta por conta — auditável linha por linha."
+  },
+  {
+   "nome": "c50_entregavel",
+   "rotulo": "05 · O entregável",
+   "titulo": "Um clique, e o relatório está pronto.",
+   "sub": "Seis páginas em PDF: capa, metodologia, resultados e referências."
+  },
+  {
+   "nome": "c60_plataforma",
+   "rotulo": "06 · A plataforma",
+   "titulo": "E tudo isso navegável.",
+   "sub": "Grafo de conhecimento, painéis, linha do tempo e busca semântica."
+  }
+ ],
+ "stats_finais": [
+  "13 bases oficiais",
+  "2.497 documentos",
+  "79.247 páginas",
+  "19 ferramentas"
+ ],
+ "selos": [
+  {
+   "nome": "s_alavancagem",
+   "topo": "Alavancagem em 2024",
+   "linha": "Cemig 0,89x · Copel 2,37x · Energisa 3,33x",
+   "pe": "dívida líquida / EBITDA — CVM DFP 2024"
+  },
+  {
+   "nome": "s_relatorio",
+   "topo": "Relatório gerado",
+   "linha": "PDF pronto para o comitê",
+   "pe": "capa, sumário, metodologia, resultados e fontes"
+  }
+ ]
+}

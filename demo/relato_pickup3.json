@@ -1,0 +1,25 @@
+{
+ "fps": 25,
+ "cenas": [
+  {
+   "nome": "01_abertura",
+   "frames": 40,
+   "segundos": 1.6,
+   "marcas": {}
+  },
+  {
+   "nome": "07b_pdf",
+   "frames": 279,
+   "segundos": 11.16,
+   "marcas": {
+    "cartao_na_tela": 20,
+    "capa": 64,
+    "folheado": 249
+   }
+  }
+ ],
+ "textos": {
+  "modelo": "us.anthropic.claude-sonnet-5",
+  "pdf_ok": true
+ }
+}
