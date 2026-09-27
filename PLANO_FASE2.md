@@ -10,8 +10,8 @@
 | Prompt antigo | Aqui |
 |---|---|
 | GUI Chainlit `app.py`, seletores na caixa de mensagem | **LibreChat** (não se altera o cliente — regra do `CLAUDE.md`). Telas viram **artefatos HTML/PDF** servidos em `/relatorios/`. Modo Descritiva/Conclusiva vira **preset/perfil** no `librechat.yaml`. |
-| LLM Qwen via Ollama :11435 (GPU 19 GiB) | **vLLM `CoppeZIP` (`qwen3.8-27b`)** em `VLLM_BASE_URL` **ou** **Bedrock** `us.anthropic.claude-sonnet-5`. Sem GPU local, sem carregar modelo novo — a restrição de GPU do prompt não se aplica. |
-| SQLite `armazenamento/coppezip.sqlite` | **DuckDB** `data/coppezip.duckdb` (52 tabelas, `catalogo`). |
+| LLM Qwen via Ollama :11435 (GPU 19 GiB) | **vLLM `EnergyNexus` (`qwen3.8-27b`)** em `VLLM_BASE_URL` **ou** **Bedrock** `us.anthropic.claude-sonnet-5`. Sem GPU local, sem carregar modelo novo — a restrição de GPU do prompt não se aplica. |
+| SQLite `armazenamento/coppezip.sqlite` | **DuckDB** `data/energynexus.duckdb` (52 tabelas, `catalogo`). |
 | Chroma + BM25 | **`data/docs.duckdb`** (BM25 do DuckDB + embeddings `multilingual-e5-large`), já montado. |
 | `coppezip/`, `coppezip/mcp_web` | `proper_mcps/{dados,docs,relatorio}` + servidores novos. |
 | `research/FINDINGS-claude-sonnet-5.md §3.2` | existe em **`researches/FINDINGS-claude-sonnet-5.md §3.2`** — usado como gabarito. |
@@ -28,11 +28,11 @@
 3. **Rastreabilidade total.** Todo valor novo guarda `arquivo`+`pagina`+`trecho` (doc), ou `tabela`+`sql` (banco),
    ou `url` (web), com `confianca` e `metodo`, e aparece **citado** ([D#]/[B#]/[W#]) em toda saída.
 4. **Separação de responsabilidades entre bancos:**
-   - `coppezip.duckdb` — derivado de fontes públicas por `data/construir.py` (reconstruído do zero; **não** recebe
+   - `energynexus.duckdb` — derivado de fontes públicas por `data/construir.py` (reconstruído do zero; **não** recebe
      tabelas extraídas, senão a reconstrução atômica as apagaria).
    - `docs.duckdb` — RAG (páginas/trechos/embeddings).
    - **`placar.duckdb` (novo)** — tudo que o LLM extrai e o que se deriva disso. As ferramentas MCP fazem `ATTACH`
-     dos três (o `dados` já lê `coppezip.duckdb`; o `placar` lê `placar.duckdb` e faz `ATTACH coppezip.duckdb` p/ métricas híbridas).
+     dos três (o `dados` já lê `energynexus.duckdb`; o `placar` lê `placar.duckdb` e faz `ATTACH energynexus.duckdb` p/ métricas híbridas).
 5. **Mínimo e funcionando.** Reaproveitar o que existe (skill `avaliacao-climatica`, servidor `relatorio`,
    busca híbrida do `docs`). Nada de camada nova sem uso.
 
@@ -49,7 +49,7 @@ placar.duckdb  ── esg_emissoes, esg_metas, esg_renovavel, esg_capex, esg_fra
       ├── proper_mcps/placar/server.py   → ferramentas do agente (consultar_placar, promessa_entrega,
       │                                     radar_consistencia, exposicao_carbono, mapa_expansao,
       │                                     grafo_societario, diff_relatorios)
-      │        (faz ATTACH coppezip.duckdb READ_ONLY p/ receita, EBITDA, usinas, leilões, BNDES, societário)
+      │        (faz ATTACH energynexus.duckdb READ_ONLY p/ receita, EBITDA, usinas, leilões, BNDES, societário)
       │
       └── proper_mcps/visual/server.py   → gera artefato HTML/PDF autocontido em .runtime/relatorios/
                                             (Plotly/Leaflet/vis-network inline) e devolve link /relatorios/…
@@ -62,7 +62,7 @@ librechat.yaml  → registra os servidores novos; perfis "Descritiva"/"Conclusiv
   (`bedrock-runtime`, `us.anthropic.claude-sonnet-5`) para máquinas sem acesso ao vLLM (como esta). Sem modelo local novo.
 - **Deploy (AgentCore).** Os servidores novos ficam em `proper_mcps/` e entram no **mesmo pacote** publicado no
   AgentCore (como `dados`/`docs`/`relatorio`). É preciso subir `placar.duckdb` ao bucket S3 junto de
-  `coppezip.duckdb`/`docs.duckdb`. Em dev local, testam-se por stdio. *(Observação: o `librechat.yaml` atual
+  `energynexus.duckdb`/`docs.duckdb`. Em dev local, testam-se por stdio. *(Observação: o `librechat.yaml` atual
   aponta os MCP para a AWS; para testar os servidores novos localmente, ou se aponta de volta ao local, ou se
   republica no AgentCore. Detalhe operacional a alinhar quando chegarmos ao merge.)*
 
@@ -116,7 +116,7 @@ regras acima + schema JSON + 1–2 exemplos few-shot tirados de páginas reais j
 - **Gabarito**: comparação com `researches/FINDINGS-claude-sonnet-5.md §3.2` (escopos 1/2/3 por empresa, metas Net
   Zero, CAPEX 2024). Relatório Markdown com acertos/erros/faltas por empresa.
 
-**Métricas híbridas** (visões em `placar.duckdb` com `ATTACH coppezip.duckdb`):
+**Métricas híbridas** (visões em `placar.duckdb` com `ATTACH energynexus.duckdb`):
 `tco2e/receita_liquida`, `capex/receita`, `capex_por_mw` (CAPEX × `capacidade_por_grupo`/`usinas`), e
 `score_divulgacao`. Cada métrica cita as duas fontes (B# da DFP/SIGA + D# do relatório).
 
@@ -147,7 +147,7 @@ regras acima + schema JSON + 1–2 exemplos few-shot tirados de páginas reais j
    `grafo.html` (vis-network inline), referência por nó.
 
 **Modo Descritiva/Conclusiva** (regra: escolhido **pelo usuário**, nunca pelo modelo): dois **presets/perfis** no
-`librechat.yaml` (`coppezip-analista-descritiva` e `-conclusiva`), com a diferença de instrução no `promptPrefix`.
+`librechat.yaml` (`energynexus-analista-descritiva` e `-conclusiva`), com a diferença de instrução no `promptPrefix`.
 *(Limitação: o "seletor na caixa de mensagem" do Chainlit não existe no LibreChat sem alterar o cliente; o
 equivalente é o seletor de perfil/preset. Registrado nos riscos.)*
 
@@ -232,7 +232,7 @@ fonte (tooltip/rodapé D#/B#/W#). Validação de citação análoga à do `relat
 
 **Decisões que mudaram em relação ao plano** (e por quê):
 
-1. **As telas ficaram no `coppezip-placar`**, não num servidor `visual` novo: o MVP não tem mapa nem grafo, e as
+1. **As telas ficaram no `energynexus-placar`**, não num servidor `visual` novo: o MVP não tem mapa nem grafo, e as
    telas reusam direto as funções do placar (uma camada a menos, nada de importar um `server.py` de outro).
 2. **Sem Plotly/Leaflet/vis-network**: o gráfico é de barras em HTML e CSS, com o tema do chat. "Autocontido" de
    verdade — sem CDN e sem jogar 3,5 MB de JavaScript no repositório — e o E2E consegue ler cada barra pelo DOM.
@@ -245,7 +245,7 @@ fonte (tooltip/rodapé D#/B#/W#). Validação de citação análoga à do `relat
    ter rótulo, não só algarismos.
 
 **Fora desta entrega**: promessa × entrega (§2), diff entre edições (§4), mapa da expansão (§6), briefing de uma
-página (§7) e grafo societário (§8); publicação do `coppezip-placar` no AgentCore (precisa do `placar.duckdb` no
+página (§7) e grafo societário (§8); publicação do `energynexus-placar` no AgentCore (precisa do `placar.duckdb` no
 S3 — os outros três MCP já rodam lá).
 
 **Resultado medido (26/09/2026, tudo rodado nesta máquina):**

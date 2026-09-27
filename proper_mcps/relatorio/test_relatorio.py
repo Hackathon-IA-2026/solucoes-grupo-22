@@ -129,6 +129,48 @@ def test_erro_de_latex_aponta_a_linha_do_conteudo(s):
     assert "linha 6 do conteúdo: Undefined control sequence" in r
 
 
+@pytest.mark.parametrize("conteudo, motivo", [
+    pytest.param(CONTEUDO.replace("da Taesa em 2025.", "da Taesa em"), "no meio da frase", id="paragrafo-do-meio"),
+    pytest.param(CONTEUDO.replace("da Taesa em 2025.", "da Taesa [...]"), "marca de corte", id="marca-de-corte"),
+    pytest.param(CONTEUDO + "\n\nEm 2026 a Taesa deve", "no meio da frase", id="fim-do-conteudo"),
+])
+def test_recusa_conteudo_truncado(s, tmp_path, conteudo, motivo):
+    """Dois relatórios da auditoria foram gravados cortados no meio da frase, com aparência de completos."""
+    r = gerar(s, conteudo)
+    assert r.startswith("Relatório NÃO gerado") and motivo in " ".join(r.split())
+    assert os.listdir(tmp_path) == []
+
+
+def test_aceita_citacao_literal_com_supressao_e_item_sem_ponto(s):
+    """A marca [...] no meio de uma citação literal é supressão, e item de lista pode acabar sem pontuação."""
+    conteudo = (CONTEUDO.replace("Este relatório descreve",
+                                 'A empresa afirma "reduzir emissões [...] até 2030" \\cite{taesa_rs_2025}. '
+                                 "Este relatório descreve")
+                .replace(r"\item Acompanhar a receita de 2026 \cite{cvm_dfp_2025}.",
+                         r"\item Acompanhar a receita de 2026 \cite{cvm_dfp_2025}"))
+    r = gerar(s, conteudo)
+    assert r.startswith("Relatório gerado"), r
+
+
+def test_avisa_tabela_que_nao_esta_no_catalogo_e_aceita_a_que_esta(s):
+    """A auditoria passou "tabela_que_nao_existe, conta 9.99" e o relatório saiu com cara de auditado."""
+    inventada = REFS.replace(r"Tabela/consulta: indicadores\_financeiros.",
+                             r"Tabela/consulta: tabela\_que\_nao\_existe, conta 9.99.")
+    r = gerar(s, referencias=inventada)
+    assert r.startswith("Relatório gerado")  # é aviso, não erro: fonte de documento e de link não têm tabela
+    assert "referência cvm_dfp_2025: 'tabela_que_nao_existe' não é uma tabela nem uma ferramenta" in r
+    certa = REFS.replace(r"Tabela/consulta: indicadores\_financeiros.", r"Tabela/consulta: kpis\_financeiros.")
+    assert "não é uma tabela" not in gerar(s, referencias=certa)
+
+
+def test_diz_que_a_conferencia_e_de_forma_nao_de_valor(s):
+    """O chat repassava "conferido automaticamente" ao usuário; a ferramenta não confere valor contra a base."""
+    r = gerar(s)
+    assert "Os valores NÃO foram reconferidos na base" in r
+    assert "nunca o valor em si contra a base" in server.__doc__
+    assert "não são reconferidos contra a base" in server.gerar_relatorio.__doc__
+
+
 @pytest.mark.parametrize("texto, tem", [
     ("Em 2025 a empresa cresceu.", False),          # ano não conta
     ("Dados do 2T26 e escopo 1.", False),           # trimestre e número de um dígito

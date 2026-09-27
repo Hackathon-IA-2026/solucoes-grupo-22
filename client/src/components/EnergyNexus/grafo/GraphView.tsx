@@ -77,7 +77,7 @@ import {
 } from './modelo';
 import './grafo.css';
 
-// Visualização do grafo de conhecimento de uma empresa (porte do KnowledgeGraph.jsx do CoppeZIP). O estilo está em
+// Visualização do grafo de conhecimento de uma empresa (porte do KnowledgeGraph.jsx do EnergyNexus). O estilo está em
 // grafo.css, com todas as classes prefixadas por kg- e as cores tiradas do tema do LibreChat (claro e escuro).
 
 const ICONES: Record<Icone, LucideIcon> = {

@@ -166,14 +166,22 @@ function iconeIndicador(rotulo: string): Icone {
 /** Primeiro endereço http citado no texto da fonte (as bases do ONS trazem o link do conjunto de dados). */
 const linkDaFonte = (texto: string) => /https?:\/\/[^\s,;)]+/.exec(texto)?.[0] ?? null;
 
-type Ligado = { c: Conjunto; iNome: number; iCnpj: number };
+type Ligado = { c: Conjunto; iNome: number; iCnpj: number; porEmpresa: boolean };
 
-/** Bases do painel ligadas a empresas: têm a coluna cnpj e a dimensão que nomeia a empresa (a que o filtro busca). */
+/**
+ * Bases do painel ligadas a empresas pelo CNPJ, com o papel que data/exportar_painel.py declara em cada dimensão.
+ * porEmpresa (dimensao_empresa): a linha é a empresa — uma por empresa e período — e só essas dizem quais empresas
+ * existem no acervo. As outras (dimensao_dono) são por ativo ou por contrato: um CNPJ aparece em centenas de linhas e
+ * o cadastro traz milhares de SPE e pessoas físicas, que não são empresas do acervo. Elas entram no grafo das empresas
+ * que já existem, sem criar nenhuma.
+ */
 function ligados(painel: Painel): Ligado[] {
   return painel.conjuntos.flatMap((c) => {
-    const dim = Object.keys(c.busca)[0];
+    const dim = c.dimensao_empresa ?? c.dimensao_dono;
     const iCnpj = indice(c, 'cnpj');
-    return dim && iCnpj >= 0 ? [{ c, iNome: indice(c, dim), iCnpj }] : [];
+    return dim && iCnpj >= 0
+      ? [{ c, iNome: indice(c, dim), iCnpj, porEmpresa: c.dimensao_empresa != null }]
+      : [];
   });
 }
 
@@ -194,24 +202,27 @@ export function listarEmpresas(painel: Painel, documentos: Documento[]): Empresa
     }
     return a;
   };
-  for (const { c, iNome, iCnpj } of ligados(painel)) {
-    for (const linha of c.linhas) {
-      const cnpj = digitosCnpj(linha[iCnpj]);
-      if (!cnpj) {
-        continue;
-      }
-      const a = de(cnpj);
-      if (!a.nomes.has(c.id)) {
-        a.nomes.set(c.id, String(linha[iNome]));
-        a.grupos.add(c.grupo);
-        a.bases.push(c.titulo);
-      }
-    }
-  }
   for (const d of documentos) {
     const cnpj = digitosCnpj(d.cnpj);
     if (cnpj) {
       de(cnpj).docs.push(d);
+    }
+  }
+  // Duas passadas, na ordem do papel e não na ordem do painel: primeiro o acervo (documentos e bases por empresa),
+  // depois as bases por ativo, que só entram em quem já está no acervo.
+  const ligacoes = ligados(painel);
+  for (const porEmpresa of [true, false]) {
+    for (const { c, iNome, iCnpj } of ligacoes.filter((l) => l.porEmpresa === porEmpresa)) {
+      for (const linha of c.linhas) {
+        const cnpj = digitosCnpj(linha[iCnpj]);
+        const a = cnpj ? (porEmpresa ? de(cnpj) : porCnpj.get(cnpj)) : undefined;
+        if (!a || a.nomes.has(c.id)) {
+          continue;
+        }
+        a.nomes.set(c.id, String(linha[iNome]));
+        a.grupos.add(c.grupo);
+        a.bases.push(c.titulo);
+      }
     }
   }
   const empresas = [...porCnpj.entries()].map(([cnpj, a]): Empresa => {

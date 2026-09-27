@@ -8,6 +8,7 @@ documentos.csv; credenciais da AWS em ~/.aws/credentials e região BEDROCK_AWS_D
 """
 import json
 import os
+import re
 import threading
 
 import boto3
@@ -63,11 +64,33 @@ def _embed(texto: str) -> list[float]:
     return json.loads(r["body"].read())["embedding"]
 
 
+SEM_AREA = re.compile(r'column[^"]*"area"', re.I)  # BinderException de índice antigo, sem a coluna que _filtro usa
+
+
+def _erro_consulta(e: Exception) -> ToolError:
+    """Erro cru do DuckDB vira só "Error executing tool" para o modelo e parece falha passageira; ToolError diz o
+    motivo (índice de outra versão, sem a coluna area, sem o índice fts) e o que fazer."""
+    if SEM_AREA.search(str(e)):
+        return ToolError(f"base de documentos indisponível: o índice {os.path.basename(DB)} não tem a coluna area, que "
+                         "as três ferramentas devolvem; refaça com data/indexar_docs_titan.py (chamar sem o filtro "
+                         "area não resolve)")
+    return ToolError(f"base de documentos indisponível: a consulta falhou no índice {os.path.basename(DB)} ({e}); "
+                     "se o índice for de uma versão antiga, refaça com data/indexar_docs_titan.py")
+
+
 def _con():
     if not os.path.exists(DB):
         raise ToolError(f"base de documentos indisponível: o índice {DB} não existe (data/indexar_docs_titan.py)")
-    con = duckdb.connect(DB, read_only=True)
-    con.execute("LOAD fts")
+    try:
+        con = duckdb.connect(DB, read_only=True)
+    except duckdb.Error as e:  # arquivo de outra versão do DuckDB, ou interrompido no meio da indexação
+        raise _erro_consulta(e)
+    try:
+        con.execute("LOAD fts")  # BM25 das palavras; o AgentCore instala a extensão na subida do runtime
+    except duckdb.Error as e:
+        con.close()
+        raise ToolError(f"base de documentos indisponível: a extensão fts do DuckDB não carregou ({e}); instale com "
+                        "INSTALL fts no mesmo Python que roda o servidor")
     return con
 
 
@@ -115,6 +138,8 @@ def buscar_documentos(consulta: str, empresa: str | None = None, ano: int | None
         linhas = con.execute("""
             SELECT t.id, d.empresa, d.ano, d.titulo, t.arquivo, t.pagina, t.texto, d.area
             FROM trechos t JOIN documentos d USING (arquivo) WHERE t.id IN (SELECT unnest(?))""", [melhores]).fetchall()
+    except duckdb.Error as e:
+        raise _erro_consulta(e)
     finally:
         con.close()
     por_id = {r[0]: r for r in linhas}
@@ -134,6 +159,8 @@ def ler_pagina(arquivo: str, pagina: int) -> dict:
         if not doc:
             return {"erro": f"arquivo '{arquivo}' não existe; use listar_documentos"}
         linha = con.execute("SELECT texto FROM paginas WHERE arquivo = ? AND pagina = ?", [arquivo, int(pagina)]).fetchone()
+    except duckdb.Error as e:
+        raise _erro_consulta(e)
     finally:
         con.close()
     if not linha:
@@ -155,6 +182,8 @@ def listar_documentos(empresa: str | None = None, area: str | None = None, ano: 
                               WHERE {onde} ORDER BY d.ano DESC, d.empresa, d.arquivo LIMIT {MAX_LISTA}""", params)
         nomes = [c[0] for c in cur.description]
         docs = [dict(zip(nomes, r)) for r in cur.fetchall()]
+    except duckdb.Error as e:
+        raise _erro_consulta(e)
     finally:
         con.close()
     total = sum(c[3] for c in contagem)

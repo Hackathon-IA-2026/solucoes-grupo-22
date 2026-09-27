@@ -1,5 +1,5 @@
 """Servidor MCP "energynexus-placar": consulta o Placar da Transição (dados ESG extraídos dos relatórios para
-data/placar.duckdb) e cruza com o banco estruturado (data/coppezip.duckdb) para métricas híbridas, radar de
+data/placar.duckdb) e cruza com o banco estruturado (data/energynexus.duckdb) para métricas híbridas, radar de
 consistência (anti-greenwashing) e exposição a preço de carbono. Também monta as telas (artefato HTML
 autocontido em .runtime/relatorios, aberto em /relatorios/) do ranking, do radar e da exposição a carbono.
 
@@ -17,7 +17,7 @@ from mcp.server.mcpserver import MCPServer
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PLACAR = os.path.join(RAIZ, "data", "placar.duckdb")
-COPPEZIP = os.path.join(RAIZ, "data", "coppezip.duckdb")
+ENERGYNEXUS = os.path.join(RAIZ, "data", "energynexus.duckdb")
 
 # fontes de geração consideradas renováveis (SIGA/ANEEL): hídrica, eólica, solar, biomassa
 RENOVAVEL = ("UHE", "PCH", "CGH", "EOL", "UFV", "BIO")
@@ -45,7 +45,7 @@ def _con():
     con = duckdb.connect(PLACAR, read_only=True)
     # IF NOT EXISTS: o servidor atende chamadas concorrentes e o catálogo do banco é compartilhado no processo;
     # sem isso, um segundo ATTACH simultâneo falharia com "fin já existe".
-    con.execute(f"ATTACH IF NOT EXISTS '{COPPEZIP}' AS fin (READ_ONLY)")
+    con.execute(f"ATTACH IF NOT EXISTS '{ENERGYNEXUS}' AS fin (READ_ONLY)")
     return con
 
 
@@ -538,7 +538,7 @@ def tela_ranking(metrica: str = "score_divulgacao", ano: int | None = None, limi
                    f". Gerado pelo EnergyNexus em {datetime.now():%d/%m/%Y %H:%M}.", corpo,
                    ["Emissões, metas, % renovável e frameworks: relatórios das empresas (arquivo e página na tabela), "
                     "extraídos com checagem de que o valor aparece na página citada.",
-                    "Receita, EBITDA e lucro: kpis_financeiros (CVM, consolidado) — data/coppezip.duckdb.",
+                    "Receita, EBITDA e lucro: kpis_financeiros (CVM, consolidado) — data/energynexus.duckdb.",
                     dados.get("nota") or ""])
     return {"gravado": True, "tela": _gravar(f"placar-{metrica}", html), "empresas": len(itens),
             "metrica": metrica, "proximo_passo": "mostre o link ao usuário e resuma o topo do ranking no texto"}
@@ -636,7 +636,7 @@ def tela_carbono(preco_por_t: float = 100.0, escopos: list[str] | None = None) -
                    f"Gerado pelo EnergyNexus em {datetime.now():%d/%m/%Y %H:%M}.", corpo,
                    ["Emissões por escopo: relatórios das empresas (arquivo e página em consultar_placar), só valores "
                     "com a fonte confirmada na página.",
-                    "EBITDA e lucro líquido: kpis_financeiros (CVM, consolidado) — data/coppezip.duckdb.",
+                    "EBITDA e lucro líquido: kpis_financeiros (CVM, consolidado) — data/energynexus.duckdb.",
                     dados["nota"]],
                    JS_CARBONO.replace("__DADOS__", json.dumps(linhas, ensure_ascii=False).replace("</", "<\\/")))
     return {"gravado": True, "tela": _gravar("carbono", html), "empresas": len(linhas),

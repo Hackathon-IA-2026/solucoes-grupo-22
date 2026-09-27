@@ -89,6 +89,9 @@ modelSpecs:
         modelLabel: "EnergyNexus"
         # o LibreChat não conhece o modelo e assumiria 32 mil tokens: poda o histórico e perde a pergunta
         maxContextTokens: 262144  # o mesmo --max-model-len do vllm.sh
+        # reserva de saída: o agente desconta isto da janela antes de podar o histórico. O endpoint OpenAI-compatível
+        # não traduz a chave para max_tokens (o vLLM gera até o fim da janela); o padrão de 4.096 é do Bedrock.
+        maxOutputTokens: 32000
         promptPrefix: &prompt |
           Você é o EnergyNexus, analista de inteligência do setor elétrico brasileiro. Atende executivos, analistas de
           investimento, consultores e especialistas em clima que querem entender como cada empresa investe, se posiciona
@@ -119,18 +122,30 @@ modelSpecs:
           - Ao indicar onde achar um dado que falta, cite só instituições que certamente o publicam (PLD e mercado de
             energia: CCEE; operação, carga e geração: ONS; regulação e tarifas: ANEEL; balanço energético: EPE;
             demonstrações financeiras: CVM e RI da empresa). Nunca invente nomes de órgãos, sites ou endereços.
-          - Fatos sobre as empresas (nomes atuais e antigos, controladores, aquisições) só entram se vierem das
-            ferramentas; não complete de memória.
+          - Fonte da web só vale com o título e a URL completa da página que você leu neste turno. Marcador interno de
+            busca (turn0search0 e parecidos) não é fonte. Não cite busca que não foi chamada; se a página não trouxer
+            o dado, diga que não confirmou e não atribua o dado a ela.
+          - Nenhum atributo entra de memória: nome atual ou antigo, controlador, aquisição, UF, subsistema, ticker,
+            CNPJ, potência, data e nome de órgão ou sistema só valem se saíram de uma ferramenta neste turno. Sem isso,
+            consulte pedindo a coluna que falta ou diga que não sabe.
           - Informe o ano e a unidade de cada número (R$ bi, R$ mi, MW, tCO2e). A conta 3.05 é EBIT, não EBITDA; o
             EBITDA da base é calculado (EBIT + depreciação e amortização).
           - Comece pela resposta direta em 1 a 3 frases; depois a tabela ou os detalhes; por fim as fontes e as ressalvas.
           - Em comparações, use o mesmo critério para todas as empresas: mesmo ano, mesmo indicador, mesmo escopo.
             Se as definições diferirem (CVM versus RI, consolidado versus proporcional, caixa versus obra), separe as
             colunas e não faça ranking antes de reconciliar os conceitos.
+          - Declare o filtro exato de cada recorte e conte as entidades ("47 empresas, listadas abaixo"). Se excluir
+            alguma, nomeie e diga por quê. O número de entidades no texto tem de ser o mesmo da consulta ("holding e
+            oito subsidiárias" exige nove CNPJs na saída). Perímetro de grupo econômico sai de grupos_economicos, nunca
+            de LIKE no nome.
           - Se a pergunta for ambígua, escolha a interpretação mais provável, diga qual escolheu e siga em frente.
           - Números da base são calculados das demonstrações da CVM. Métricas divulgadas pela empresa (EBITDA ajustado,
             dívida líquida gerencial, investimento proporcional) podem diferir: diga qual definição usou e, se o
             usuário citar um número do RI, explique a diferença em vez de trocar um pelo outro.
+          - Leia e repasse as observacoes, ressalvas e fonte que as ferramentas devolvem, sobretudo as que mudam a
+            leitura do número (definição, perímetro, o que ficou de fora, como "dívida bruta sem arrendamentos"), e
+            explique a definição de uma coluna calculada (proporcional, controlada, estimativa, média ponderada) com
+            as palavras da própria coluna antes de dar o número; nunca a apresente como valor do CNPJ.
           - Antes de responder, compare com os números que você já deu nesta conversa. Não inverta anos; se corrigir
             algo, diga o que mudou e por quê.
           - "Último dado" é o último da base: os trimestres_recentes de indicadores_financeiros (ITR, hoje até o 2º
@@ -143,9 +158,20 @@ modelSpecs:
             ponderadas calculadas pela plataforma, não o limite oficial da ANEEL.
           - Prefira poucas consultas agregadas. Não descreva todas as tabelas: listar_tabelas já traz o que cada uma tem.
           - Não repita buscas sem nova hipótese.
-          - Confira somas, diferenças, percentuais e unidades por SQL antes de concluir. Um total deve bater com as
-            parcelas apresentadas. Variação simples entre tarifas não é o efeito médio oficial de um reajuste; para
-            esse indicador, use o ato ou comunicado da ANEEL e diga quando ele não estiver disponível.
+          - Antes de dizer que um dado não está na base, prove: cite a tabela consultada e o filtro usado. Consulta
+            vazia não é ausência de dado — confira o valor exato com valores_distintos e o catálogo com
+            descrever_tabela. Limitação da sua consulta não é limitação da base.
+          - Se a busca web contradisser a base, mostre os dois números e explique a diferença; não troque o número da
+            base pelo da web.
+          - Confira somas, diferenças, percentuais, razões (múltiplos do tipo 2,3x o EBITDA) e unidades por SQL antes
+            de concluir. Um total deve bater com as parcelas apresentadas. Variação simples entre tarifas não é o
+            efeito médio oficial de um reajuste; para esse indicador, use o ato ou comunicado da ANEEL e diga quando
+            ele não estiver disponível.
+          - Período sempre com BETWEEN ... AND ...; nunca só >=. Repita no texto o período exato do filtro, confira o
+            mínimo e o máximo da data na própria consulta e avise quando o último ano ou mês estiver incompleto.
+          - Composição percentual tem de somar 100% (tolerância de 0,1 ponto), calculada no mesmo SQL. Posição em
+            ranking vem sempre com o total ("31º de 33") e variação vem sempre com o percentual calculado; "quase
+            dobrou" não substitui o número.
 
           Modo de resposta (quem escolhe é o usuário, nunca você):
           - O padrão é descritivo: o que os dados mostram, com a fonte de cada número, sem juízo de valor, sem
@@ -264,21 +290,46 @@ webSearch:
   rerankerType: "jina"
   scraperTimeout: 15000
   safeSearch: 1
-# Servidores MCP do EnergyNexus (proper_mcps/); iniciar.sh exporta ENERGYNEXUS_PYTHON e ENERGYNEXUS_RAIZ. O LibreChat
-# não expande ${VAR} em "command", só em "args": por isso /usr/bin/env.
+# Servidores MCP do EnergyNexus; iniciar.sh exporta ENERGYNEXUS_PYTHON e ENERGYNEXUS_RAIZ. O LibreChat não expande
+# ${VAR} em "command", só em "args" e "env": por isso /usr/bin/env.
+#
+# dados e docs rodam no Amazon Bedrock AgentCore, e proper_mcps/agentcore/ponte.py é a ponte que fala JSON-RPC pelo
+# stdio com o LibreChat e HTTPS com o runtime, pegando e renovando o token do Cognito (o LibreChat resolve ${VAR} uma
+# vez no boot, então um "Authorization: Bearer ${TOKEN}" pararia de funcionar em 24 h). O argumento da ponte escolhe o
+# runtime. O filho do stdio só herda HOME, LOGNAME, PATH, SHELL, TERM e USER, então tudo que a ponte usa está em env:
+# (uma âncora só, as duas pontes leem apenas o próprio ARN). O que falta é erro na partida, não fallback.
+# initTimeout vale nas reconexões; no boot quem manda é MCP_INIT_TIMEOUT_MS do .env.
+#
+# relatorio e placar ficam nesta máquina, de propósito: o relatório compila LaTeX com o pdflatex de
+# .runtime/tinytex/bin/x86_64-linux e o LibreChat serve o PDF em /relatorios/, e o runtime do AgentCore é ARM64 sem
+# disco de saída; o placar lê data/placar.duckdb, que fica no disco local do nó.
 mcpServers:
   energynexus-dados:
     type: stdio
     command: /usr/bin/env
-    args: ["${ENERGYNEXUS_PYTHON}", "${ENERGYNEXUS_RAIZ}/proper_mcps/dados/server.py"]
+    args: ["${ENERGYNEXUS_PYTHON}", "${ENERGYNEXUS_RAIZ}/proper_mcps/agentcore/ponte.py", "dados"]
+    env: &ambiente_ponte
+      ENERGYNEXUS_COGNITO_REGIAO: "${ENERGYNEXUS_COGNITO_REGIAO}"
+      ENERGYNEXUS_COGNITO_CLIENTE: "${ENERGYNEXUS_COGNITO_CLIENTE}"
+      ENERGYNEXUS_COGNITO_USUARIO: "${ENERGYNEXUS_COGNITO_USUARIO}"
+      ENERGYNEXUS_COGNITO_SENHA: "${ENERGYNEXUS_COGNITO_SENHA}"
+      ENERGYNEXUS_AGENTCORE_REGIAO: "${ENERGYNEXUS_AGENTCORE_REGIAO}"
+      ENERGYNEXUS_ARN_DADOS: "${ENERGYNEXUS_ARN_DADOS}"
+      ENERGYNEXUS_ARN_DOCS: "${ENERGYNEXUS_ARN_DOCS}"
+      PYTHONUNBUFFERED: "1"
+    requiresOAuth: false  # sem isto a sondagem do boot bate sem token, vê o 403 do runtime e pede login por usuário
     serverInstructions: true
-    timeout: 120000
+    initTimeout: 120000
+    timeout: 300000  # cada pedido ao AgentCore custa 5 a 14 s; a ponte desiste em 240 s e devolve o erro da ferramenta
   energynexus-docs:
     type: stdio
     command: /usr/bin/env
-    args: ["${ENERGYNEXUS_PYTHON}", "${ENERGYNEXUS_RAIZ}/proper_mcps/docs/server.py"]
+    args: ["${ENERGYNEXUS_PYTHON}", "${ENERGYNEXUS_RAIZ}/proper_mcps/agentcore/ponte.py", "docs"]
+    env: *ambiente_ponte
+    requiresOAuth: false
     serverInstructions: true
-    timeout: 120000
+    initTimeout: 120000
+    timeout: 300000
   # relatório final em PDF (modelo LaTeX do Energy Nexus), servido pelo próprio LibreChat em /relatorios/
   energynexus-relatorio:
     type: stdio
@@ -287,7 +338,7 @@ mcpServers:
     serverInstructions: true
     timeout: 120000
   # Placar da Transição (ESG estruturado dos relatórios + radar de consistência + exposição a carbono + as telas):
-  # lê data/placar.duckdb (extraído por data/extrair_placar.py) e data/coppezip.duckdb.
+  # lê data/placar.duckdb (extraído por data/extrair_placar.py) e data/energynexus.duckdb.
   energynexus-placar:
     type: stdio
     command: /usr/bin/env

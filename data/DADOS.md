@@ -1,27 +1,74 @@
 # Dados do EnergyNexus
 
-Tabelas e visões do `coppezip.duckdb` em 25/09/2026, geradas do catálogo por `data/documentar.py`. Não edite à mão: descrição, fonte e ressalvas vêm do catálogo em `data/construir.py`, o mesmo texto que o modelo lê. O formato dos arquivos brutos de cada fonte está em `researches/DATA_DICTIONARY.md`.
+Tabelas e visões do `energynexus.duckdb` em 26/09/2026, geradas do catálogo por `data/documentar.py`. Não edite à mão: descrição, fonte e ressalvas vêm do catálogo em `data/construir.py`, o mesmo texto que o modelo lê. O formato dos arquivos brutos de cada fonte está em `data/raw/README.md` (e o levantamento inicial, em `researches/DATA_DICTIONARY.md`).
 
 | Tabela | Linhas | Descrição | Fonte |
 |---|---:|---|---|
 | [`agentes_aneel`](#agentes_aneel) | 9.956 | Cadastro de agentes da ANEEL: CNPJ, sigla e razão social de geradoras, transmissoras, distribuidoras e comercializadoras (inclusive as que não são companhias abertas). Use para achar o CNPJ de uma empresa que não está em empresas. | ANEEL, Agentes do Setor Elétrico, https://dadosabertos.aneel.gov.br/dataset/agentes-do-setor-eletrico |
+| [`b3_iee_carteira`](#b3_iee_carteira) | 12 | Carteira teórica do IEE (Índice de Energia Elétrica da B3) na data data_carteira: as ações do setor elétrico que compõem o índice, com o peso de cada uma em % e a quantidade teórica. É o universo de comparação do mercado para o setor: quem está no índice, e quanto cada empresa pesa. cnpj vem do ticker (empresas_apelidos) quando a empresa tem registro na CVM. | B3, API de índices (GetPortfolioDay, índice IEEX), https://www.b3.com.br/pt_br/market-data-e-indices/indices/indices-de-segmentos-e-setoriais/indice-de-energia-eletrica-iee-b3.htm |
+| [`balanco_energia_distribuidoras`](#balanco_energia_distribuidoras) | 549.552 | Balanço mensal de energia de cada distribuidora desde 2003, em MWh: disponibilidades (energia recebida, injetada, geração própria), requisitos (energia vendida e entregue por mercado) e saldo (perdas técnicas, não técnicas e totais, medidas e faturadas). fluxo = Disponibilidades, Requisitos ou Saldo; modalidade é a linha do balanço; rubrica detalha a modalidade; medida diz se é energia medida, faturada, calculada ou gerada e o nível de tensão. Para perdas prontas use perdas_distribuicao_anual. | ANEEL, SAMP - balanço de energia, https://dadosabertos.aneel.gov.br/dataset/samp |
 | [`bandeiras_tarifarias`](#bandeiras_tarifarias) | 141 | Bandeira tarifária acionada pela ANEEL em cada mês (Verde, Amarela, Vermelha P1, Vermelha P2, Escassez Hídrica) e o adicional cobrado na conta, em R$/MWh, desde 2015. | ANEEL, Bandeiras Tarifárias - Acionamento, https://dadosabertos.aneel.gov.br/dataset/bandeiras-tarifarias |
+| [`bandeiras_tarifarias_valores`](#bandeiras_tarifarias_valores) | 27 | Tabela de adicionais das bandeiras tarifárias: quanto cada bandeira custa, em R$/MWh, a partir de cada resolução homologatória da ANEEL (2015 em diante). É o preço da bandeira; qual bandeira valeu em cada mês está em bandeiras_tarifarias. | ANEEL, Bandeiras Tarifárias - Adicional, https://dadosabertos.aneel.gov.br/dataset/bandeiras-tarifarias |
+| [`bndes_desembolsos_setor_mensal`](#bndes_desembolsos_setor_mensal) | 1.500 | Desembolsos totais do BNDES por mês e macro-setor CNAE (Agropecuária, Indústria extrativa, Indústria de transformação, Comércio e serviços), em R$, desde janeiro de 1995. Uma linha por mês e setor: some por ano para o desembolso anual do banco, ou filtre o setor para a série setorial. Serve de denominador para pôr o financiamento do setor elétrico (bndes_operacoes) em perspectiva. | BNDES dados abertos, desembolsos por setor CNAE (valores da origem em R$ milhões, convertidos para R$ aqui) |
 | [`bndes_operacoes`](#bndes_operacoes) | 23.815 | Operações de financiamento não automáticas do BNDES (contratos diretos e indiretos), com cliente, CNPJ, projeto, valores contratado e desembolsado em R$, custo e prazos. setor_eletrico marca geração, transmissão e distribuição. | BNDES dados abertos, operações não automáticas |
-| [`capacidade_por_grupo`](#capacidade_por_grupo) | 7.026 | Capacidade de geração (SIGA) atribuída a cada grupo ou empresa participante, direta ou indiretamente, por origem, tipo e fase. potencia_proporcional_mw = potência × participação do dono na usina × participação indireta do participante no dono (visão proporcional); potencia_controlada_mw = potência × participação do dono, só nas usinas cujo dono o participante controla (visão consolidada). Para ranking de grupos filtre fase = 'Operação' e agrupe por chave_participante. | ANEEL SIGA e Composição Societária (Polímero); cálculo desta plataforma |
+| [`capacidade_por_grupo`](#capacidade_por_grupo) | 7.010 | Capacidade de geração (SIGA) atribuída a cada grupo ou empresa participante, direta ou indiretamente, por origem, tipo e fase. potencia_proporcional_mw = potência × participação do dono na usina × participação indireta do participante no dono (visão proporcional); potencia_controlada_mw = potência × participação do dono, só nas usinas cujo dono o participante controla (visão consolidada). Para ranking de grupos filtre fase = 'Operação' e agrupe por chave_participante. | ANEEL SIGA e Composição Societária (Polímero); cálculo desta plataforma |
 | [`capacidade_por_proprietario`](#capacidade_por_proprietario) | visão | Capacidade instalada em MW por dono (CNPJ), origem, tipo e fase, já ponderada pela participação de cada dono. | ANEEL SIGA |
+| [`capital_social_acoes`](#capital_social_acoes) | 1.531 | Quantidade de ações de cada empresa em cada data de referência (DFP anual e ITR trimestral): ordinárias, preferenciais, total, o que está em tesouraria e as ações em circulação (total menos tesouraria). Serve para lucro por ação e para peso de cada classe. | CVM DFP e ITR, composição do capital |
 | [`compensacoes_continuidade`](#compensacoes_continuidade) | 10.015.978 | Compensações pagas pelas distribuidoras aos consumidores por violação dos limites de continuidade, por conjunto e mês: PGU* = valor pago em R$, QTU* = quantidade de unidades compensadas (a coluna descricao explica cada código). | ANEEL, compensação por violação de continuidade |
 | [`composicao_societaria`](#composicao_societaria) | 73.056 | Cadeia societária declarada à ANEEL por cada agente do setor (usina, transmissora, distribuidora), da declaração mais recente: sócios diretos (nivel 1) e indiretos (nivel 2, 3...) até o controlador final. participacao_indireta_pct é a participação efetiva do sócio no agente (já multiplicada ao longo da cadeia). Para somar por grupo use participacoes_societarias, grupos_economicos e capacidade_por_grupo. | ANEEL, Composição Societária (Polímero), https://dadosabertos.aneel.gov.br/dataset/composicao-societaria-polimero |
-| [`contas_cvm`](#contas_cvm) | 312.693 | Todas as contas das demonstrações financeiras anuais (DFP) das empresas do setor, de 2020 em diante, já em R$ (escala MIL aplicada), última versão entregue. demonstrativo: BPA, BPP, DRE, DFC_MI, DFC_MD, DVA; escopo: consolidado ou individual. Prefira kpis_financeiros para indicadores prontos. | CVM, DFP (dados.cvm.gov.br) |
-| [`contas_cvm_trimestral`](#contas_cvm_trimestral) | 462.169 | Contas das demonstrações trimestrais (ITR) de 2024 em diante, em R$: periodo = trimestre (só os 3 meses), acumulado (desde janeiro) ou saldo (balanço no fim do trimestre). O 4º trimestre não existe no ITR: está na DFP anual. | CVM, ITR (dados.cvm.gov.br) |
+| [`contas_cvm`](#contas_cvm) | 318.528 | Todas as contas das demonstrações financeiras anuais (DFP) das empresas do setor, de 2020 em diante, já em R$ (escala MIL aplicada), última versão entregue. demonstrativo: BPA e BPP (balanço), DRE, DRA (resultado abrangente), DFC_MI e DFC_MD (fluxo de caixa), DVA; escopo: consolidado ou individual. As mutações do patrimônio líquido estão em mutacoes_patrimonio_liquido. Prefira kpis_financeiros para indicadores prontos. | CVM, DFP (dados.cvm.gov.br) |
+| [`contas_cvm_trimestral`](#contas_cvm_trimestral) | 474.590 | Contas das demonstrações trimestrais (ITR) de 2024 em diante, em R$: periodo = trimestre (só os 3 meses), acumulado (desde janeiro) ou saldo (balanço no fim do trimestre). O 4º trimestre não existe no ITR: está na DFP anual. | CVM, ITR (dados.cvm.gov.br) |
 | [`continuidade_conjuntos`](#continuidade_conjuntos) | 5.108.332 | Indicadores de continuidade por conjunto de consumidores e mês (2020 em diante): DEC em horas e FEC em interrupções, com os componentes (programada, externa, dia crítico...) e NumCon (número de consumidores do conjunto). | ANEEL, indicadores coletivos de continuidade |
-| [`continuidade_limites`](#continuidade_limites) | 263.401 | Limites regulatórios anuais de DEC e FEC por conjunto de consumidores, definidos pela ANEEL. | ANEEL |
+| [`continuidade_limites`](#continuidade_limites) | 263.401 | Limites regulatórios anuais de DEC e FEC por conjunto de consumidores, definidos pela ANEEL. Compare com continuidade_conjuntos (o realizado) para ver quem estourou o limite. | ANEEL |
 | [`curtailment_por_dono_mensal`](#curtailment_por_dono_mensal) | visão | Estimativa da energia cortada (curtailment) por dono de usina (CNPJ) e mês, eólica e solar. | ONS e ANEEL SIGA; cálculo desta plataforma |
 | [`curtailment_por_grupo_mensal`](#curtailment_por_grupo_mensal) | visão | Estimativa da energia eólica e solar cortada (curtailment) por grupo econômico e mês: proporcional à participação indireta do grupo em cada SPE e controlada (100% das SPEs que o grupo controla). | ONS, ANEEL SIGA e Composição Societária; cálculo desta plataforma |
 | [`debentures_incentivadas`](#debentures_incentivadas) | 777 | Emissões de debêntures incentivadas de infraestrutura (Lei 12.431), com emissora, código, valor em R$, taxa e indexador. setor = 'Energia Elétrica' para o setor. | ANBIMA, planilha de debêntures incentivadas (até 04/2024) |
-| [`debentures_snd`](#debentures_snd) | 10.008 | Todas as debêntures registradas no SND (Sistema Nacional de Debêntures), com CNPJ da emissora, data de emissão e de vencimento, indexador (DI, IPCA, PRE...) e taxa, se é incentivada (Lei 12.431), garantia, quantidade e saldo em mercado. setor_eletrico marca emissoras do setor (CVM ou agentes da ANEEL). Use para cronograma de vencimentos e custo da dívida em debêntures de uma empresa (filtre situacao = 'Registrado' para as vigentes). | SND/ANBIMA, Características das Debêntures, https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_r.asp |
+| [`debentures_incentivadas_portarias`](#debentures_incentivadas_portarias) | 81 | As portarias ministeriais que AUTORIZARAM debêntures incentivadas de infraestrutura (Lei 12.431), de 2012 a 2015: número e data da portaria, ministério, titular do projeto (a SPE), controladores em holding_spe, e, quando a debênture foi de fato emitida, o código do ativo, a série beneficiada, o volume total e a parcela incentivada (em R$ milhões), o regime de distribuição (ICVM 400 ou 476), o vencimento, o indexador e a taxa. É a camada de autorização que falta em debentures_snd e debentures_incentivadas: quem autorizou, quando, e quanto do autorizado virou emissão. | ANBIMA e ministérios, planilha de debêntures incentivadas da Lei 12.431, aba 'ICVM 400 e 476' (cvm/deb_incentivadas.xls) |
+| [`debentures_snd`](#debentures_snd) | 10.008 | Todas as debêntures registradas no SND (Sistema Nacional de Debêntures), com CNPJ da emissora, data de emissão e de vencimento, indexador (DI, IPCA, PRE...) e taxa, se é incentivada (Lei 12.431), garantia, quantidade e saldo em mercado. Três marcas de origem, independentes: emissora_cvm (1.283 debêntures de companhia de energia registrada na CVM, tabela empresas), concessionaria_aneel (1.146, agente de transmissão ou distribuição) e gerador_ou_autoprodutor_aneel (2.624, tem outorga de geração — inclui AUTOPRODUTOR industrial, que gera para a própria fábrica). setor_eletrico = emissora_cvm OR concessionaria_aneel (1.629 debêntures). Use para cronograma de vencimentos e custo da dívida em debêntures de uma empresa (filtre situacao = 'Registrado' para as vigentes). | SND/ANBIMA, Características das Debêntures, https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_r.asp |
 | [`dec_fec_distribuidora_anual`](#dec_fec_distribuidora_anual) | visão | DEC (horas) e FEC (interrupções) anuais de cada distribuidora, com os limites da ANEEL e o número médio de consumidores, de 2020 em diante. | ANEEL, indicadores coletivos de continuidade; cálculo desta plataforma |
+| [`dicionario_cvm`](#dicionario_cvm) | 146 | Dicionário de dados da CVM: o que significa cada campo dos arquivos de DFP e ITR (CD_CONTA, ESCALA_MOEDA, ORDEM_EXERC, GRUPO_DFP, ST_CONTA_FIXA...), com a descrição oficial, o domínio e o tipo. demonstrativo diz a que arquivo o campo pertence: BPA e BPP (balanço patrimonial ativo e passivo), DRE, DRA, DFC_MI e DFC_MD (fluxo de caixa indireto e direto), DVA, DMPL, composicao_capital, parecer e indice_documentos. Consulte aqui antes de interpretar as colunas cruas de contas_cvm e contas_cvm_trimestral. | CVM, dicionário de dados dos pacotes de DFP (cvm/meta_dfp/*.txt) |
+| [`documentos_cvm`](#documentos_cvm) | 2.123 | Documentos que cada empresa entregou à CVM (DFP anual, ITR trimestral e FCA cadastral), com a data de recebimento, a versão e o link para baixar o documento original no sistema RAD da CVM. | CVM, índice de documentos dos pacotes DFP, ITR e FCA |
 | [`empresas`](#empresas) | 151 | Companhias abertas do setor elétrico registradas na CVM (uma linha por CNPJ). Use buscar_empresa para achar o CNPJ. | CVM, cadastro de companhias abertas (cad_cia_aberta.csv) |
 | [`empresas_apelidos`](#empresas_apelidos) | 153 | Apelidos, marcas, nomes antigos e tickers da B3 de cada empresa, ligados ao CNPJ (base da ferramenta buscar_empresa). | CVM FCA (valores mobiliários negociados) e lista curada de apelidos |
+| [`empresas_auditoria`](#empresas_auditoria) | 188 | Auditores independentes de cada empresa (uma linha por período de atuação): firma, CNPJ, código CVM, responsável técnico e datas de início e fim. Serve para ver troca de auditor e tempo de casa. | CVM FCA, formulário cadastral (dados.cvm.gov.br) |
+| [`empresas_cadastro_fca`](#empresas_cadastro_fca) | 115 | Cadastro declarado pela própria empresa no FCA: nome atual e anterior, data de constituição, registro na CVM, situação do emissor, espécie de controle acionário, atividade, fim do exercício social e site. Complementa empresas. | CVM FCA, formulário cadastral (dados.cvm.gov.br) |
+| [`empresas_contatos`](#empresas_contatos) | 476 | Endereços e contatos declarados no FCA, numa tabela só: categoria = endereço (sede e correspondência), DRI (diretor de relações com investidores), escriturador ou departamento de acionistas. Traz logradouro, cidade, UF, CEP, telefone e e-mail. | CVM FCA, formulário cadastral (dados.cvm.gov.br) |
+| [`empresas_divulgacao`](#empresas_divulgacao) | 240 | Jornais e canais em que cada empresa publica seus atos societários, por UF. | CVM FCA, formulário cadastral (dados.cvm.gov.br) |
+| [`empresas_negociacao_exterior`](#empresas_negociacao_exterior) | 8 | Países onde os papéis da empresa também são negociados (ADR, listagem no exterior) e a data de admissão. | CVM FCA, formulário cadastral (dados.cvm.gov.br) |
+| [`empresas_valores_mobiliarios`](#empresas_valores_mobiliarios) | 161 | Valores mobiliários de cada empresa (ações ON/PN, units, debêntures, BDR...): ticker, mercado, bolsa, segmento de listagem e datas de início e fim de negociação. em_negociacao = true quando não há data de fim. | CVM FCA, formulário cadastral (dados.cvm.gov.br) |
+| [`epe_anuario_consumo_mensal`](#epe_anuario_consumo_mensal) | 423.751 | Consumo de energia elétrica e número de consumidores REALIZADOS, mês a mês de 01/2011 a 12/2025, por UF, subsistema, tipo de consumidor (Cativo ou Livre), classe de consumo em três níveis (classe, subclasse, subclasse_detalhe), grupo e subgrupo de tensão e faixa de consumo em kWh. consumo_mwh em MWh; consumidores é o estoque de unidades consumidoras do mês. É a série de consumo mais longa e mais detalhada do banco: começa em 2011, inclui consumidor livre e é a única com abertura por faixa de consumo e por nível de tensão. | EPE, Anuário Estatístico de Energia Elétrica, base bruta de consumo (anuario_dados_brutos.xlsx) |
+| [`epe_pde2035_autoproducao_nao_injetada`](#epe_pde2035_autoproducao_nao_injetada) | 6 | Autoprodução de eletricidade de grande porte NÃO injetada na rede, em TWh, nos três anos de corte do plano (2025, 2030 e 2035), por segmento: 'Grandes Consumidores' e 'Outros'. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 09, aba Figura 9-39 |
+| [`epe_pde2035_capacidade_instalada_fonte`](#epe_pde2035_capacidade_instalada_fonte) | 110 | Capacidade instalada existente e contratada do SIN por fonte, ano a ano de 2025 a 2035, em GW. 10 fontes (UHE, PCH, EOLICA, Solar, GAS, CARVAO, NUCLEAR, BIOMASSA, PCT e DIESEL / ÓLEO). | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figura 3-6 |
+| [`epe_pde2035_carga_energia_cenario`](#epe_pde2035_carga_energia_cenario) | 33 | Carga de energia do SIN projetada ano a ano (2025-2035) nos três cenários de demanda da EPE (Cenário Inferior, Referência e Superior), em GW médio. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 02, aba Figura 2-25 |
+| [`epe_pde2035_cargas_conexao_rede_basica`](#epe_pde2035_cargas_conexao_rede_basica) | 13 | Potência dos projetos de data center e de hidrogênio/amônia com processo de conexão à Rede Básica aberto no MME, por ano de entrada pretendida, de 2026 a 2038, em GW. data_center_gw e hidrogenio_amonia_gw são a adição do ano; carga_acumulada_gw é o estoque. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 04, aba Figura 4-3 |
+| [`epe_pde2035_cmo_projetado_mes`](#epe_pde2035_cmo_projetado_mes) | 36 | Custo marginal de operação (CMO) médio projetado do submercado Sudeste/Centro-Oeste, mês a mês, nos três anos de corte do plano (2026, 2030 e 2035), em R$/MWh de 2025. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figura 3-28 |
+| [`epe_pde2035_concessoes_vincendas`](#epe_pde2035_concessoes_vincendas) | 11 | Potência e número de contratos de concessão de GERAÇÃO que vencem no decênio, acumulados ano a ano de 2025 a 2035 (15.462,16 MW e 45 contratos no total). | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figura 3-31 |
+| [`epe_pde2035_crescimento_consumo_classe`](#epe_pde2035_crescimento_consumo_classe) | 12 | Taxa média anual de crescimento do consumo de eletricidade na rede no decênio 2025-2035, por classe (Residencial, Industrial, Comercial e Outros) e cenário de demanda, em % ao ano. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 02, aba Figura 2-26 |
+| [`epe_pde2035_curva_carga_horaria`](#epe_pde2035_curva_carga_horaria) | 1.440 | Curva de carga horária projetada para o dia de ponta de cada mês de 2035, hora a hora (0 a 23) e por classe de consumo, em GWh/h. 12 meses x 24 horas x 5 classes. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 02, aba Figura 2-23 |
+| [`epe_pde2035_custos_referencia_fonte`](#epe_pde2035_custos_referencia_fonte) | 86 | Parâmetros de custo de referência que a EPE usou no modelo de expansão, por tecnologia de geração ou armazenamento: CAPEX ('capex_brl_kw', R$/kW), O&M fixo anual ('om_fixo_brl_kw_ano', R$/kW.ano) e encargos, taxas e impostos ('encargos_brl_kw_ano', R$/kW.ano). A unidade está na coluna grandeza. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figuras 3-19, 3-20 e 3-21 |
+| [`epe_pde2035_demanda_gas_natural`](#epe_pde2035_demanda_gas_natural) | 22 | Demanda projetada de gás natural de 2025 a 2035 em milhões de m³/dia, por componente (não térmica, termelétrica máxima, refino e FAFENs, gás de uso do sistema) e com os dois totais da EPE (média e máxima), para duas abrangências: 'Brasil' e 'malha integrada' de gasodutos. Entra no banco pela coluna termelétrica, que é o elo entre a expansão das UTEs a gás e a infraestrutura de gás. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 07, aba Figuras 7-5 e 7-6 |
+| [`epe_pde2035_demanda_maxima_sin_mes`](#epe_pde2035_demanda_maxima_sin_mes) | 24 | Demanda máxima instantânea projetada do SIN, mês a mês, nos dois anos-limite do plano (2025 e 2035), em GWh/h (= GW médio na hora de ponta). | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 02, aba Figura 2-22 |
+| [`epe_pde2035_demanda_subsistema`](#epe_pde2035_demanda_subsistema) | 10 | Demanda projetada de cada subsistema (Sudeste/Centro-Oeste, Sul, Nordeste e Norte) em MW médio e demanda máxima do SIN em MW de ponta, ano a ano de 2026 a 2035, no cenário de referência. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figura 3-7 |
+| [`epe_pde2035_emissoes_eletricidade_recorte`](#epe_pde2035_emissoes_eletricidade_recorte) | 22 | A mesma contabilidade de emissões de epe_pde2035_emissoes_setor, mas com o setor elétrico ABERTO em SIN, Autoprodução e Sistemas Isolados, em MtCO2eq, nos anos 2025 e 2035. 11 segmentos. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 10, aba Figura 10-2 |
+| [`epe_pde2035_emissoes_setor`](#epe_pde2035_emissoes_setor) | 36 | Emissões de gases de efeito estufa pela produção e uso de energia, por setor (Transportes, Industrial, Setor elétrico, Setor Energético, Agropecuário, Residencial, Emissões Fugitivas, Comercial e Público), em MtCO2eq, nos quatro anos de corte: 2005, 2025, 2030 e 2035. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 10, aba Figura 10-1 |
+| [`epe_pde2035_expansao_indicativa`](#epe_pde2035_expansao_indicativa) | 90 | Expansão indicativa ACUMULADA da geração no horizonte 2026-2035, por fonte (Hidro, Eólica, Solar, UTE Flex, UTE Inflex, UTE Bio, Nuclear, Armazenamento e RD), em MW. É o resultado central do capítulo de geração. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figura 3-23 |
+| [`epe_pde2035_expansao_termica`](#epe_pde2035_expansao_termica) | 70 | Expansão indicativa ACUMULADA das usinas térmicas de 2026 a 2035, aberta por tipo (Gás Natural Flexível, Gás Natural Inflexível, Retrofit Térmica, Retrofit Biocombustível, Biomassa, RSU e Carvão), em MW. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figura 3-24 |
+| [`epe_pde2035_geracao_eletricidade_fonte`](#epe_pde2035_geracao_eletricidade_fonte) | 48 | Geração total de eletricidade por fonte em 2025, 2030 e 2035, em TWh e em participação percentual, separando o segmento 'Geração Centralizada' do segmento 'Autoprodução & Geração Distribuída'. tipo_linha diz o que a linha é: 'item' (fonte), 'subtotal' (do segmento) ou 'total' (geral, 810,62 TWh em 2025 e 1.122,14 em 2035). | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 12, aba Tabela 12-3 |
+| [`epe_pde2035_geracao_hidro_termica_mes`](#epe_pde2035_geracao_hidro_termica_mes) | 120 | Geração hidrelétrica e termelétrica média projetada do SIN, mês a mês de 01/2026 a 12/2035 (120 meses), em MW médio. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figura 3-29 |
+| [`epe_pde2035_indicadores`](#epe_pde2035_indicadores) | 143 | As 13 séries de indicadores de economia e energia do plano, ano a ano de 2025 a 2035: população residente, PIB (total, número índice e per capita), oferta interna de energia, oferta interna de eletricidade e consumo final energético, cada um destes três em valor absoluto, per capita e por unidade de PIB. São 5 nomes de indicador e 13 séries: a chave é o par indicador + unidade, e a unidade de cada série está na coluna unidade. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 12, aba Tabela 12-1 |
+| [`epe_pde2035_investimentos`](#epe_pde2035_investimentos) | 31 | Investimento previsto no decênio 2025-2035 em toda a cadeia de energia, em R$ bilhões de 2025 e em participação percentual, numa árvore de três níveis: nivel = 0 são os três grandes grupos (Oferta de Energia Elétrica, Petróleo e Gás Natural, Oferta de Biocombustíveis Líquidos), 1 são os 11 subgrupos (Geração Centralizada, Geração Distribuída, Transmissão, Etanol, Refino...), 2 são os 16 itens folha e 3 é a linha de TOTAL geral (R$ 3.529,889 bilhões). grupo e subgrupo trazem o pai de cada linha. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 12, aba Tabela 12-10 |
+| [`epe_pde2035_minerais_criticos`](#epe_pde2035_minerais_criticos) | 18 | Composição mineral da capacidade instalada de geração de eletricidade do Brasil em 2025 e 2035, em mil toneladas, por mineral (Cobre, Silício, Zinco, Manganês, Níquel, Cromo, Grafite, Terras Raras e Outros): é a demanda de minerais críticos embutida na expansão do parque. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 11, aba Figura 11-7 |
+| [`epe_pde2035_mmgd_capacidade_cenario`](#epe_pde2035_mmgd_capacidade_cenario) | 69 | Capacidade instalada ACUMULADA de MMGD (micro e minigeração distribuída) por cenário de adoção (Inferior, Referência e Superior), ano a ano de 2013 a 2035, em GW. O cenário de referência chega a 78,10 GW em 2035, contra 61,35 do inferior e 97,80 do superior. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 09, aba Figura 9-18 |
+| [`epe_pde2035_mmgd_expansao_fonte`](#epe_pde2035_mmgd_expansao_fonte) | 80 | Expansão projetada da micro e minigeração distribuída (MMGD) de 2026 a 2035, por fonte (Fotovoltaica, Eólica, Termelétrica e CGH), em potência e em energia. A unidade está na coluna grandeza: 'potencia_mw' (MW) ou 'energia_mwmed' (MW médio). | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figura 3-8 |
+| [`epe_pde2035_mmgd_resumo_cenario`](#epe_pde2035_mmgd_resumo_cenario) | 3 | Resumo dos três cenários de projeção da MMGD: número de adotantes em milhões, potência em GW, geração em GW médio e investimento em R$ bilhões de 2025. É a tabela-resumo do capítulo de RED. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 09, aba Tabela 9-3 |
+| [`epe_pde2035_mmgd_segmento`](#epe_pde2035_mmgd_segmento) | 55 | Capacidade instalada ACUMULADA de MMGD do cenário de referência por segmento de adotante (Comercial (AT), Comercial (BT), Comercial Remoto (AT/BT), Residencial e Residencial Remoto), ano a ano de 2025 a 2035, em GW. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 09, aba Figura 9-20 |
+| [`epe_pde2035_mmgd_uf_2035`](#epe_pde2035_mmgd_uf_2035) | 27 | Capacidade instalada de MMGD projetada para 2035 por UF, em GW, no cenário de referência. É a única abertura geográfica de MMGD projetada em todo o PDE (SP 15,71 GW, MG 8,13, RJ 6,17). | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 09, aba Figura 9-19 |
+| [`epe_pde2035_red_demanda_eletricidade`](#epe_pde2035_red_demanda_eletricidade) | 11 | A 'escada' dos recursos energéticos distribuídos (RED): quanto do consumo potencial de eletricidade é abatido por eficiência elétrica (EE), autoprodução não injetada (AP) e MMGD antes de sobrar o consumo que chega à rede, ano a ano de 2025 a 2035, em TWh. consumo_rede_twh é o último degrau. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 09, aba Figura 9-1 |
+| [`epe_pde2035_transmissao_contratos_vincendos`](#epe_pde2035_transmissao_contratos_vincendos) | 14 | Cronograma dos contratos de concessão de TRANSMISSÃO a vencer e a RAP (Receita Anual Permitida) correspondente, de dez/2022 a dez/2035, em R$ milhões de 2025. É o cronograma que a EPE usa para planejar as reanálises. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 04, aba Figura 4-29 |
+| [`epe_pde2035_transmissao_expansao_fisica`](#epe_pde2035_transmissao_expansao_fisica) | 100 | Expansão física ACUMULADA da transmissão no cenário de referência, ano a ano de 2026 a 2035 e por nível de tensão (230 a 800 kV): km de linha quando tipo_ativo = 'LT' (extensao_acumulada_km) e MVA de transformação quando tipo_ativo = 'SE' (capacidade_acumulada_mva). | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 04, aba Figuras 4-24 e 4-27 |
+| [`epe_pde2035_transmissao_investimento_cenario`](#epe_pde2035_transmissao_investimento_cenario) | 30 | Investimento ACUMULADO em transmissão ano a ano de 2026 a 2035 nos três cenários de expansão da EPE (Otimista, Referência e Pessimista), em R$ bilhões de 2025. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 04, aba Figura 4-19 |
+| [`epe_pde2035_transmissao_investimento_recorte`](#epe_pde2035_transmissao_investimento_recorte) | 24 | Investimento em transmissão do cenário de referência (decênio 2026-2035) aberto por três recortes independentes, na coluna recorte: 'outorga' (com e sem outorga), 'submercado' e 'nivel_tensao'; e por tipo de ativo em tipo_ativo ('LT' linha de transmissão, 'SE' subestação). Em R$ bilhões de 2025. | EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 04, aba Figuras 4-21, 4-22, 4-23, 4-25 e 4-26 |
+| [`epe_pde2035_transmissao_obras`](#epe_pde2035_transmissao_obras) | 758 | A expansão da transmissão do PDE 2035 OBRA A OBRA: uma linha por empreendimento (linha de transmissão, subestação ou seccionamento), com o estudo de planejamento que a originou, região geoelétrica, UF de origem e destino, itens de obra, status, extensão em km, capacidade de transformação em MVA, investimento em reais de 2025, código DMSE e data prevista no SIGET, e o ANO DE ENTRADA em cada um dos três cenários (ano_pessimista, ano_referencia, ano_otimista). É o que diz quais obras o planejador espera que entrem, quando e em que cenário. | EPE/MME, Plano Decenal de Expansão de Energia 2035, lista de expansão da transmissão (pde2035_transmissao.xlsx, aba 'PDE 2035'); a data-base do extrato do SIGET, 19/08/2025, vem no nome da coluna de origem |
 | [`expansao_geracao`](#expansao_geracao) | 2.246 | Usinas outorgadas ainda não concluídas acompanhadas pela ANEEL (RALIE): potência, situação da obra (em andamento, não iniciada, paralisada), viabilidade, situação do cronograma e datas de entrada em operação outorgada (ato de outorga) e prevista pela fiscalização da ANEEL, por unidade geradora. Use para a expansão da oferta e atrasos; os donos com CNPJ estão em usinas_proprietarios pelo ceg. | ANEEL, RALIE, https://dadosabertos.aneel.gov.br/dataset/ralie-relatorio-de-acompanhamento-da-expansao-da-oferta-de-geracao-de-energia-eletrica |
 | [`gd_mmgd`](#gd_mmgd) | 66.826 | Micro e minigeração distribuída (MMGD, painéis solares em telhados e usinas de até 5 MW na rede da distribuidora) agregada por distribuidora, UF, classe de consumo, fonte, porte, modalidade e mês de cadastro: número de empreendimentos e potência instalada em MW. Some tudo para o total conectado; filtre mes_cadastro para a evolução. | ANEEL, Relação de Empreendimentos de Geração Distribuída, https://dadosabertos.aneel.gov.br/dataset/relacao-de-empreendimentos-de-geracao-distribuida |
 | [`grupos_economicos`](#grupos_economicos) | 4.253 | Grupo econômico de cada agente do setor (uma linha por CNPJ): controladores diretos com participação, controladores finais (topo da cadeia de controle, podem ser vários quando o controle é compartilhado) e a companhia aberta do setor (CVM) que controla o agente, a mais próxima dele na cadeia (holding_cvm), que costuma ser o grupo como o mercado o chama (ex.: SPE da Taesa -> Taesa; Coelba -> Neoenergia). Use para dizer a que grupo pertence uma SPE, usina ou concessão. | ANEEL, Composição Societária (Polímero); cálculo desta plataforma |
@@ -30,32 +77,38 @@ Tabelas e visões do `coppezip.duckdb` em 25/09/2026, geradas do catálogo por `
 | [`kpis_financeiros`](#kpis_financeiros) | 652 | Indicadores financeiros anuais por empresa (2020 em diante), em R$, prontos para comparar: receita, EBIT, EBITDA calculado, lucro, dívida bruta e líquida, caixa, CAPEX, dividendos, margens, alavancagem, cobertura de juros e ROE. Usa o consolidado quando a empresa o publica. | CVM DFP; cálculo desta plataforma a partir das contas indicadas na coluna fonte |
 | [`kpis_trimestrais`](#kpis_trimestrais) | 879 | Indicadores trimestrais (ITR) de 2024 em diante: receita, EBIT e lucro do trimestre e acumulados no ano, EBITDA, valores dos últimos 12 meses, dívida bruta e líquida no fim do trimestre, dívida líquida/EBITDA 12 meses e investimento acumulado. É o dado mais recente da base (a DFP anual vai até 2025). | CVM ITR e DFP; cálculo desta plataforma |
 | [`leiloes_geracao`](#leiloes_geracao) | 1.552 | Resultados dos leilões de GERAÇÃO de energia (2005 em diante): empreendimento, fonte, potência, preço, deságio, investimento previsto e vencedor. | ANEEL, resultado de leilões de geração |
-| [`mercado_distribuidoras_mensal`](#mercado_distribuidoras_mensal) | 85.343 | Mercado e faturamento mensal de cada distribuidora por classe de consumo (Residencial, Comercial, Industrial, Rural...) e mercado (CATIVO, LIVRE, GERAÇÃO, SUPRIMENTO), de 2020 em diante: consumidores, energia faturada em MWh, receitas de energia, demanda e bandeiras, tributos e a tarifa média sem tributos em R$/MWh. Para a tarifa média do ano some receita_energia_brl + receita_demanda_brl e divida pela soma de energia_tusd_mwh (não tire média das médias mensais). | ANEEL, SAMP - Sistema de Acompanhamento de Informações de Mercado, https://dadosabertos.aneel.gov.br/dataset/samp |
-| [`ons_capacidade`](#ons_capacidade) | 5.678 | Unidades geradoras despachadas pelo ONS com agente proprietário e potência efetiva em MW. | ONS, capacidade instalada |
-| [`ons_carga_diaria`](#ons_carga_diaria) | 39.053 | Carga de energia diária do SIN por subsistema (N, NE, S, SE = Sudeste/Centro-Oeste), em MW médio, desde 2000. Energia do dia em MWh = carga_mwmed × 24. | ONS, Carga de Energia, https://dados.ons.org.br/dataset/carga-energia |
+| [`mercado_distribuidoras_mensal`](#mercado_distribuidoras_mensal) | 85.343 | Mercado e faturamento mensal de cada distribuidora por classe de consumo (Residencial, Comercial, Industrial, Rural...) e mercado (CATIVO, LIVRE, GERAÇÃO, SUPRIMENTO, DISTRIBUIÇÃO), de 2020 em diante: consumidores, energia faturada em MWh, receitas de energia, demanda e bandeiras, tributos e a tarifa média sem tributos em R$/MWh. Para a tarifa média do ano some receita_energia_brl + receita_demanda_brl e divida pela soma de energia_tusd_mwh (não tire média das médias mensais). | ANEEL, SAMP - Sistema de Acompanhamento de Informações de Mercado, https://dadosabertos.aneel.gov.br/dataset/samp |
+| [`mutacoes_patrimonio_liquido`](#mutacoes_patrimonio_liquido) | 466.684 | Demonstração das mutações do patrimônio líquido (DMPL), anual (DFP) e trimestral (ITR), em R$: cada linha é um movimento (conta 5.xx, como saldos iniciais, lucro do período, dividendos, aumento de capital) numa coluna do PL (coluna_pl: Capital Social Integralizado, Reservas de Lucro, Lucros Acumulados, Patrimônio Líquido Consolidado...). | CVM DFP e ITR, arquivos DMPL |
+| [`ons_capacidade`](#ons_capacidade) | 5.678 | Unidades geradoras despachadas pelo ONS com agente proprietário e potência efetiva em MW. modalidade_operacao diz como o ONS trata a unidade: TIPO I é despacho centralizado (143,6 GW das 207,2 GW da tabela) e TIPO II-A, II-B e II-C são as demais modalidades de operação. agente_operador é quem opera (pode diferir do proprietário). | ONS, capacidade instalada |
+| [`ons_carga_diaria`](#ons_carga_diaria) | 39.057 | Carga de energia diária do SIN por subsistema (N, NE, S, SE = Sudeste/Centro-Oeste), em MW médio, desde 2000. Energia do dia em MWh = carga_mwmed × 24. | ONS, Carga de Energia, https://dados.ons.org.br/dataset/carga-energia |
 | [`ons_cmo_mensal`](#ons_cmo_mensal) | 324 | CMO médio mensal do ONS por subsistema (N, NE, S, SE), em R$/MWh, desde 2020. SE corresponde ao subsistema Sudeste/Centro-Oeste; o arquivo do ONS o rotula SUDESTE, mas não há submercado Centro-Oeste separado. Cada linha é um subsistema-mês; cmo_medio_brl_mwh é a média aritmética dos intervalos semihorários. Use dias_ausentes, dias_com_dados e intervalos para avaliar cobertura antes de comparar meses; um mês com dias_ausentes > 0 não tem média mensal completa. | ONS, CMO Semi-Horário, https://dados.ons.org.br/dataset/cmo-semi-horario; média calculada pela plataforma |
-| [`ons_cmo_semihora`](#ons_cmo_semihora) | 464.064 | CMO (Custo Marginal de Operação) do ONS por subsistema e instante semihorário, desde 2020. SE corresponde ao subsistema Sudeste/Centro-Oeste, embora o arquivo o rotule SUDESTE. Para comparar meses e submercados use ons_cmo_mensal; para horários e extremos use esta tabela. | ONS, CMO Semi-Horário, https://dados.ons.org.br/dataset/cmo-semi-horario |
+| [`ons_cmo_semihora`](#ons_cmo_semihora) | 464.256 | CMO (Custo Marginal de Operação) do ONS por subsistema e instante semihorário, desde 2020. SE corresponde ao subsistema Sudeste/Centro-Oeste, embora o arquivo o rotule SUDESTE. Para comparar meses e submercados use ons_cmo_mensal; para horários e extremos use esta tabela. | ONS, CMO Semi-Horário, https://dados.ons.org.br/dataset/cmo-semi-horario |
 | [`ons_conjuntos_usinas`](#ons_conjuntos_usinas) | 1.615 | Usinas eólicas e solares que formam cada conjunto do ONS (id_conjunto = id_ons de ons_curtailment_mensal), com o CEG de cada usina. | ONS, detalhamento por usina dos cortes de geração (ago/2026) |
 | [`ons_curtailment_mensal`](#ons_curtailment_mensal) | 9.027 | Cortes de geração (curtailment) por usina e mês: geração, geração de referência e energia cortada em MWh, e % cortado. fonte = eólica (2023 em diante) ou solar (abr/2024 em diante). | ONS, restrição de operação por constrained-off (GNRa = geração não realizada apurada) |
-| [`ons_curtailment_semihora`](#ons_curtailment_semihora) | visão | Cortes de geração eólica (2023 em diante) e solar (abr/2024 em diante) por usina e meia hora, em MW médio: geração verificada, geração de referência e geração não realizada apurada (GNRa). | ONS, restrição de operação por constrained-off |
-| [`ons_ear_diario`](#ons_ear_diario) | 39.052 | Energia armazenada (EAR) diária nos reservatórios por subsistema do ONS, desde 2000. SE corresponde ao subsistema Sudeste/Centro-Oeste, embora o arquivo o rotule SUDESTE. Cada linha é um subsistema e uma data; traz a EAR verificada em MWmês, sua capacidade máxima em MWmês e o percentual de armazenamento. Útil para avaliar risco hidrológico e contexto do CMO. | ONS, EAR Diário por Subsistema, https://dados.ons.org.br/dataset/ear-diario-por-subsistema |
+| [`ons_curtailment_motivo_mensal`](#ons_curtailment_motivo_mensal) | 33.926 | Energia cortada (curtailment) por usina, mês e MOTIVO do corte, em MWh. razao: ENE razão energética (sobra de oferta, sem quem consuma), CNF confiabilidade (limite de segurança elétrica), REL indisponibilidade externa (equipamento da rede fora), PAR parecer de acesso. origem: SIS restrição sistêmica (do SIN como um todo) ou LOC restrição local (da rede onde a usina está). razao e origem nulos são as meias horas SEM restrição, em que a usina gerou livremente: filtre razao IS NOT NULL para olhar só os cortes (as linhas sem razão somam 0,001 TWh de corte contra 78,6 TWh das com razão). restricao_predominante nomeia a linha ou o controle que causou o corte com mais frequência no mês. | ONS, restrição de operação por constrained-off (cod_razaorestricao, cod_origemrestricao e dsc_restricao) |
+| [`ons_curtailment_semihora`](#ons_curtailment_semihora) | visão | Cortes de geração eólica (2023 em diante) e solar (abr/2024 em diante) por usina e meia hora, em MW médio: geração verificada, geração de referência e geração não realizada apurada (GNRa), com o motivo do corte (razao e origem), o texto da restrição e o ponto de conexão. | ONS, restrição de operação por constrained-off |
+| [`ons_ear_diario`](#ons_ear_diario) | 39.056 | Energia armazenada (EAR) diária nos reservatórios por subsistema do ONS, desde 2000. SE corresponde ao subsistema Sudeste/Centro-Oeste, embora o arquivo o rotule SUDESTE. Cada linha é um subsistema e uma data; traz a EAR verificada em MWmês, sua capacidade máxima em MWmês e o percentual de armazenamento. Útil para avaliar risco hidrológico e contexto do CMO. | ONS, EAR Diário por Subsistema, https://dados.ons.org.br/dataset/ear-diario-por-subsistema |
 | [`ons_ena_diaria`](#ons_ena_diaria) | 8.372 | Energia Natural Afluente (ENA) diária por subsistema, em MW médio e em % da média de longo termo (MLT), desde 2021: mede quanta água chega aos reservatórios. Abaixo de 100% da MLT = afluência abaixo da média histórica. | ONS, ENA Diário por Subsistema, https://dados.ons.org.br/dataset/ena-diario-por-subsistema |
 | [`ons_geracao_fonte_mensal`](#ons_geracao_fonte_mensal) | 705 | Geração mensal por fonte (hidráulica, térmica, eólica, solar) e carga por subsistema (N, NE, S, SE e SIN), em MWh, desde 2015, somando o balanço horário do ONS. Use para matriz de geração, participação das renováveis e exportação do Nordeste. subsistema 'SIN' é o total do sistema. | ONS, Balanço de Energia nos Subsistemas, https://dados.ons.org.br/dataset/balanco-energia-subsistema |
 | [`ons_geracao_usina_mensal`](#ons_geracao_usina_mensal) | 51.155 | Geração verificada mensal de cada usina despachada ou monitorada pelo ONS, em MWh, desde 2020 (soma da geração horária). ceg liga com usinas e usinas_proprietarios (use o núcleo do CEG, sem o sufixo de versão); para fator de capacidade divida por potência × horas. | ONS, Geração por Usina em Base Horária, https://dados.ons.org.br/dataset/geracao-usina-2 |
 | [`ons_intercambio_mensal`](#ons_intercambio_mensal) | 206 | Intercâmbio mensal de energia entre subsistemas (origem -> destino), verificado e programado, em MWh, desde 2023, somando os valores horários do ONS. | ONS, Intercâmbio Nacional, https://dados.ons.org.br/dataset/intercambio-nacional |
+| [`pareceres_auditoria`](#pareceres_auditoria) | 6.303 | Relatório do auditor independente e declarações dos diretores e do conselho fiscal que acompanham cada DFP e ITR, com o texto completo. tipo_relatorio diz se o parecer é sem ressalva, com ressalva, com ênfase ou adverso. | CVM DFP e ITR, arquivos de parecer |
 | [`participacoes_societarias`](#participacoes_societarias) | 49.322 | Participação direta e indireta de cada empresa ou pessoa em cada agente do setor (uma linha por agente e participante), somando todos os caminhos da cadeia societária. na_cadeia_de_controle = o participante controla o agente, direta ou indiretamente. Inclui o próprio agente com 100%. Serve para somar ativos por grupo: junte cnpj_agente com o CNPJ do dono (usinas_proprietarios.cnpj, rap_transmissao_modulos.cnpj...). | ANEEL, Composição Societária (Polímero); cálculo desta plataforma |
 | [`pdd_investimentos`](#pdd_investimentos) | 5.484 | Plano de Desenvolvimento da Distribuição: investimento planejado e realizado por distribuidora, ano e tipo de obra. | ANEEL PDD |
 | [`ped_projetos`](#ped_projetos) | 3.997 | Projetos do programa de P&D regulado da ANEEL por empresa: tema, segmento, situação e custo. | ANEEL P&D |
 | [`pee_projetos`](#pee_projetos) | 8.230 | Projetos do Programa de Eficiência Energética (PEE) da ANEEL por distribuidora: tipologia, custo, energia economizada. | ANEEL PEE |
+| [`perdas_distribuicao_anual`](#perdas_distribuicao_anual) | visão | Perdas de energia de cada distribuidora por ano: energia injetada na rede, perdas totais, técnicas (rede) e não técnicas (furto e fraude) em MWh, as perdas faturadas na tarifa e as perdas medidas como % da energia injetada. meses_declarados diz quantos meses do ano a distribuidora declarou (12 = ano completo). | ANEEL, SAMP - balanço de energia |
 | [`ranking_continuidade`](#ranking_continuidade) | 235 | Ranking oficial de continuidade da ANEEL: posição de cada distribuidora pelo Desempenho Global de Continuidade (DGC), de 2021 a 2025, separado em dois grupos de porte. DGC é a média dos DEC e FEC apurados divididos pelos limites: quanto menor, melhor; abaixo de 1 = dentro dos limites. | ANEEL, Ranking de Continuidade, https://www.gov.br/aneel/pt-br/centrais-de-conteudos/relatorios-e-indicadores/distribuicao/ranking-de-continuidade |
 | [`rap_por_grupo`](#rap_por_grupo) | visão | RAP de transmissão atribuída a cada grupo ou empresa: proporcional à participação indireta em cada concessionária e controlada (100% das concessionárias que o grupo controla), por situação (Ativa ou Prevista), em R$ por ano. Para a RAP das concessões em nome da própria empresa (sem SPEs e participações) use rap_transmissao_concessionaria filtrando o cnpj. | ANEEL SIGET (RAP) e Composição Societária; cálculo desta plataforma |
 | [`rap_transmissao_concessionaria`](#rap_transmissao_concessionaria) | visão | RAP das transmissoras somada por concessionária (com CNPJ), contrato e situação (Ativa ou Prevista), em R$ por ano, no ciclo da coluna ciclo_tarifario. | ANEEL SIGET, Lista de Módulos Prévia - Reajuste RAP; soma desta plataforma |
 | [`rap_transmissao_modulos`](#rap_transmissao_modulos) | 47.392 | Receita Anual Permitida (RAP) das transmissoras por módulo de transmissão (linha, subestação, equipamento), da lista prévia do reajuste da ANEEL: concessionária com CNPJ, contrato, tipo de receita e situação. rap_ciclo_brl é o valor do módulo no ciclo tarifário da coluna ciclo_tarifario; some por concessionária ou contrato (ou use rap_transmissao_concessionaria). situacao 'Ativa' = receita em vigor; 'Prevista' = obra ainda não em operação. | ANEEL SIGET, Lista de Módulos Prévia - Reajuste RAP, https://dadosabertos.aneel.gov.br/dataset/sistema-de-gestao-da-transmissao-siget |
-| [`tarifas_distribuicao`](#tarifas_distribuicao) | 327.493 | Tarifas homologadas das distribuidoras (TUSD e TE) por resolução, vigência, subgrupo (B1 residencial, A4...), modalidade, classe e posto. Para a tarifa atual filtre fim_vigencia >= current_date. | ANEEL, tarifas homologadas |
-| [`transmissao_contratos`](#transmissao_contratos) | 413 | Contratos de concessão de transmissão (SIGET/ANEEL) com a concessionária e o CNPJ. | ANEEL SIGET |
+| [`tarifas_distribuicao`](#tarifas_distribuicao) | 328.083 | Tarifas homologadas das distribuidoras (TUSD e TE) por resolução, vigência, subgrupo (B1 residencial, A4...), modalidade, classe e posto. Para a tarifa atual filtre fim_vigencia >= current_date. | ANEEL, tarifas homologadas |
+| [`transmissao_atos_legais`](#transmissao_atos_legais) | 1.652 | Atos legais (resoluções autorizativas e despachos da ANEEL) que autorizaram reforços, melhorias e ampliações de transmissão, um por empreendimento: número e tipo do ato, data de publicação, ementa (o texto que diz o que foi autorizado) e link do cedoc, com o contrato de concessão, o CNPJ da concessionária e o prazo fixado. prazo_ato_legal é a data de entrada em operação que o ato determinou e data_operacao_comercial é a que valeu: compare as duas para medir atraso (903 dos 1.652 empreendimentos entraram depois do prazo, mediana de 24 dias). Para o texto do ato use link; para a RAP que o ato fixou, junte ato_rap em rap_transmissao_modulos. | ANEEL SIGET, Resolução x Contrato x Agente, https://dadosabertos.aneel.gov.br/dataset/sistema-de-gestao-da-transmissao-siget |
+| [`transmissao_contratos`](#transmissao_contratos) | 413 | Contratos de concessão de transmissão (SIGET/ANEEL) com a concessionária e o CNPJ. data_assinatura é a data em que o contrato foi assinado e data_fim é quando a concessão vence. | ANEEL SIGET |
 | [`transmissao_empreendimentos`](#transmissao_empreendimentos) | 16.262 | Empreendimentos, obras e módulos de transmissão por contrato (linhas, subestações), com situação e datas. | ANEEL SIGET |
-| [`usinas`](#usinas) | 25.133 | Usinas de geração do Brasil (SIGA/ANEEL), uma linha por usina: tipo (UHE, PCH, CGH, EOL, UFV, UTE, UTN), fase (Operação, Construção, Construção não iniciada), origem (Hídrica, Eólica, Solar, Fóssil, Biomassa, Nuclear), potência em kW. | ANEEL SIGA (dados abertos), data em data_base |
-| [`usinas_proprietarios`](#usinas_proprietarios) | 25.466 | Donos de cada usina do SIGA com CNPJ e percentual de participação (uma linha por usina e dono). regime: PIE (produtor independente), APE (autoprodutor), SP (serviço público), REG (registro). | ANEEL SIGA, campo DscPropriRegimePariticipacao |
+| [`transmissao_termos_liberacao`](#transmissao_termos_liberacao) | 14.887 | Termos de Liberação (TL) emitidos pelo ONS para obras de transmissão, um por obra: o TL atesta que a obra entrou em operação e é o documento que autoriza a ANEEL a incluir a receita dela no reajuste. Traz a concessionária com CNPJ, o contrato, o ato legal que autorizou a obra, o número e a data do TL, o ciclo tarifário em que a receita entrou e a obra e o módulo de transmissão liberados. Use para saber QUANDO cada obra passou a receber: junte id_modulo com rap_transmissao_modulos.id_modulo para o valor da RAP (14.500 das 14.887 obras casam) e codigo_ato com transmissao_atos_legais.codigo_ato para a ementa da autorização. | ANEEL SIGET, Termos de Liberação processados no reajuste da RAP, https://dadosabertos.aneel.gov.br/dataset/sistema-de-gestao-da-transmissao-siget |
+| [`usinas`](#usinas) | 25.045 | Usinas de geração do Brasil (SIGA/ANEEL), uma linha por usina: tipo (UHE, PCH, CGH, EOL, UFV, UTE, UTN), fase (Operação, Construção, Construção não iniciada), origem (Hídrica, Eólica, Solar, Fóssil, Biomassa, Nuclear), potência em kW. combustivel é o insumo detalhado (Óleo Diesel, Bagaço de Cana de Açúcar, Casca de Arroz...), mais fino que fonte_energia. fim_vigencia_outorga é quando a outorga (registro, autorização ou concessão) vence. | ANEEL SIGA (dados abertos), data em data_base |
+| [`usinas_proprietarios`](#usinas_proprietarios) | 25.378 | Donos de cada usina do SIGA com CNPJ e percentual de participação (uma linha por usina e dono). regime: PIE (produtor independente), APE (autoprodutor), SP (serviço público), REG (registro). | ANEEL SIGA, campo DscPropriRegimePariticipacao |
 
 ## agentes_aneel
 
@@ -77,6 +130,47 @@ Cadastro de agentes da ANEEL: CNPJ, sigla e razão social de geradoras, transmis
 | `comercializacao` | BOOLEAN |
 | `data_base` | DATE |
 
+## b3_iee_carteira
+
+Carteira teórica do IEE (Índice de Energia Elétrica da B3) na data data_carteira: as ações do setor elétrico que compõem o índice, com o peso de cada uma em % e a quantidade teórica. É o universo de comparação do mercado para o setor: quem está no índice, e quanto cada empresa pesa. cnpj vem do ticker (empresas_apelidos) quando a empresa tem registro na CVM.
+
+- Fonte: B3, API de índices (GetPortfolioDay, índice IEEX), https://www.b3.com.br/pt_br/market-data-e-indices/indices/indices-de-segmentos-e-setoriais/indice-de-energia-eletrica-iee-b3.htm
+- Linhas: 12
+- Ressalvas: é uma FOTOGRAFIA de um dia, não uma série histórica: a API só devolve a carteira vigente, e a B3 rebalanceia o índice a cada quadrimestre (jan, mai, set). Não é o valor (pontos) do índice nem preço de ação. participacao_pct soma 100. Só ações listadas: subsidiárias e empresas fechadas do setor não aparecem
+
+| Coluna | Tipo |
+|---|---|
+| `data_carteira` | DATE |
+| `ticker` | VARCHAR |
+| `empresa_b3` | VARCHAR |
+| `tipo_acao` | VARCHAR |
+| `participacao_pct` | DOUBLE |
+| `quantidade_teorica` | DOUBLE |
+| `quantidade_teorica_total_indice` | DOUBLE |
+| `cnpj` | VARCHAR |
+
+## balanco_energia_distribuidoras
+
+Balanço mensal de energia de cada distribuidora desde 2003, em MWh: disponibilidades (energia recebida, injetada, geração própria), requisitos (energia vendida e entregue por mercado) e saldo (perdas técnicas, não técnicas e totais, medidas e faturadas). fluxo = Disponibilidades, Requisitos ou Saldo; modalidade é a linha do balanço; rubrica detalha a modalidade; medida diz se é energia medida, faturada, calculada ou gerada e o nível de tensão. Para perdas prontas use perdas_distribuicao_anual.
+
+- Fonte: ANEEL, SAMP - balanço de energia, https://dadosabertos.aneel.gov.br/dataset/samp
+- Linhas: 549.552
+- Ressalvas: NÃO some energia_mwh sem filtrar: as rubricas terminadas em TOTAL e a medida 'Total (todos os níveis de tensão)' já somam as linhas de detalhe, e 'Perdas Totais' já é técnicas + não técnicas. Perdas aparecem em duas versões (valor medido e valor faturado). O ano corrente é parcial; o CNPJ 07.732.105/0001-84 aparece em 2007 com dois agentes diferentes na fonte
+
+| Coluna | Tipo |
+|---|---|
+| `cnpj` | VARCHAR |
+| `distribuidora` | VARCHAR |
+| `classificacao` | VARCHAR |
+| `ano` | INTEGER |
+| `mes` | INTEGER |
+| `competencia` | DATE |
+| `fluxo` | VARCHAR |
+| `modalidade` | VARCHAR |
+| `rubrica` | VARCHAR |
+| `medida` | VARCHAR |
+| `energia_mwh` | DOUBLE |
+
 ## bandeiras_tarifarias
 
 Bandeira tarifária acionada pela ANEEL em cada mês (Verde, Amarela, Vermelha P1, Vermelha P2, Escassez Hídrica) e o adicional cobrado na conta, em R$/MWh, desde 2015.
@@ -90,6 +184,37 @@ Bandeira tarifária acionada pela ANEEL em cada mês (Verde, Amarela, Vermelha P
 | `mes` | DATE |
 | `bandeira` | VARCHAR |
 | `adicional_brl_mwh` | DOUBLE |
+
+## bandeiras_tarifarias_valores
+
+Tabela de adicionais das bandeiras tarifárias: quanto cada bandeira custa, em R$/MWh, a partir de cada resolução homologatória da ANEEL (2015 em diante). É o preço da bandeira; qual bandeira valeu em cada mês está em bandeiras_tarifarias.
+
+- Fonte: ANEEL, Bandeiras Tarifárias - Adicional, https://dadosabertos.aneel.gov.br/dataset/bandeiras-tarifarias
+- Linhas: 27
+- Ressalvas: vigora até a resolução seguinte (não há data de fim na fonte); a bandeira verde não aparece porque o adicional é zero. NÃO é série anual: só existe linha nas datas em que a ANEEL reviu o valor (2015, 2016, 2017, 2018, 2019 duas vezes, 2021 duas vezes, 2022 e 2024), e a ausência de 2020 e 2023 significa que o valor não mudou nesses anos. Para saber a bandeira e o adicional de um mês use bandeiras_tarifarias, que é mensal e completa
+
+| Coluna | Tipo |
+|---|---|
+| `resolucao` | VARCHAR |
+| `inicio_vigencia` | DATE |
+| `bandeira` | VARCHAR |
+| `adicional_brl_mwh` | DOUBLE |
+
+## bndes_desembolsos_setor_mensal
+
+Desembolsos totais do BNDES por mês e macro-setor CNAE (Agropecuária, Indústria extrativa, Indústria de transformação, Comércio e serviços), em R$, desde janeiro de 1995. Uma linha por mês e setor: some por ano para o desembolso anual do banco, ou filtre o setor para a série setorial. Serve de denominador para pôr o financiamento do setor elétrico (bndes_operacoes) em perspectiva.
+
+- Fonte: BNDES dados abertos, desembolsos por setor CNAE (valores da origem em R$ milhões, convertidos para R$ aqui)
+- Linhas: 1.500
+- Ressalvas: são só QUATRO macro-setores: energia elétrica NÃO aparece separada (ela está dentro de 'Comércio e serviços', onde o BNDES classifica eletricidade e gás). Para o setor elétrico use bndes_operacoes, que é a carteira não automática por contrato e não fecha com estes totais. Valores nominais, sem correção pela inflação: não compare 1995 com 2026 sem deflacionar (use indicadores_macro_mensal). O último mês do arquivo é março de 2026
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `mes` | INTEGER |
+| `competencia` | DATE |
+| `setor` | VARCHAR |
+| `desembolso_brl` | DOUBLE |
 
 ## bndes_operacoes
 
@@ -130,7 +255,7 @@ Operações de financiamento não automáticas do BNDES (contratos diretos e ind
 Capacidade de geração (SIGA) atribuída a cada grupo ou empresa participante, direta ou indiretamente, por origem, tipo e fase. potencia_proporcional_mw = potência × participação do dono na usina × participação indireta do participante no dono (visão proporcional); potencia_controlada_mw = potência × participação do dono, só nas usinas cujo dono o participante controla (visão consolidada). Para ranking de grupos filtre fase = 'Operação' e agrupe por chave_participante.
 
 - Fonte: ANEEL SIGA e Composição Societária (Polímero); cálculo desta plataforma
-- Linhas: 7.026
+- Linhas: 7.010
 - Ressalvas: um mesmo grupo aparece em vários níveis (holding brasileira, subholding, controladora estrangeira): escolha o CNPJ ou nome do grupo e não some níveis diferentes. Usinas cujo dono não declarou composição à ANEEL ficam de fora (cerca de 12% da potência em operação). Titulares com CPF não entram
 
 | Coluna | Tipo |
@@ -164,6 +289,32 @@ Capacidade instalada em MW por dono (CNPJ), origem, tipo e fase, já ponderada p
 | `usinas` | BIGINT |
 | `potencia_mw` | DOUBLE |
 | `data_base` | DATE |
+| `fonte` | VARCHAR |
+
+## capital_social_acoes
+
+Quantidade de ações de cada empresa em cada data de referência (DFP anual e ITR trimestral): ordinárias, preferenciais, total, o que está em tesouraria e as ações em circulação (total menos tesouraria). Serve para lucro por ação e para peso de cada classe.
+
+- Fonte: CVM DFP e ITR, composição do capital
+- Linhas: 1.531
+- Ressalvas: quantidade de ações, não valor; o capital social em R$ está no BPP (2.03.01)
+
+| Coluna | Tipo |
+|---|---|
+| `cnpj` | VARCHAR |
+| `empresa` | VARCHAR |
+| `documento` | VARCHAR |
+| `data_referencia` | DATE |
+| `ano` | BIGINT |
+| `trimestre` | BIGINT |
+| `acoes_ordinarias` | BIGINT |
+| `acoes_preferenciais` | BIGINT |
+| `acoes_total` | BIGINT |
+| `acoes_ordinarias_tesouraria` | BIGINT |
+| `acoes_preferenciais_tesouraria` | BIGINT |
+| `acoes_tesouraria` | BIGINT |
+| `acoes_em_circulacao` | BIGINT |
+| `versao` | INTEGER |
 | `fonte` | VARCHAR |
 
 ## compensacoes_continuidade
@@ -216,10 +367,10 @@ Cadeia societária declarada à ANEEL por cada agente do setor (usina, transmiss
 
 ## contas_cvm
 
-Todas as contas das demonstrações financeiras anuais (DFP) das empresas do setor, de 2020 em diante, já em R$ (escala MIL aplicada), última versão entregue. demonstrativo: BPA, BPP, DRE, DFC_MI, DFC_MD, DVA; escopo: consolidado ou individual. Prefira kpis_financeiros para indicadores prontos.
+Todas as contas das demonstrações financeiras anuais (DFP) das empresas do setor, de 2020 em diante, já em R$ (escala MIL aplicada), última versão entregue. demonstrativo: BPA e BPP (balanço), DRE, DRA (resultado abrangente), DFC_MI e DFC_MD (fluxo de caixa), DVA; escopo: consolidado ou individual. As mutações do patrimônio líquido estão em mutacoes_patrimonio_liquido. Prefira kpis_financeiros para indicadores prontos.
 
 - Fonte: CVM, DFP (dados.cvm.gov.br)
-- Linhas: 312.693
+- Linhas: 318.528
 - Ressalvas: valores em reais; despesas e saídas de caixa vêm negativas
 
 | Coluna | Tipo |
@@ -242,7 +393,7 @@ Todas as contas das demonstrações financeiras anuais (DFP) das empresas do set
 Contas das demonstrações trimestrais (ITR) de 2024 em diante, em R$: periodo = trimestre (só os 3 meses), acumulado (desde janeiro) ou saldo (balanço no fim do trimestre). O 4º trimestre não existe no ITR: está na DFP anual.
 
 - Fonte: CVM, ITR (dados.cvm.gov.br)
-- Linhas: 462.169
+- Linhas: 474.590
 - Ressalvas: valores em reais; despesas e saídas de caixa vêm negativas; a DFC do ITR é acumulada
 
 | Coluna | Tipo |
@@ -286,10 +437,11 @@ Indicadores de continuidade por conjunto de consumidores e mês (2020 em diante)
 
 ## continuidade_limites
 
-Limites regulatórios anuais de DEC e FEC por conjunto de consumidores, definidos pela ANEEL.
+Limites regulatórios anuais de DEC e FEC por conjunto de consumidores, definidos pela ANEEL. Compare com continuidade_conjuntos (o realizado) para ver quem estourou o limite.
 
 - Fonte: ANEEL
 - Linhas: 263.401
+- Ressalvas: a série útil começa em 1997: a única linha de 1990 é erro de digitação da ANEEL no arquivo de origem (EDP ES, conjunto GUACUI, FEC) e 1996 tem só 78 linhas contra ~9.600 em 1997, então filtre ano >= 1997 para comparar anos. Traz anos futuros (até 2032), que são limites já definidos e não realizado
 
 | Coluna | Tipo |
 |---|---|
@@ -359,19 +511,50 @@ Emissões de debêntures incentivadas de infraestrutura (Lei 12.431), com emisso
 | `indexador` | VARCHAR |
 | `setor` | VARCHAR |
 
+## debentures_incentivadas_portarias
+
+As portarias ministeriais que AUTORIZARAM debêntures incentivadas de infraestrutura (Lei 12.431), de 2012 a 2015: número e data da portaria, ministério, titular do projeto (a SPE), controladores em holding_spe, e, quando a debênture foi de fato emitida, o código do ativo, a série beneficiada, o volume total e a parcela incentivada (em R$ milhões), o regime de distribuição (ICVM 400 ou 476), o vencimento, o indexador e a taxa. É a camada de autorização que falta em debentures_snd e debentures_incentivadas: quem autorizou, quando, e quanto do autorizado virou emissão.
+
+- Fonte: ANBIMA e ministérios, planilha de debêntures incentivadas da Lei 12.431, aba 'ICVM 400 e 476' (cvm/deb_incentivadas.xls)
+- Linhas: 81
+- Ressalvas: O ARQUIVO ESTÁ CONGELADO EM 2015: a própria planilha diz 'Atualizado em 17/07/2015.' — esta tabela é um retrato histórico dos três primeiros anos da Lei 12.431, NÃO o estoque atual de debêntures incentivadas (para isso use debentures_snd, com 10.008 linhas e a marca incentivada_lei_12431). Não compare o tamanho das duas e conclua que o mercado encolheu. 19 das 81 linhas são SÉRIE ADICIONAL da portaria da linha anterior e vinham com data, número, ministério e titular em branco (a planilha usa o branco como 'idem'): os quatro campos foram preenchidos por bloco e serie_adicional = true marca essas linhas — sem o preenchimento um GROUP BY ministerio perderia um quarto dos dados. Depois do preenchimento são 62 portarias distintas e 59 titulares. 26 das 81 linhas são autorizações que NUNCA viraram emissão (sem codigo_ativo, sem data_emissao e sem volume, todas do MME, como as dez 'Eólica Geribatu I' a 'X'): é informação, é o funil autorização -> emissão, não lixo. O arquivo NÃO TEM CNPJ: a ponte com o resto do banco é codigo_ativo -> debentures_snd.codigo (55 de 55 casam, e os mesmos 55 casam com debentures_incentivadas.codigo_cetip), de onde se obtém o CNPJ por JOIN; o CNPJ não foi materializado aqui para não congelar dado de outra fonte. Ligação por NOME é fraca e não deve ser usada (dos 59 titulares distintos só 6 casam com agentes_aneel.razao_social). Cuidado com quem é o emissor: a portaria autoriza o PROJETO (a SPE) e a debênture costuma ser emitida pela HOLDING — APAR16 tem titular 'Empresa Litorânea de Transmissão de Energia S.A. - ELTE.' e emissora 'ALUPAR INVESTIMENTO S/A' no SND, então titular e debentures_snd.emissora podem ser empresas diferentes e o CNPJ obtido é o da holding. Volumes em R$ MILHÕES (confirmado: volume_12431 * 1e6 é igual a debentures_snd.volume_emitido_brl nos 55 casos). Das 81 linhas, 50 são do Ministério de Minas e Energia, 21 do Ministério dos Transportes, 9 da Secretaria de Aviação Civil e 1 da Secretaria de Portos; das 55 que viraram emissão só 19 são de setor elétrico pela classificação de debentures_snd, e ministerio = 'Ministério de Minas e Energia' não é garantia de setor elétrico, porque o MME também autorizou projetos de gás. regime_distribuicao vem NULL em 37 linhas (as 26 sem emissão mais 11 emitidas sem o campo preenchido pela ANBIMA), então não o use para separar autorizado de emitido — use codigo_ativo IS NULL. taxa_pct_aa só significa algo junto com remuneracao: quando remuneracao = 'IPCA' é o spread real sobre o IPCA (8,75% a.a. no LTMC12) e quando é 'Prefixado' é a taxa nominal (10,1% no FERR18); nas 27 linhas com remuneracao NULL não houve emissão
+
+| Coluna | Tipo |
+|---|---|
+| `ordem` | INTEGER |
+| `data_portaria` | DATE |
+| `numero_portaria` | INTEGER |
+| `ministerio` | VARCHAR |
+| `titular` | VARCHAR |
+| `serie_adicional` | BOOLEAN |
+| `holding_spe` | VARCHAR |
+| `data_emissao` | DATE |
+| `inicio_distribuicao` | DATE |
+| `regime_distribuicao` | VARCHAR |
+| `codigo_ativo` | VARCHAR |
+| `serie_isenta` | INTEGER |
+| `volume_total_brl_milhoes` | DOUBLE |
+| `volume_12431_brl_milhoes` | DOUBLE |
+| `data_vencimento` | DATE |
+| `remuneracao` | VARCHAR |
+| `taxa_pct_aa` | DOUBLE |
+
 ## debentures_snd
 
-Todas as debêntures registradas no SND (Sistema Nacional de Debêntures), com CNPJ da emissora, data de emissão e de vencimento, indexador (DI, IPCA, PRE...) e taxa, se é incentivada (Lei 12.431), garantia, quantidade e saldo em mercado. setor_eletrico marca emissoras do setor (CVM ou agentes da ANEEL). Use para cronograma de vencimentos e custo da dívida em debêntures de uma empresa (filtre situacao = 'Registrado' para as vigentes).
+Todas as debêntures registradas no SND (Sistema Nacional de Debêntures), com CNPJ da emissora, data de emissão e de vencimento, indexador (DI, IPCA, PRE...) e taxa, se é incentivada (Lei 12.431), garantia, quantidade e saldo em mercado. Três marcas de origem, independentes: emissora_cvm (1.283 debêntures de companhia de energia registrada na CVM, tabela empresas), concessionaria_aneel (1.146, agente de transmissão ou distribuição) e gerador_ou_autoprodutor_aneel (2.624, tem outorga de geração — inclui AUTOPRODUTOR industrial, que gera para a própria fábrica). setor_eletrico = emissora_cvm OR concessionaria_aneel (1.629 debêntures). Use para cronograma de vencimentos e custo da dívida em debêntures de uma empresa (filtre situacao = 'Registrado' para as vigentes).
 
 - Fonte: SND/ANBIMA, Características das Debêntures, https://www.debentures.com.br/exploreosnd/consultaadados/emissoesdedebentures/caracteristicas_r.asp
 - Linhas: 10.008
-- Ressalvas: saldo_em_mercado_brl = quantidade em mercado × valor nominal atualizado na data_valor_nominal_atual, sem juros acumulados (aproxima o principal, não o valor contábil); não inclui amortizações futuras por data (só o vencimento final); taxa_juros_pct_aa é a sobretaxa ou taxa pré conforme o índice (ex.: DI + 1,2% ou IPCA + 6%), e percentual_indice é o % do índice (ex.: 100% do DI). SPEs de um grupo emitem com CNPJ próprio: junte com participacoes_societarias para somar por grupo
+- Ressalvas: saldo_em_mercado_brl = quantidade em mercado × valor nominal atualizado na data_valor_nominal_atual, sem juros acumulados (aproxima o principal, não o valor contábil); não inclui amortizações futuras por data (só o vencimento final); taxa_juros_pct_aa é a sobretaxa ou taxa pré conforme o índice (ex.: DI + 1,2% ou IPCA + 6%), e percentual_indice é o % do índice (ex.: 100% do DI). SPEs de um grupo emitem com CNPJ próprio: junte com participacoes_societarias para somar por grupo. 4 debêntures da VESTE (LLIS10, LLIS17, LLIS18 e LLIS20) vêm com data_vencimento 31/12/9999 no SND, que é o marcador de vencimento não definido: filtre data_vencimento < DATE '2100-01-01' antes de montar cronograma de vencimentos. NÃO use gerador_ou_autoprodutor_aneel como 'empresa de energia': ele inclui autoprodutor industrial, e é por isso que Vale, Sabesp e Suzano aparecem marcados ali (1.686 debêntures só têm essa marca)
 
 | Coluna | Tipo |
 |---|---|
 | `codigo` | VARCHAR |
 | `emissora` | VARCHAR |
 | `cnpj` | VARCHAR |
+| `emissora_cvm` | BOOLEAN |
+| `concessionaria_aneel` | BOOLEAN |
+| `gerador_ou_autoprodutor_aneel` | BOOLEAN |
 | `setor_eletrico` | BOOLEAN |
 | `situacao` | VARCHAR |
 | `emissao` | VARCHAR |
@@ -418,6 +601,48 @@ DEC (horas) e FEC (interrupções) anuais de cada distribuidora, com os limites 
 | `consumidores_medios` | DOUBLE |
 | `fonte` | VARCHAR |
 
+## dicionario_cvm
+
+Dicionário de dados da CVM: o que significa cada campo dos arquivos de DFP e ITR (CD_CONTA, ESCALA_MOEDA, ORDEM_EXERC, GRUPO_DFP, ST_CONTA_FIXA...), com a descrição oficial, o domínio e o tipo. demonstrativo diz a que arquivo o campo pertence: BPA e BPP (balanço patrimonial ativo e passivo), DRE, DRA, DFC_MI e DFC_MD (fluxo de caixa indireto e direto), DVA, DMPL, composicao_capital, parecer e indice_documentos. Consulte aqui antes de interpretar as colunas cruas de contas_cvm e contas_cvm_trimestral.
+
+- Fonte: CVM, dicionário de dados dos pacotes de DFP (cvm/meta_dfp/*.txt)
+- Linhas: 146
+- Ressalvas: é a documentação do arquivo ANUAL (DFP); o ITR usa os mesmos campos, com a exceção conhecida do tipo do relatório do auditor (TP_RELAT_AUD na DFP, TP_RELAT_ESP no ITR). tamanho vale para campos de texto e data; nos numéricos o tamanho vem como precisao e escala (casas decimais). Descreve os CSVs crus da CVM, não as colunas já renomeadas das tabelas desta plataforma
+
+| Coluna | Tipo |
+|---|---|
+| `demonstrativo` | VARCHAR |
+| `arquivo` | VARCHAR |
+| `campo` | VARCHAR |
+| `descricao` | VARCHAR |
+| `dominio` | VARCHAR |
+| `tipo_dados` | VARCHAR |
+| `tamanho` | INTEGER |
+| `precisao` | INTEGER |
+| `escala` | INTEGER |
+
+## documentos_cvm
+
+Documentos que cada empresa entregou à CVM (DFP anual, ITR trimestral e FCA cadastral), com a data de recebimento, a versão e o link para baixar o documento original no sistema RAD da CVM.
+
+- Fonte: CVM, índice de documentos dos pacotes DFP, ITR e FCA
+- Linhas: 2.123
+- Ressalvas: só as categorias DFP, ITR e FCA; o link abre o documento completo no site da CVM (rad.cvm.gov.br)
+
+| Coluna | Tipo |
+|---|---|
+| `cnpj` | VARCHAR |
+| `empresa` | VARCHAR |
+| `cd_cvm` | VARCHAR |
+| `categoria` | VARCHAR |
+| `data_referencia` | DATE |
+| `ano` | BIGINT |
+| `trimestre` | BIGINT |
+| `versao` | INTEGER |
+| `id_documento` | VARCHAR |
+| `data_recebimento` | DATE |
+| `link` | VARCHAR |
+
 ## empresas
 
 Companhias abertas do setor elétrico registradas na CVM (uma linha por CNPJ). Use buscar_empresa para achar o CNPJ.
@@ -451,6 +676,669 @@ Apelidos, marcas, nomes antigos e tickers da B3 de cada empresa, ligados ao CNPJ
 | `cnpj` | VARCHAR |
 | `tipo` | VARCHAR |
 | `observacao` | VARCHAR |
+
+## empresas_auditoria
+
+Auditores independentes de cada empresa (uma linha por período de atuação): firma, CNPJ, código CVM, responsável técnico e datas de início e fim. Serve para ver troca de auditor e tempo de casa.
+
+- Fonte: CVM FCA, formulário cadastral (dados.cvm.gov.br)
+- Linhas: 188
+- Ressalvas: só as empresas de energia elétrica (tabela empresas), na entrega mais recente de cada uma; o CPF do responsável técnico não é carregado (dado pessoal). fim_responsavel é NULL em TODAS as linhas porque a CVM não publica esse campo no FCA (vem vazio nas 1.041 linhas do arquivo): NÃO leia o nulo como 'o responsável técnico continua em atividade'. Para o auditor, fim_auditor é preenchido
+
+| Coluna | Tipo |
+|---|---|
+| `cnpj` | VARCHAR |
+| `empresa` | VARCHAR |
+| `auditor` | VARCHAR |
+| `cnpj_auditor` | VARCHAR |
+| `cd_cvm_auditor` | VARCHAR |
+| `origem_auditor` | VARCHAR |
+| `inicio_auditor` | DATE |
+| `fim_auditor` | DATE |
+| `responsavel_tecnico` | VARCHAR |
+| `inicio_responsavel` | DATE |
+| `fim_responsavel` | DATE |
+| `data_referencia` | DATE |
+| `versao` | INTEGER |
+
+## empresas_cadastro_fca
+
+Cadastro declarado pela própria empresa no FCA: nome atual e anterior, data de constituição, registro na CVM, situação do emissor, espécie de controle acionário, atividade, fim do exercício social e site. Complementa empresas.
+
+- Fonte: CVM FCA, formulário cadastral (dados.cvm.gov.br)
+- Linhas: 115
+- Ressalvas: só as empresas de energia elétrica (tabela empresas), na entrega mais recente de cada uma; o que a empresa declarou, não o cadastro operacional da CVM (tabela empresas)
+
+| Coluna | Tipo |
+|---|---|
+| `cnpj` | VARCHAR |
+| `nome_empresarial` | VARCHAR |
+| `nome_anterior` | VARCHAR |
+| `data_nome_atual` | DATE |
+| `data_constituicao` | DATE |
+| `cd_cvm` | VARCHAR |
+| `data_registro_cvm` | DATE |
+| `categoria_registro` | VARCHAR |
+| `situacao_registro` | VARCHAR |
+| `situacao_emissor` | VARCHAR |
+| `data_situacao_emissor` | DATE |
+| `controle_acionario` | VARCHAR |
+| `setor_atividade` | VARCHAR |
+| `descricao_atividade` | VARCHAR |
+| `pais_origem` | VARCHAR |
+| `pais_custodia` | VARCHAR |
+| `dia_fim_exercicio_social` | INTEGER |
+| `mes_fim_exercicio_social` | INTEGER |
+| `pagina_web` | VARCHAR |
+| `data_referencia` | DATE |
+| `versao` | INTEGER |
+
+## empresas_contatos
+
+Endereços e contatos declarados no FCA, numa tabela só: categoria = endereço (sede e correspondência), DRI (diretor de relações com investidores), escriturador ou departamento de acionistas. Traz logradouro, cidade, UF, CEP, telefone e e-mail.
+
+- Fonte: CVM FCA, formulário cadastral (dados.cvm.gov.br)
+- Linhas: 476
+- Ressalvas: só as empresas de energia elétrica (tabela empresas), na entrega mais recente de cada uma; o CPF do DRI não é carregado (dado pessoal)
+
+| Coluna | Tipo |
+|---|---|
+| `cnpj` | VARCHAR |
+| `empresa` | VARCHAR |
+| `categoria` | VARCHAR |
+| `contato` | VARCHAR |
+| `cargo_ou_documento` | VARCHAR |
+| `tipo_endereco` | VARCHAR |
+| `logradouro` | VARCHAR |
+| `complemento` | VARCHAR |
+| `bairro` | VARCHAR |
+| `cidade` | VARCHAR |
+| `uf` | VARCHAR |
+| `pais` | VARCHAR |
+| `cep` | VARCHAR |
+| `telefone` | VARCHAR |
+| `email` | VARCHAR |
+| `inicio` | DATE |
+| `fim` | DATE |
+| `data_referencia` | DATE |
+| `versao` | INTEGER |
+
+## empresas_divulgacao
+
+Jornais e canais em que cada empresa publica seus atos societários, por UF.
+
+- Fonte: CVM FCA, formulário cadastral (dados.cvm.gov.br)
+- Linhas: 240
+- Ressalvas: só as empresas de energia elétrica (tabela empresas), na entrega mais recente de cada uma
+
+| Coluna | Tipo |
+|---|---|
+| `cnpj` | VARCHAR |
+| `empresa` | VARCHAR |
+| `canal` | VARCHAR |
+| `uf` | VARCHAR |
+| `data_referencia` | DATE |
+| `versao` | INTEGER |
+
+## empresas_negociacao_exterior
+
+Países onde os papéis da empresa também são negociados (ADR, listagem no exterior) e a data de admissão.
+
+- Fonte: CVM FCA, formulário cadastral (dados.cvm.gov.br)
+- Linhas: 8
+- Ressalvas: só as empresas de energia elétrica (tabela empresas), na entrega mais recente de cada uma
+
+| Coluna | Tipo |
+|---|---|
+| `cnpj` | VARCHAR |
+| `empresa` | VARCHAR |
+| `pais` | VARCHAR |
+| `data_admissao` | DATE |
+| `data_referencia` | DATE |
+| `versao` | INTEGER |
+
+## empresas_valores_mobiliarios
+
+Valores mobiliários de cada empresa (ações ON/PN, units, debêntures, BDR...): ticker, mercado, bolsa, segmento de listagem e datas de início e fim de negociação. em_negociacao = true quando não há data de fim.
+
+- Fonte: CVM FCA, formulário cadastral (dados.cvm.gov.br)
+- Linhas: 161
+- Ressalvas: só as empresas de energia elétrica (tabela empresas), na entrega mais recente de cada uma; papéis sem código de negociação (debêntures, notas) também aparecem, com ticker nulo. composicao_bdr_unit só se aplica a BDR unit e por isso vem preenchida em 3 das 161 linhas: nulo aqui significa 'não é BDR unit', não dado faltando
+
+| Coluna | Tipo |
+|---|---|
+| `cnpj` | VARCHAR |
+| `empresa` | VARCHAR |
+| `valor_mobiliario` | VARCHAR |
+| `ticker` | VARCHAR |
+| `classe_preferencial` | VARCHAR |
+| `sigla_classe_preferencial` | VARCHAR |
+| `composicao_bdr_unit` | VARCHAR |
+| `mercado` | VARCHAR |
+| `entidade_administradora` | VARCHAR |
+| `segmento` | VARCHAR |
+| `inicio_negociacao` | DATE |
+| `fim_negociacao` | DATE |
+| `inicio_listagem` | DATE |
+| `fim_listagem` | DATE |
+| `em_negociacao` | BOOLEAN |
+| `data_referencia` | DATE |
+| `versao` | INTEGER |
+
+## epe_anuario_consumo_mensal
+
+Consumo de energia elétrica e número de consumidores REALIZADOS, mês a mês de 01/2011 a 12/2025, por UF, subsistema, tipo de consumidor (Cativo ou Livre), classe de consumo em três níveis (classe, subclasse, subclasse_detalhe), grupo e subgrupo de tensão e faixa de consumo em kWh. consumo_mwh em MWh; consumidores é o estoque de unidades consumidoras do mês. É a série de consumo mais longa e mais detalhada do banco: começa em 2011, inclui consumidor livre e é a única com abertura por faixa de consumo e por nível de tensão.
+
+- Fonte: EPE, Anuário Estatístico de Energia Elétrica, base bruta de consumo (anuario_dados_brutos.xlsx)
+- Linhas: 423.751
+- Ressalvas: a unidade é MWh (a planilha não diz): a soma de 2024 dá 561,57 milhões de MWh, que é o consumo total de 561,5 TWh publicado pela EPE. consumidores é ESTOQUE mensal: não some ao longo dos meses; para o ano use a média (sum(consumidores)/12 = 93,29 milhões em 2024 e 94,83 em 2025). 'TOTAL' nas colunas N2/N3 da origem significa 'sem desagregação neste nível' e foi anulado com nullif — quem somar sem anular conta duas vezes. 14.640 linhas com consumo_mwh NULL, 5.882 com consumidores NULL e 876 com consumo_mwh NEGATIVO (ajuste retroativo da distribuidora): filtre antes de agregar. Perímetros diferentes dos de mercado_distribuidoras_mensal (por distribuidora, de 2020 em diante, com faturamento) e de ons_carga_diaria (carga do SIN em MW médio, com perdas): os três números não fecham entre si e não devem entrar na mesma série
+
+| Coluna | Tipo |
+|---|---|
+| `mes` | DATE |
+| `tipo_consumidor` | VARCHAR |
+| `subsistema` | VARCHAR |
+| `uf` | VARCHAR |
+| `classe` | VARCHAR |
+| `subclasse` | VARCHAR |
+| `subclasse_detalhe` | VARCHAR |
+| `grupo_tensao` | VARCHAR |
+| `subgrupo_tensao` | VARCHAR |
+| `subgrupo_tensao_detalhe` | VARCHAR |
+| `faixa_consumo` | VARCHAR |
+| `faixa_consumo_detalhe` | VARCHAR |
+| `consumidores` | BIGINT |
+| `consumo_mwh` | DOUBLE |
+
+## epe_pde2035_autoproducao_nao_injetada
+
+Autoprodução de eletricidade de grande porte NÃO injetada na rede, em TWh, nos três anos de corte do plano (2025, 2030 e 2035), por segmento: 'Grandes Consumidores' e 'Outros'.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 09, aba Figura 9-39
+- Linhas: 6
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. as duas notas da planilha são a definição: (1) 'Grandes consumidores concentra os segmentos de siderurgia, petroquímica e papel e celulose'; (2) 'Outros não incluem MMGD' — logo esta série e a de MMGD são somáveis sem dupla contagem, e juntas explicam o degrau consumo_menos_ee_twh -> consumo_rede_twh de epe_pde2035_red_demanda_eletricidade. Só três anos de corte, não série anual, e a série não é monótona: em 'Outros' 2035 (57,12 TWh) é MENOR que 2030 (61,87) — não extrapole
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `segmento` | VARCHAR |
+| `energia_twh` | DOUBLE |
+
+## epe_pde2035_capacidade_instalada_fonte
+
+Capacidade instalada existente e contratada do SIN por fonte, ano a ano de 2025 a 2035, em GW. 10 fontes (UHE, PCH, EOLICA, Solar, GAS, CARVAO, NUCLEAR, BIOMASSA, PCT e DIESEL / ÓLEO).
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figura 3-6
+- Linhas: 110
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. a grafia da fonte é a da planilha, inconsistente na origem (EOLICA e CARVAO em maiúscula sem acento convivendo com Solar em caixa mista, e 'DIESEL / ÓLEO' com espaços em volta da barra): quem cruzar com usinas (SIGA) precisa de tabela de equivalência. 'Solar' INCLUI MMGD — marca 60,27 GW em 2025, muito acima da solar centralizada do SIGA —, então esta tabela não é comparável com o total de usinas/capacidade_por_grupo e somá-la com epe_pde2035_mmgd_capacidade_cenario conta a MMGD duas vezes. PCT é pequena central termelétrica e PCH pequena central hidrelétrica; a planilha não abre a legenda
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `fonte` | VARCHAR |
+| `potencia_gw` | DOUBLE |
+
+## epe_pde2035_carga_energia_cenario
+
+Carga de energia do SIN projetada ano a ano (2025-2035) nos três cenários de demanda da EPE (Cenário Inferior, Referência e Superior), em GW médio.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 02, aba Figura 2-25
+- Linhas: 33
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. é CARGA, não consumo: inclui perdas e está em GW médio, então não compara com consumo_mwh de epe_anuario_consumo_mensal nem com consumo_rede_twh de epe_pde2035_red_demanda_eletricidade. Ao citar 'a carga projetada' diga o cenário: em 2035 o superior (138,29 GWméd) está 20,7% acima do de referência (114,61)
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `cenario` | VARCHAR |
+| `carga_gwmed` | DOUBLE |
+
+## epe_pde2035_cargas_conexao_rede_basica
+
+Potência dos projetos de data center e de hidrogênio/amônia com processo de conexão à Rede Básica aberto no MME, por ano de entrada pretendida, de 2026 a 2038, em GW. data_center_gw e hidrogenio_amonia_gw são a adição do ano; carga_acumulada_gw é o estoque.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 04, aba Figura 4-3
+- Linhas: 13
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. é FILA de solicitação de acesso no MME (data-base outubro de 2025), não carga confirmada nem contratada, e a única aba recomendada cuja fonte não é 'Elaboração EPE'. O título promete abertura por UF, mas NÃO há coluna de UF na aba — não prometa corte estadual a partir daqui. Não reconstitua o acumulado somando as duas primeiras colunas: em 2027 o acumulado (5,177) já é maior que a soma delas (2,775), porque inclui carga de outras naturezas. Vai até 2038, três anos além do horizonte do plano
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `data_center_gw` | DOUBLE |
+| `hidrogenio_amonia_gw` | DOUBLE |
+| `carga_acumulada_gw` | DOUBLE |
+
+## epe_pde2035_cmo_projetado_mes
+
+Custo marginal de operação (CMO) médio projetado do submercado Sudeste/Centro-Oeste, mês a mês, nos três anos de corte do plano (2026, 2030 e 2035), em R$/MWh de 2025.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figura 3-28
+- Linhas: 36
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. só três anos de corte (2026, 2030 e 2035) e só o SE/CO: a planilha não traz os outros submercados nem os anos intermediários. É a MÉDIA das 2.000 séries hidrológicas do modelo, não um CMO esperado de mercado — o salto de dezembro de 2030 (R$ 42,34) para dezembro de 2035 (R$ 217,53) é resultado de premissa de escassez, não previsão de preço. subsistema é literal derivado do título da figura, não lido de célula. Em R$ de 2025: não compare direto com ons_cmo_mensal nem com ons_cmo_semihora, que estão em reais correntes
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `mes` | INTEGER |
+| `subsistema` | VARCHAR |
+| `cmo_brl_mwh` | DOUBLE |
+
+## epe_pde2035_concessoes_vincendas
+
+Potência e número de contratos de concessão de GERAÇÃO que vencem no decênio, acumulados ano a ano de 2025 a 2035 (15.462,16 MW e 45 contratos no total).
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figura 3-31
+- Linhas: 11
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. as duas colunas são ACUMULADAS: 15.462,16 MW e 45 contratos em 2035 são o total do período, não do ano. A base declarada no título é o SIGA da ANEEL em dez/2025, um retrato datado — a tabela usinas tem o SIGA atualizado e pode divergir. A lista usina a usina não está na planilha (está no Anexo I-6 do relatório), então não há como abrir por usina
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `potencia_acumulada_mw` | DOUBLE |
+| `contratos_acumulados` | INTEGER |
+
+## epe_pde2035_crescimento_consumo_classe
+
+Taxa média anual de crescimento do consumo de eletricidade na rede no decênio 2025-2035, por classe (Residencial, Industrial, Comercial e Outros) e cenário de demanda, em % ao ano.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 02, aba Figura 2-26
+- Linhas: 12
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. a planilha guarda FRAÇÃO (0,03039) apesar do título dizer '%': multiplicado por 100 e arredondado em 4 casas, e é por isso que a unidade está no nome da coluna. É a taxa média do decênio, não taxa ano a ano. A classe 'Outros' agrega Rural, Poder Público, Iluminação Pública e Serviço Público, que em epe_anuario_consumo_mensal são quatro classes separadas: não cruze classe a classe sem reagrupar
+
+| Coluna | Tipo |
+|---|---|
+| `classe` | VARCHAR |
+| `cenario` | VARCHAR |
+| `crescimento_pct_aa` | DOUBLE |
+
+## epe_pde2035_curva_carga_horaria
+
+Curva de carga horária projetada para o dia de ponta de cada mês de 2035, hora a hora (0 a 23) e por classe de consumo, em GWh/h. 12 meses x 24 horas x 5 classes.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 02, aba Figura 2-23
+- Linhas: 1.440
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. é só 2035 e só o DIA DE PONTA de cada mês, não curva média nem série horária do ano inteiro. A classe 'Perdas e Diferenças' não é consumo: é o fechamento do balanço, e somar as cinco classes dá a carga, não o consumo. Nesta aba os meses vêm abreviados (Jan), ao contrário de epe_pde2035_demanda_maxima_sin_mes (Janeiro)
+
+| Coluna | Tipo |
+|---|---|
+| `mes` | INTEGER |
+| `hora` | INTEGER |
+| `classe` | VARCHAR |
+| `carga_gwh_h` | DOUBLE |
+
+## epe_pde2035_custos_referencia_fonte
+
+Parâmetros de custo de referência que a EPE usou no modelo de expansão, por tecnologia de geração ou armazenamento: CAPEX ('capex_brl_kw', R$/kW), O&M fixo anual ('om_fixo_brl_kw_ano', R$/kW.ano) e encargos, taxas e impostos ('encargos_brl_kw_ano', R$/kW.ano). A unidade está na coluna grandeza.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figuras 3-19, 3-20 e 3-21
+- Linhas: 86
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. coluna valor GENÉRICA: filtre grandeza antes de comparar. As três abas NÃO têm a mesma lista de tecnologias (32, 22 e 32 linhas; a de O&M não abre Fotovoltaica em faixas), então uma consulta que junte CAPEX e O&M pela tecnologia perde linhas — use LEFT JOIN consciente disso. As 'Faixas' (Fotovoltaica e Bateria - Faixa 1/2/3) são faixas de custo do modelo, não de porte, e a planilha não define os limites. São parâmetros de entrada em R$ de 2025, não custo observado em leilão
+
+| Coluna | Tipo |
+|---|---|
+| `grandeza` | VARCHAR |
+| `tecnologia` | VARCHAR |
+| `valor` | DOUBLE |
+
+## epe_pde2035_demanda_gas_natural
+
+Demanda projetada de gás natural de 2025 a 2035 em milhões de m³/dia, por componente (não térmica, termelétrica máxima, refino e FAFENs, gás de uso do sistema) e com os dois totais da EPE (média e máxima), para duas abrangências: 'Brasil' e 'malha integrada' de gasodutos. Entra no banco pela coluna termelétrica, que é o elo entre a expansão das UTEs a gás e a infraestrutura de gás.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 07, aba Figuras 7-5 e 7-6
+- Linhas: 22
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. a demanda termelétrica é MÁXIMA e as outras são MÉDIAS: não some as colunas (em 2025 a total média é 66 e a total máxima 119, nenhuma das duas é a soma das componentes). A diferença entre 'Brasil' e 'malha integrada' é a demanda fora da malha de gasodutos (térmicas isoladas e usos locais): em 2025 a térmica máxima é 65 no Brasil e 22 na malha. Os números vêm INTEIROS, arredondados pela EPE — não use para diferença ano a ano de precisão fina. Do capítulo de gás só este recorte entra no banco; oferta e preço de gás ficam fora
+
+| Coluna | Tipo |
+|---|---|
+| `abrangencia` | VARCHAR |
+| `ano` | INTEGER |
+| `demanda_nao_termica_milhoes_m3_dia` | DOUBLE |
+| `demanda_termeletrica_maxima_milhoes_m3_dia` | DOUBLE |
+| `demanda_refino_milhoes_m3_dia` | DOUBLE |
+| `gas_uso_sistema_milhoes_m3_dia` | DOUBLE |
+| `demanda_total_media_milhoes_m3_dia` | DOUBLE |
+| `demanda_total_maxima_milhoes_m3_dia` | DOUBLE |
+
+## epe_pde2035_demanda_maxima_sin_mes
+
+Demanda máxima instantânea projetada do SIN, mês a mês, nos dois anos-limite do plano (2025 e 2035), em GWh/h (= GW médio na hora de ponta).
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 02, aba Figura 2-22
+- Linhas: 24
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. só 2025 e 2035, não a série completa: a figura de origem compara os extremos do decênio. O mês vem como nome em português na planilha e foi convertido para número
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `mes` | INTEGER |
+| `demanda_maxima_gwh_h` | DOUBLE |
+
+## epe_pde2035_demanda_subsistema
+
+Demanda projetada de cada subsistema (Sudeste/Centro-Oeste, Sul, Nordeste e Norte) em MW médio e demanda máxima do SIN em MW de ponta, ano a ano de 2026 a 2035, no cenário de referência.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figura 3-7
+- Linhas: 10
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. tabela larga de propósito: as quatro colunas de subsistema estão em MW MÉDIO e a última em MW de PONTA — despivotar jogaria duas unidades na mesma coluna de valor. Começa em 2026, não 2025. 'Sudeste' aqui é o submercado Sudeste/Centro-Oeste, que em epe_anuario_consumo_mensal aparece como 'Sudeste / Centro-Oeste'
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `sudeste_mwmed` | DOUBLE |
+| `sul_mwmed` | DOUBLE |
+| `nordeste_mwmed` | DOUBLE |
+| `norte_mwmed` | DOUBLE |
+| `demanda_maxima_sin_mw` | DOUBLE |
+
+## epe_pde2035_emissoes_eletricidade_recorte
+
+A mesma contabilidade de emissões de epe_pde2035_emissoes_setor, mas com o setor elétrico ABERTO em SIN, Autoprodução e Sistemas Isolados, em MtCO2eq, nos anos 2025 e 2035. 11 segmentos.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 10, aba Figura 10-2
+- Linhas: 22
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. só 2025 e 2035. O título de origem promete 'variações percentuais no decênio', mas a variação NÃO está na aba — calcule de 2025 para 2035 se precisar. SIN + Autoprodução + Sistemas Isolados = 'Setor elétrico' de epe_pde2035_emissoes_setor (13,32792 + 25,243132 + 2,199497 = 40,770549 em 2025). A coluna se chama segmento, e não setor, justamente para impedir um UNION descuidado com a outra tabela de emissões
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `segmento` | VARCHAR |
+| `emissao_mtco2eq` | DOUBLE |
+
+## epe_pde2035_emissoes_setor
+
+Emissões de gases de efeito estufa pela produção e uso de energia, por setor (Transportes, Industrial, Setor elétrico, Setor Energético, Agropecuário, Residencial, Emissões Fugitivas, Comercial e Público), em MtCO2eq, nos quatro anos de corte: 2005, 2025, 2030 e 2035.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 10, aba Figura 10-1
+- Linhas: 36
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. 2005 é o ano-base da NDC brasileira, não uma observação do plano: são 4 anos de CORTE, não uma série. O 'Setor elétrico' aqui (26,674 em 2005; 40,771 em 2025; 58,550 em 2030; 62,472 em 2035) INCLUI autoprodução e sistemas isolados, que aparecem separados em epe_pde2035_emissoes_eletricidade_recorte — as duas tabelas não podem ser unidas na mesma coluna de setor. A unidade é MtCO2EQ (equivalente), não MtCO2. A grafia é inconsistente na própria planilha ('Setor elétrico' em minúscula e 'Setor Energético' em maiúscula) e foi preservada. A coluna de total foi descartada e fecha exata com a soma dos 9 setores nos 4 anos
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `setor` | VARCHAR |
+| `emissao_mtco2eq` | DOUBLE |
+
+## epe_pde2035_expansao_indicativa
+
+Expansão indicativa ACUMULADA da geração no horizonte 2026-2035, por fonte (Hidro, Eólica, Solar, UTE Flex, UTE Inflex, UTE Bio, Nuclear, Armazenamento e RD), em MW. É o resultado central do capítulo de geração.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figura 3-23
+- Linhas: 90
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. é ACUMULADA: o valor de 2035 é o total do decênio e a adição de um ano é a diferença entre dois anos consecutivos — somar a coluna ao longo dos anos é erro grosseiro. É INDICATIVA: é a expansão que o modelo escolhe, não obra contratada, então não compare com expansao_geracao (RALIE/ANEEL, obra declarada em andamento) nem com resultado de leilão. 'RD' é resposta da demanda e 'Armazenamento' é bateria: entram como oferta no modelo mas não são geração. Começa em 2026 porque a expansão do primeiro ano já é a contratada, que está em epe_pde2035_capacidade_instalada_fonte. A coluna de total da planilha foi descartada e fecha exata com a soma das 9 fontes em todos os 10 anos
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `fonte` | VARCHAR |
+| `potencia_acumulada_mw` | DOUBLE |
+
+## epe_pde2035_expansao_termica
+
+Expansão indicativa ACUMULADA das usinas térmicas de 2026 a 2035, aberta por tipo (Gás Natural Flexível, Gás Natural Inflexível, Retrofit Térmica, Retrofit Biocombustível, Biomassa, RSU e Carvão), em MW.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figura 3-24
+- Linhas: 70
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. acumulada, como epe_pde2035_expansao_indicativa. A nota da planilha é a definição oficial dos retrofits: 'Retrofit Térmica inclui usinas a gás natural flexíveis, carvão mineral e conversão de usinas a óleo combustível e diesel para biocombustível' — ou seja, retrofit é conversão de usina EXISTENTE, não usina nova. 'Carvão' fica zerado em todo o decênio (é zero real, não dado faltante). A soma das colunas desta tabela NÃO iguala UTE Flex + UTE Inflex + UTE Bio de epe_pde2035_expansao_indicativa, porque aqui os retrofits aparecem separados
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `tipo_termica` | VARCHAR |
+| `potencia_acumulada_mw` | DOUBLE |
+
+## epe_pde2035_geracao_eletricidade_fonte
+
+Geração total de eletricidade por fonte em 2025, 2030 e 2035, em TWh e em participação percentual, separando o segmento 'Geração Centralizada' do segmento 'Autoprodução & Geração Distribuída'. tipo_linha diz o que a linha é: 'item' (fonte), 'subtotal' (do segmento) ou 'total' (geral, 810,62 TWh em 2025 e 1.122,14 em 2035).
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 12, aba Tabela 12-3
+- Linhas: 48
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. tipo_linha existe para você somar sem contar duas vezes: use WHERE tipo_linha = 'item' para agregar (os 13 itens somam 810,623 TWh em 2025, 962,874 em 2030 e 1.122,135 em 2035, os mesmos valores das linhas de total, e as participações somam 100%). A linha de total tem segmento NULL de propósito. As notas da planilha definem o escopo: (1) 'Hidráulica inclui parcela importada de Itaipu'; (2) 'Biomassa inclui biodiesel'; (3) 'Outros incluem Óleo Combustível, Óleo Diesel, Gás de Processo, Sistemas Isolados, RSU'; a nota (4) do arquivo fala de um rótulo 'Outras Renováveis' que NÃO existe nesta aba (foi reaproveitada de outra tabela do relatório) e não deve ser interpretada como escopo de 'Outros'. Os rótulos de fonte NÃO são os de epe_pde2035_capacidade_instalada_fonte (lá UHE, EOLICA, PCT; aqui Hidráulica, Eólica, Gás Natural): não faça JOIN por nome de fonte sem tabela de correspondência. Só três anos de corte
+
+| Coluna | Tipo |
+|---|---|
+| `segmento` | VARCHAR |
+| `fonte` | VARCHAR |
+| `tipo_linha` | VARCHAR |
+| `ano` | INTEGER |
+| `geracao_twh` | DOUBLE |
+| `participacao_pct` | DOUBLE |
+
+## epe_pde2035_geracao_hidro_termica_mes
+
+Geração hidrelétrica e termelétrica média projetada do SIN, mês a mês de 01/2026 a 12/2035 (120 meses), em MW médio.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figura 3-29
+- Linhas: 120
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. a célula de mês é uma data do Excel e com all_varchar volta como o serial cru em texto ('46023'): a conversão é DATE '1899-12-30' + inteiro, e um CAST AS DATE ingênuo devolveria NULL em todas as linhas. O filtro serial > 20000 é o que corta cabeçalho e rodapé. Só hidráulica e térmica: eólica e solar não estão nesta figura, então as duas colunas NÃO somam a geração total do SIN. Complementa ons_geracao_fonte_mensal (realizado)
+
+| Coluna | Tipo |
+|---|---|
+| `mes` | DATE |
+| `geracao_hidraulica_mwmed` | DOUBLE |
+| `geracao_termica_mwmed` | DOUBLE |
+
+## epe_pde2035_indicadores
+
+As 13 séries de indicadores de economia e energia do plano, ano a ano de 2025 a 2035: população residente, PIB (total, número índice e per capita), oferta interna de energia, oferta interna de eletricidade e consumo final energético, cada um destes três em valor absoluto, per capita e por unidade de PIB. São 5 nomes de indicador e 13 séries: a chave é o par indicador + unidade, e a unidade de cada série está na coluna unidade.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 12, aba Tabela 12-1
+- Linhas: 143
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. coluna valor GENÉRICA com 13 unidades diferentes: a chave é indicador + unidade, NUNCA indicador só ('PIB' aparece três vezes e 'Oferta interna de energia' também, com unidades diferentes) — qualquer consulta tem de filtrar os dois. As unidades vêm com o expoente em texto corrido porque o superscript do Excel se perde na leitura: '(106 hab)' é 10^6 habitantes e '(109 R$)' é 10^9 R$. As três colunas de 'Variação média anual' da planilha foram descartadas porque são derivadas e recalculáveis (conferido: o CAGR de população fecha na sexta casa) e virariam anos falsos na coluna ano. 'Oferta interna de eletricidade (TWh)' é 810,62 em 2025 e 1.122,14 em 2035, os mesmos totais de epe_pde2035_geracao_eletricidade_fonte
+
+| Coluna | Tipo |
+|---|---|
+| `indicador` | VARCHAR |
+| `unidade` | VARCHAR |
+| `ano` | INTEGER |
+| `valor` | DOUBLE |
+
+## epe_pde2035_investimentos
+
+Investimento previsto no decênio 2025-2035 em toda a cadeia de energia, em R$ bilhões de 2025 e em participação percentual, numa árvore de três níveis: nivel = 0 são os três grandes grupos (Oferta de Energia Elétrica, Petróleo e Gás Natural, Oferta de Biocombustíveis Líquidos), 1 são os 11 subgrupos (Geração Centralizada, Geração Distribuída, Transmissão, Etanol, Refino...), 2 são os 16 itens folha e 3 é a linha de TOTAL geral (R$ 3.529,889 bilhões). grupo e subgrupo trazem o pai de cada linha.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 12, aba Tabela 12-10
+- Linhas: 31
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. NUNCA some investimento_brl_bilhoes sem filtrar nivel: os níveis se contêm (os 3 de nivel = 0 e os 11 de nivel = 1 somam, cada conjunto, 3.529,889, o valor da linha de nivel = 3; e os itens de nivel = 2 somam o valor do seu subgrupo). Nem todo subgrupo é aberto em itens: só 5 dos 11 têm filhos, e é por isso que o nivel = 2 soma apenas 770,136. Só cerca de 17% do total é setor elétrico: 'Oferta de Energia Elétrica' são R$ 596,246 bi (16,89%) contra R$ 2.818,416 bi (79,79%) de petróleo e gás — quem citar 'R$ 3,5 trilhões de investimento do PDE' está citando quase tudo petróleo. Os rótulos trazem o número da nota do relatório entre parênteses ('Geração Centralizada (1)'), preservado. O item 'Transmissão (3)' vale R$ 116,905 bi, que é o CENÁRIO DE REFERÊNCIA de epe_pde2035_transmissao_investimento_cenario (116,90) e não o otimista (147,83): é assim que os dois capítulos se reconciliam
+
+| Coluna | Tipo |
+|---|---|
+| `grupo` | VARCHAR |
+| `subgrupo` | VARCHAR |
+| `item` | VARCHAR |
+| `nivel` | INTEGER |
+| `investimento_brl_bilhoes` | DOUBLE |
+| `participacao_pct` | DOUBLE |
+
+## epe_pde2035_minerais_criticos
+
+Composição mineral da capacidade instalada de geração de eletricidade do Brasil em 2025 e 2035, em mil toneladas, por mineral (Cobre, Silício, Zinco, Manganês, Níquel, Cromo, Grafite, Terras Raras e Outros): é a demanda de minerais críticos embutida na expansão do parque.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 11, aba Figura 11-7
+- Linhas: 18
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. só 2025 e 2035, e é ESTOQUE embutido no parque instalado, não consumo anual de mineral nem produção mineral brasileira. 'Grafite' é 0,0 em 2025 e 17,61 mil t em 2035: o zero é real (não há bateria de grafite no parque de 2025), não dado faltante. 'Terras Raras' e 'Outros' são agregados. O título da figura diz kt e o cabeçalho diz 'mil t': é a mesma unidade, e o nome da coluna segue o cabeçalho
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `mineral` | VARCHAR |
+| `massa_mil_t` | DOUBLE |
+
+## epe_pde2035_mmgd_capacidade_cenario
+
+Capacidade instalada ACUMULADA de MMGD (micro e minigeração distribuída) por cenário de adoção (Inferior, Referência e Superior), ano a ano de 2013 a 2035, em GW. O cenário de referência chega a 78,10 GW em 2035, contra 61,35 do inferior e 97,80 do superior.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 09, aba Figura 9-18
+- Linhas: 69
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. esta tabela MISTURA realizado e projetado sem coluna que os separe: de 2013 a 2024 os três cenários têm valores IDÊNTICOS (é o histórico da ANEEL) e só divergem de 2025 em diante — o teste é count(DISTINCT potencia_acumulada_gw) = 1 no ano. Citar 'a capacidade de MMGD em 2020 no cenário superior' é citar histórico. Acumulado, em GW. Sobrepõe-se a gd_mmgd (ANEEL, unidade consumidora a unidade consumidora) no trecho histórico; o valor desta tabela está na projeção
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `cenario` | VARCHAR |
+| `potencia_acumulada_gw` | DOUBLE |
+
+## epe_pde2035_mmgd_expansao_fonte
+
+Expansão projetada da micro e minigeração distribuída (MMGD) de 2026 a 2035, por fonte (Fotovoltaica, Eólica, Termelétrica e CGH), em potência e em energia. A unidade está na coluna grandeza: 'potencia_mw' (MW) ou 'energia_mwmed' (MW médio).
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 03, aba Figura 3-8
+- Linhas: 80
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. coluna valor GENÉRICA: a unidade está em grandeza, não no nome, porque a aba mede as mesmas fontes de duas formas. SEMPRE filtre grandeza antes de agregar. A energia em MWmédio vem arredondada a inteiro na planilha enquanto a potência tem 8 decimais: precisão diferente na mesma linha. As colunas de total foram descartadas e são recalculáveis. Sobrepõe-se a gd_mmgd (ANEEL, cadastro de conexões realizadas) no conceito: não encadeie as duas séries, uma é cadastro e a outra é modelo de adoção
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `fonte` | VARCHAR |
+| `grandeza` | VARCHAR |
+| `valor` | DOUBLE |
+
+## epe_pde2035_mmgd_resumo_cenario
+
+Resumo dos três cenários de projeção da MMGD: número de adotantes em milhões, potência em GW, geração em GW médio e investimento em R$ bilhões de 2025. É a tabela-resumo do capítulo de RED.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 09, aba Tabela 9-3
+- Linhas: 3
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. cada coluna tem PERÍODO PRÓPRIO, declarado no cabeçalho de origem: adotantes e potência são acumulados de 2013 a 2035, geração é só o ano 2035 e investimento é 2025-2035 — não trate a linha como um ano. Os valores vêm com UMA casa decimal, arredondados pela EPE: potencia_gw do cenário de referência (78,1) é o mesmo número que epe_pde2035_mmgd_capacidade_cenario traz com precisão cheia (78,09943)
+
+| Coluna | Tipo |
+|---|---|
+| `cenario` | VARCHAR |
+| `adotantes_milhoes` | DOUBLE |
+| `potencia_gw` | DOUBLE |
+| `geracao_gwmed` | DOUBLE |
+| `investimento_brl_bilhoes` | DOUBLE |
+
+## epe_pde2035_mmgd_segmento
+
+Capacidade instalada ACUMULADA de MMGD do cenário de referência por segmento de adotante (Comercial (AT), Comercial (BT), Comercial Remoto (AT/BT), Residencial e Residencial Remoto), ano a ano de 2025 a 2035, em GW.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 09, aba Figura 9-20
+- Linhas: 55
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. o título da figura diz 'em 2035' mas a aba traz a série 2025-2035 inteira (o gráfico do relatório é que mostra só 2035). O nível de tensão fica entre parênteses no rótulo do segmento, (AT), (BT) e (AT/BT), porque só o sufixo ' (GW)' foi removido. 'Remoto' é autoconsumo remoto e geração compartilhada. A soma dos 5 segmentos em 2035 (78,10 GW) fecha com o cenário de referência das outras duas tabelas de MMGD
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `segmento` | VARCHAR |
+| `potencia_acumulada_gw` | DOUBLE |
+
+## epe_pde2035_mmgd_uf_2035
+
+Capacidade instalada de MMGD projetada para 2035 por UF, em GW, no cenário de referência. É a única abertura geográfica de MMGD projetada em todo o PDE (SP 15,71 GW, MG 8,13, RJ 6,17).
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 09, aba Figura 9-19
+- Linhas: 27
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. um único ANO (2035) e um único CENÁRIO (referência): não é série, e o ano está no nome da tabela em vez de numa coluna constante. A soma das 27 UFs é a capacidade de 2035 do cenário de referência de epe_pde2035_mmgd_capacidade_cenario (78,10 GW). Complementa gd_mmgd, que tem a UF no realizado
+
+| Coluna | Tipo |
+|---|---|
+| `uf` | VARCHAR |
+| `potencia_gw` | DOUBLE |
+
+## epe_pde2035_red_demanda_eletricidade
+
+A 'escada' dos recursos energéticos distribuídos (RED): quanto do consumo potencial de eletricidade é abatido por eficiência elétrica (EE), autoprodução não injetada (AP) e MMGD antes de sobrar o consumo que chega à rede, ano a ano de 2025 a 2035, em TWh. consumo_rede_twh é o último degrau.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 09, aba Figura 9-1
+- Linhas: 11
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. as quatro colunas são estágios CUMULATIVOS de subtração, não componentes: o abatimento de MMGD em 2035 é consumo_menos_ee_ap_twh - consumo_rede_twh (818,29 - 712,18 = 106,11 TWh) e o abatimento total é 964,05 - 712,18 = 251,87 TWh; somar as quatro colunas não significa nada. As notas da planilha definem o escopo: (1) a energia solar térmica de aquecimento já está no consumo final, conforme o BEN 2024; (2) EE = eficiência elétrica; (3) AP = autoprodução não injetada na rede; (4) MMGD = micro e minigeração distribuída, injetada e não injetada. consumo_rede_twh se compara CONCEITUALMENTE com a soma de epe_anuario_consumo_mensal, mas os perímetros diferem em ~13 TWh em 2025 (autoprodução injetada e ajustes), não é erro
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `consumo_potencial_twh` | DOUBLE |
+| `consumo_menos_ee_twh` | DOUBLE |
+| `consumo_menos_ee_ap_twh` | DOUBLE |
+| `consumo_rede_twh` | DOUBLE |
+
+## epe_pde2035_transmissao_contratos_vincendos
+
+Cronograma dos contratos de concessão de TRANSMISSÃO a vencer e a RAP (Receita Anual Permitida) correspondente, de dez/2022 a dez/2035, em R$ milhões de 2025. É o cronograma que a EPE usa para planejar as reanálises.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 04, aba Figura 4-29
+- Linhas: 14
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. o eixo é ANUAL apesar de a coluna de origem se chamar 'Mês': todos os valores caem em dezembro. As três primeiras linhas (2022, 2023 e 2024) são PASSADO, o que faz desta a única tabela do PDE que mistura realizado com projeção. 2025 e 2026 têm zero contratos e RAP zero, e são linhas legítimas. Mesma armadilha de serial de data do Excel de epe_pde2035_geracao_hidro_termica_mes. Complementa transmissao_contratos, que tem o contrato a contrato real
+
+| Coluna | Tipo |
+|---|---|
+| `mes` | DATE |
+| `contratos` | INTEGER |
+| `rap_brl_milhoes` | DOUBLE |
+
+## epe_pde2035_transmissao_expansao_fisica
+
+Expansão física ACUMULADA da transmissão no cenário de referência, ano a ano de 2026 a 2035 e por nível de tensão (230 a 800 kV): km de linha quando tipo_ativo = 'LT' (extensao_acumulada_km) e MVA de transformação quando tipo_ativo = 'SE' (capacidade_acumulada_mva).
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 04, aba Figuras 4-24 e 4-27
+- Linhas: 100
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. duas colunas de valor, uma sempre NULL: linha de LT não tem MVA e linha de SE não tem km (km e MVA não são a mesma grandeza, por isso não há coluna 'valor' genérica aqui). Acumulado nos dois casos e só cenário de referência. Os totais de 2035 (28.780,87 km e 89.018,32 MVA) NÃO batem com a soma obra a obra de epe_pde2035_transmissao_obras no mesmo recorte (28.307 km e 79.512 MVA): a inconsistência é da própria EPE e não tem explicação nos arquivos
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `tipo_ativo` | VARCHAR |
+| `nivel_tensao` | VARCHAR |
+| `extensao_acumulada_km` | DOUBLE |
+| `capacidade_acumulada_mva` | DOUBLE |
+
+## epe_pde2035_transmissao_investimento_cenario
+
+Investimento ACUMULADO em transmissão ano a ano de 2026 a 2035 nos três cenários de expansão da EPE (Otimista, Referência e Pessimista), em R$ bilhões de 2025.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 04, aba Figura 4-19
+- Linhas: 30
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. os cenários de TRANSMISSÃO têm nomes e significado diferentes dos de DEMANDA: aqui são Otimista/Referência/Pessimista (antecipação ou atraso de obra) e no capítulo 2 são Superior/Referência/Inferior (crescimento econômico) — NÃO faça JOIN pelo nome do cenário com epe_pde2035_carga_energia_cenario. Acumulado: o valor de 2035 (Otimista 147,83; Referência 116,90; Pessimista 98,83) é o total do decênio, e o pessimista congela em 98,83 a partir de 2032. Os três números são reproduzíveis somando investimento_brl de epe_pde2035_transmissao_obras com o corte do ano do cenário <= 2035
+
+| Coluna | Tipo |
+|---|---|
+| `ano` | INTEGER |
+| `cenario` | VARCHAR |
+| `investimento_acumulado_brl_bilhoes` | DOUBLE |
+
+## epe_pde2035_transmissao_investimento_recorte
+
+Investimento em transmissão do cenário de referência (decênio 2026-2035) aberto por três recortes independentes, na coluna recorte: 'outorga' (com e sem outorga), 'submercado' e 'nivel_tensao'; e por tipo de ativo em tipo_ativo ('LT' linha de transmissão, 'SE' subestação). Em R$ bilhões de 2025.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas (pde2035_dados.zip), capítulo 04, aba Figuras 4-21, 4-22, 4-23, 4-25 e 4-26
+- Linhas: 24
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. os três recortes se SOBREPÕEM: nunca some a tabela inteira, filtre recorte (e tipo_ativo). Dentro de recorte = 'outorga' a categoria 'Total' é o total do tipo de ativo e convive com 'Com Outorga' + 'Sem Outorga', que somam o mesmo valor (LT: 68,02 + 9,95 = 77,97; SE: 30,81 + 8,12 = 38,93). Os recortes de submercado usam 'Sudeste/Centro-Oeste' (sem espaços em volta da barra), grafia diferente da Figura 3-7 e do Anuário. Os totais dos três recortes NÃO são idênticos, e a diferença é da EPE: em LT o de submercado soma 77,97 (igual ao 'Total' de outorga) mas o de nível de tensão soma 76,82, R$ 1,15 bi a menos; em SE dá 38,94 contra 38,76. Reconcilia com epe_pde2035_transmissao_obras somando investimento_brl com o corte do ano do cenário de referência <= 2035: LT 73,73 + SECC LT 4,24 = 77,97 e SE 38,93, exatos
+
+| Coluna | Tipo |
+|---|---|
+| `tipo_ativo` | VARCHAR |
+| `recorte` | VARCHAR |
+| `categoria` | VARCHAR |
+| `investimento_brl_bilhoes` | DOUBLE |
+
+## epe_pde2035_transmissao_obras
+
+A expansão da transmissão do PDE 2035 OBRA A OBRA: uma linha por empreendimento (linha de transmissão, subestação ou seccionamento), com o estudo de planejamento que a originou, região geoelétrica, UF de origem e destino, itens de obra, status, extensão em km, capacidade de transformação em MVA, investimento em reais de 2025, código DMSE e data prevista no SIGET, e o ANO DE ENTRADA em cada um dos três cenários (ano_pessimista, ano_referencia, ano_otimista). É o que diz quais obras o planejador espera que entrem, quando e em que cenário.
+
+- Fonte: EPE/MME, Plano Decenal de Expansão de Energia 2035, lista de expansão da transmissão (pde2035_transmissao.xlsx, aba 'PDE 2035'); a data-base do extrato do SIGET, 19/08/2025, vem no nome da coluna de origem
+- Linhas: 758
+- Ressalvas: PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. o nome da coluna de origem do investimento diz 'R$/1000', mas os valores estão em REAIS: somando investimento_brl com o corte ano_otimista <= 2035 dá R$ 147,83 bilhões, exatamente o valor de 2035 do cenário otimista de epe_pde2035_transmissao_investimento_cenario (e o mesmo vale para referência, 116,90, e pessimista, 98,83; e, por tipo de empreendimento no cenário de referência, LT 73,73 + SECC LT 4,24 = 77,97 e SE 38,93, os mesmos valores de epe_pde2035_transmissao_investimento_recorte). O corte <= 2035 é OBRIGATÓRIO para reproduzir o capítulo 4: sem ele LT + SECC LT sobe para R$ 91,35 bi, porque inclui obras de 2036 a 2038 que estão na planilha mas fora do decênio. O 2099 da origem é sentinela de 'a obra não entra neste cenário' e foi anulado (depois disso max(ano_referencia) = 2038 e max(ano_pessimista) = 2030). As QUANTIDADES FÍSICAS NÃO reconciliam com o capítulo 4 e a diferença é grande: no cenário de referência até 2035 a soma obra a obra dá 28.307 km contra 28.780,87 de epe_pde2035_transmissao_expansao_fisica, e 79.512 MVA contra 89.018,32 (mais de 10% de diferença) — o dinheiro fecha, a quantidade física não, e a inconsistência é da própria EPE. 2 linhas não são obras: estudo = 'Investimento Prospectivo 2032' e 'Investimento Prospectivo 2033' (R$ 3,99 bi e R$ 4,87 bi) são reserva de orçamento, vêm sem empreendimento, tipo_empreendimento, regiao_geoeletrica nem caracteristica e só têm ano_otimista (entram só no total do cenário otimista) — filtre-as em qualquer análise por obra. 4 obras têm investimento zero (custo não estimado, não erro de leitura). regiao_geoeletrica é a da EPE, não a do IBGE (um dos 5 valores é 'Centro-Oeste e Estados do Acre e Rondônia'): não junte com uf de outras tabelas assumindo equivalência. uf_origem e uf_destino são NOMES de estado ('Piauí', 'Mato Grosso do Sul'), enquanto o resto do banco usa sigla de 2 letras: um JOIN com usinas.uf ou gd_mmgd.uf exige tabela de conversão. data_necessidade tem valores no PASSADO (a partir de 01/2018): é a data em que a obra passou a ser necessária, não a de entrada — a data de entrada projetada é ano_referencia. A ponte com transmissao_empreendimentos e rap_transmissao_modulos é codigo_dmse (que não existe nessas tabelas hoje) e, em segundo lugar, o nome do empreendimento por texto
+
+| Coluna | Tipo |
+|---|---|
+| `estudo` | VARCHAR |
+| `tipo_empreendimento` | VARCHAR |
+| `regiao_geoeletrica` | VARCHAR |
+| `uf_origem` | VARCHAR |
+| `uf_destino` | VARCHAR |
+| `uf_seccionamento` | VARCHAR |
+| `caracteristica` | VARCHAR |
+| `empreendimento` | VARCHAR |
+| `itens_obra` | VARCHAR |
+| `status` | VARCHAR |
+| `data_necessidade` | DATE |
+| `extensao_km` | DOUBLE |
+| `capacidade_transformacao_mva` | DOUBLE |
+| `forma_contratacao` | VARCHAR |
+| `codigo_dmse` | VARCHAR |
+| `data_prevista_siget` | DATE |
+| `investimento_brl` | DOUBLE |
+| `ano_pessimista` | INTEGER |
+| `ano_referencia` | INTEGER |
+| `ano_otimista` | INTEGER |
 
 ## expansao_geracao
 
@@ -493,7 +1381,7 @@ Micro e minigeração distribuída (MMGD, painéis solares em telhados e usinas 
 
 - Fonte: ANEEL, Relação de Empreendimentos de Geração Distribuída, https://dadosabertos.aneel.gov.br/dataset/relacao-de-empreendimentos-de-geracao-distribuida
 - Linhas: 66.826
-- Ressalvas: mes_cadastro é a data da última atualização cadastral do empreendimento (aproxima a data de conexão, mas pode ser posterior); a base é uma fotografia do estoque conectado em periodo_referencia. Titulares (CPF/CNPJ) não entram
+- Ressalvas: mes_cadastro é a data da última atualização cadastral do empreendimento (aproxima a data de conexão, mas pode ser posterior) e é NULL em 16 empreendimentos, onde a ANEEL gravou o marcador 01/01/1900 em vez da data; a base é uma fotografia do estoque conectado em periodo_referencia. Titulares (CPF/CNPJ) não entram
 
 | Coluna | Tipo |
 |---|---|
@@ -569,7 +1457,7 @@ Indicadores financeiros anuais por empresa (2020 em diante), em R$, prontos para
 
 - Fonte: CVM DFP; cálculo desta plataforma a partir das contas indicadas na coluna fonte
 - Linhas: 652
-- Ressalvas: EBITDA = EBIT (3.05) + depreciação e amortização da DFC; pode diferir do EBITDA ajustado que a empresa divulga. 3.05 é EBIT, nunca chame de EBITDA. Dívida bruta = empréstimos, financiamentos e debêntures (2.01.04 + 2.02.01), sem arrendamentos. capex_brl soma as saídas de caixa de imobilizado, intangível e ativo de contrato (6.02, contas em contas_capex). Concessões (IFRS 15 / ICPC 01) lançam a obra como custo de construção: custo_construcao_concessao_brl. Para 'quanto investiu', use investimento_total_brl (o maior dos dois, sem somar para não contar duas vezes).
+- Ressalvas: EBITDA = EBIT (3.05) + depreciação e amortização da DFC; pode diferir do EBITDA ajustado que a empresa divulga. 3.05 é EBIT, nunca chame de EBITDA. Dívida bruta = empréstimos, financiamentos e debêntures (2.01.04 + 2.02.01), sem arrendamentos. capex_brl soma as saídas de caixa de imobilizado, intangível e ativo de contrato (6.02, contas em contas_capex). Concessões (IFRS 15 / ICPC 01) lançam a obra como custo de construção: custo_construcao_concessao_brl. Para 'quanto investiu', use investimento_total_brl (o maior dos dois, sem somar para não contar duas vezes). sinal_custo_invertido = true nas 2 linhas em que a empresa entregou à CVM o custo (3.02) com sinal POSITIVO e propagou o erro para baixo (Itapebi 2021 e Equatorial Pará 2025, as duas só com demonstração individual): o lucro bruto sai maior que a receita, então margem_ebit_pct, margem_ebitda_pct, margem_liquida_pct e divida_liquida_ebitda vêm NULL nessas linhas. ebit_brl, lucro_liquido_brl, roe_pct e cobertura_juros_ebitda ainda carregam o erro ali (Equatorial PA 2025: EBIT de R$ 20,0 bi contra receita de R$ 12,2 bi e ROE de 371%) — descarte a linha em vez de usá-la. São os valores que a empresa publicou e ficam como estão: NÃO inverta o sinal por conta própria. Outras empresas erraram o sinal só no individual (AES Tietê 2020, CPFL Energia 2024, Rio Alto 2024) e não aparecem aqui porque esta tabela usa o consolidado, que veio certo.
 
 | Coluna | Tipo |
 |---|---|
@@ -594,6 +1482,7 @@ Indicadores financeiros anuais por empresa (2020 em diante), em R$, prontos para
 | `custo_construcao_concessao_brl` | DOUBLE |
 | `investimento_total_brl` | DOUBLE |
 | `dividendos_jcp_pagos_brl` | DOUBLE |
+| `sinal_custo_invertido` | BOOLEAN |
 | `margem_ebit_pct` | DOUBLE |
 | `margem_ebitda_pct` | DOUBLE |
 | `margem_liquida_pct` | DOUBLE |
@@ -645,7 +1534,7 @@ Resultados dos leilões de GERAÇÃO de energia (2005 em diante): empreendimento
 
 - Fonte: ANEEL, resultado de leilões de geração
 - Linhas: 1.552
-- Ressalvas: só geração; leilões de transmissão não estão nesta tabela. vencedor é texto (não tem CNPJ)
+- Ressalvas: só geração; leilões de transmissão não estão nesta tabela. vencedor é texto (não tem CNPJ). O conjunto aberto da ANEEL cobre 2005-2019, 2021, 2022 e 2025: faltam 2020, 2023 e 2024, e a falta é do conjunto, NÃO quer dizer que não houve leilão nesses anos (houve). Não conclua queda de contratação a partir de um ano ausente
 
 | Coluna | Tipo |
 |---|---|
@@ -673,11 +1562,11 @@ Resultados dos leilões de GERAÇÃO de energia (2005 em diante): empreendimento
 
 ## mercado_distribuidoras_mensal
 
-Mercado e faturamento mensal de cada distribuidora por classe de consumo (Residencial, Comercial, Industrial, Rural...) e mercado (CATIVO, LIVRE, GERAÇÃO, SUPRIMENTO), de 2020 em diante: consumidores, energia faturada em MWh, receitas de energia, demanda e bandeiras, tributos e a tarifa média sem tributos em R$/MWh. Para a tarifa média do ano some receita_energia_brl + receita_demanda_brl e divida pela soma de energia_tusd_mwh (não tire média das médias mensais).
+Mercado e faturamento mensal de cada distribuidora por classe de consumo (Residencial, Comercial, Industrial, Rural...) e mercado (CATIVO, LIVRE, GERAÇÃO, SUPRIMENTO, DISTRIBUIÇÃO), de 2020 em diante: consumidores, energia faturada em MWh, receitas de energia, demanda e bandeiras, tributos e a tarifa média sem tributos em R$/MWh. Para a tarifa média do ano some receita_energia_brl + receita_demanda_brl e divida pela soma de energia_tusd_mwh (não tire média das médias mensais).
 
 - Fonte: ANEEL, SAMP - Sistema de Acompanhamento de Informações de Mercado, https://dadosabertos.aneel.gov.br/dataset/samp
 - Linhas: 85.343
-- Ressalvas: dado declarado pela distribuidora ao SAMP; mercado LIVRE paga só a TUSD (fio): não compare a tarifa média do livre com a do cativo. Receitas sem ICMS e PIS/COFINS; refaturamentos entram nas energias e receitas mas não no número de consumidores. O ano corrente é parcial e meses recentes podem ser revistos. Há erros de declaração na fonte (ex.: Cemig D, Residencial, jul/2025 e out/2025, receita de energia ~10 vezes o normal): confira a tarifa média mês a mês antes de somar o ano e aponte meses discrepantes
+- Ressalvas: dado declarado pela distribuidora ao SAMP; mercado LIVRE paga só a TUSD (fio): não compare a tarifa média do livre com a do cativo. SEMPRE filtre mercado: somar a tabela inteira mistura consumo final (CATIVO e LIVRE) com energia repassada a outro agente (DISTRIBUIÇÃO, 2.846 linhas, e SUPRIMENTO, 1.235), o que conta a mesma energia duas vezes; GERAÇÃO não tem energia faturada. Receitas sem ICMS e PIS/COFINS; refaturamentos entram nas energias e receitas mas não no número de consumidores. O ano corrente é parcial e meses recentes podem ser revistos. tarifa_media_suspeita = true quando a tarifa do mês passa de 3x a mediana da própria série (distribuidora, classe e mercado): é erro de declaração na fonte, como Cemig D Residencial em jul/2025 e out/2025 — descarte esses meses antes de somar o ano ou some receita e energia do ano e divida no fim. mes_repetido = true quando o mês repete consumidores E receita de energia do mês anterior, sinal de declaração copiada: não leia como estabilidade real. As duas marcas são NULL onde não há como comparar (mes_repetido no primeiro mês de cada série, 5.173 linhas; tarifa_media_suspeita onde a tarifa é nula, 5.810 linhas, quase todas do mercado GERAÇÃO): use 'NOT coalesce(marca, false)' e não 'NOT marca', que descartaria essas linhas em silêncio
 
 | Coluna | Tipo |
 |---|---|
@@ -697,20 +1586,51 @@ Mercado e faturamento mensal de cada distribuidora por classe de consumo (Reside
 | `icms_brl` | DOUBLE |
 | `pis_cofins_brl` | DOUBLE |
 | `tarifa_media_sem_tributos_brl_mwh` | DOUBLE |
+| `tarifa_media_suspeita` | BOOLEAN |
+| `mes_repetido` | BOOLEAN |
+
+## mutacoes_patrimonio_liquido
+
+Demonstração das mutações do patrimônio líquido (DMPL), anual (DFP) e trimestral (ITR), em R$: cada linha é um movimento (conta 5.xx, como saldos iniciais, lucro do período, dividendos, aumento de capital) numa coluna do PL (coluna_pl: Capital Social Integralizado, Reservas de Lucro, Lucros Acumulados, Patrimônio Líquido Consolidado...).
+
+- Fonte: CVM DFP e ITR, arquivos DMPL
+- Linhas: 466.684
+- Ressalvas: não some as colunas: coluna_pl já inclui totais (Patrimônio Líquido) junto com as partes. Fica fora de contas_cvm justamente para não contar duas vezes
+
+| Coluna | Tipo |
+|---|---|
+| `cnpj` | VARCHAR |
+| `cd_cvm` | VARCHAR |
+| `empresa` | VARCHAR |
+| `documento` | VARCHAR |
+| `data_referencia` | DATE |
+| `ano` | BIGINT |
+| `trimestre` | BIGINT |
+| `escopo` | VARCHAR |
+| `coluna_pl` | VARCHAR |
+| `cd_conta` | VARCHAR |
+| `ds_conta` | VARCHAR |
+| `inicio_periodo` | DATE |
+| `fim_periodo` | DATE |
+| `valor_brl` | DOUBLE |
+| `versao` | INTEGER |
+| `fonte` | VARCHAR |
 
 ## ons_capacidade
 
-Unidades geradoras despachadas pelo ONS com agente proprietário e potência efetiva em MW.
+Unidades geradoras despachadas pelo ONS com agente proprietário e potência efetiva em MW. modalidade_operacao diz como o ONS trata a unidade: TIPO I é despacho centralizado (143,6 GW das 207,2 GW da tabela) e TIPO II-A, II-B e II-C são as demais modalidades de operação. agente_operador é quem opera (pode diferir do proprietário).
 
 - Fonte: ONS, capacidade instalada
 - Linhas: 5.678
-- Ressalvas: agente sem CNPJ; ceg liga com usinas
+- Ressalvas: agente sem CNPJ; ceg liga com usinas. É a capacidade que o ONS acompanha (SIN), menor que a do SIGA, que inclui usinas fora do SIN
 
 | Coluna | Tipo |
 |---|---|
 | `subsistema` | VARCHAR |
 | `uf` | VARCHAR |
 | `agente_proprietario` | VARCHAR |
+| `agente_operador` | VARCHAR |
+| `modalidade_operacao` | VARCHAR |
 | `tipo_usina` | VARCHAR |
 | `usina` | VARCHAR |
 | `ceg` | VARCHAR |
@@ -725,7 +1645,7 @@ Unidades geradoras despachadas pelo ONS com agente proprietário e potência efe
 Carga de energia diária do SIN por subsistema (N, NE, S, SE = Sudeste/Centro-Oeste), em MW médio, desde 2000. Energia do dia em MWh = carga_mwmed × 24.
 
 - Fonte: ONS, Carga de Energia, https://dados.ons.org.br/dataset/carga-energia
-- Linhas: 39.053
+- Linhas: 39.057
 - Ressalvas: MW médio (média do dia), não MWh; inclui estimativa de micro e minigeração conforme a metodologia do ONS; dados recentes podem ser revistos
 
 | Coluna | Tipo |
@@ -760,7 +1680,7 @@ CMO médio mensal do ONS por subsistema (N, NE, S, SE), em R$/MWh, desde 2020. S
 CMO (Custo Marginal de Operação) do ONS por subsistema e instante semihorário, desde 2020. SE corresponde ao subsistema Sudeste/Centro-Oeste, embora o arquivo o rotule SUDESTE. Para comparar meses e submercados use ons_cmo_mensal; para horários e extremos use esta tabela.
 
 - Fonte: ONS, CMO Semi-Horário, https://dados.ons.org.br/dataset/cmo-semi-horario
-- Linhas: 464.064
+- Linhas: 464.256
 - Ressalvas: CMO em R$/MWh calculado pelo DESSEM; não é PLD nem preço recebido por gerador. A série pode conter valores negativos e extremos; o ONS pode revisar os arquivos. O mês corrente e o dia seguinte podem estar incompletos ou programados.
 
 | Coluna | Tipo |
@@ -793,7 +1713,7 @@ Cortes de geração (curtailment) por usina e mês: geração, geração de refe
 
 - Fonte: ONS, restrição de operação por constrained-off (GNRa = geração não realizada apurada)
 - Linhas: 9.027
-- Ressalvas: energia cortada = GNRa × 0,5 h; motivos em ons_curtailment_semihora.razao: REL indisponibilidade externa (rede), CNF confiabilidade, ENE razão energética (sobra de oferta), PAR parecer de acesso; ceg liga com usinas e donos; o mês corrente é parcial
+- Ressalvas: energia cortada = GNRa × 0,5 h; motivos em ons_curtailment_motivo_mensal e em ons_curtailment_semihora.razao: REL indisponibilidade externa (rede), CNF confiabilidade, ENE razão energética (sobra de oferta), PAR parecer de acesso; ceg liga com usinas e donos; o mês corrente é parcial
 
 | Coluna | Tipo |
 |---|---|
@@ -810,13 +1730,40 @@ Cortes de geração (curtailment) por usina e mês: geração, geração de refe
 | `energia_cortada_mwh` | DOUBLE |
 | `corte_pct` | DOUBLE |
 
+## ons_curtailment_motivo_mensal
+
+Energia cortada (curtailment) por usina, mês e MOTIVO do corte, em MWh. razao: ENE razão energética (sobra de oferta, sem quem consuma), CNF confiabilidade (limite de segurança elétrica), REL indisponibilidade externa (equipamento da rede fora), PAR parecer de acesso. origem: SIS restrição sistêmica (do SIN como um todo) ou LOC restrição local (da rede onde a usina está). razao e origem nulos são as meias horas SEM restrição, em que a usina gerou livremente: filtre razao IS NOT NULL para olhar só os cortes (as linhas sem razão somam 0,001 TWh de corte contra 78,6 TWh das com razão). restricao_predominante nomeia a linha ou o controle que causou o corte com mais frequência no mês.
+
+- Fonte: ONS, restrição de operação por constrained-off (cod_razaorestricao, cod_origemrestricao e dsc_restricao)
+- Linhas: 33.926
+- Ressalvas: energia cortada = GNRa × 0,5 h. NÃO some esta tabela junto com ons_curtailment_mensal: são a mesma energia, aqui quebrada por motivo (somando os motivos de uma usina-mês você volta ao total de lá). referencia_mwh também é quebrada por motivo e por isso não é o total de referência do mês. minutos_restricao é o campo do ONS somado nos intervalos, não é tempo de parada da usina. restricao_predominante só existe de junho/2025 em diante (o ONS passou a publicar dsc_restricao então): antes disso vem nula e restricoes_distintas = 0. Série de 2023 em diante; o mês corrente é parcial e o ONS revisa os arquivos recentes
+
+| Coluna | Tipo |
+|---|---|
+| `fonte` | VARCHAR |
+| `subsistema` | VARCHAR |
+| `uf` | VARCHAR |
+| `usina` | VARCHAR |
+| `id_ons` | VARCHAR |
+| `ceg` | VARCHAR |
+| `agente_operador` | VARCHAR |
+| `mes` | DATE |
+| `razao` | VARCHAR |
+| `origem` | VARCHAR |
+| `energia_cortada_mwh` | DOUBLE |
+| `referencia_mwh` | DOUBLE |
+| `minutos_restricao` | HUGEINT |
+| `intervalos` | BIGINT |
+| `restricoes_distintas` | BIGINT |
+| `restricao_predominante` | VARCHAR |
+
 ## ons_curtailment_semihora
 
-Cortes de geração eólica (2023 em diante) e solar (abr/2024 em diante) por usina e meia hora, em MW médio: geração verificada, geração de referência e geração não realizada apurada (GNRa).
+Cortes de geração eólica (2023 em diante) e solar (abr/2024 em diante) por usina e meia hora, em MW médio: geração verificada, geração de referência e geração não realizada apurada (GNRa), com o motivo do corte (razao e origem), o texto da restrição e o ponto de conexão.
 
 - Fonte: ONS, restrição de operação por constrained-off
 - Linhas: visão
-- Ressalvas: para séries e rankings use ons_curtailment_mensal
+- Ressalvas: para séries e rankings use ons_curtailment_mensal; por motivo, ons_curtailment_motivo_mensal
 
 | Coluna | Tipo |
 |---|---|
@@ -831,6 +1778,10 @@ Cortes de geração eólica (2023 em diante) e solar (abr/2024 em diante) por us
 | `referencia_mwmed` | DOUBLE |
 | `nao_realizada_mwmed` | DOUBLE |
 | `razao` | VARCHAR |
+| `origem` | VARCHAR |
+| `restricao` | VARCHAR |
+| `ponto_conexao` | VARCHAR |
+| `minutos_restricao` | BIGINT |
 | `agente_operador` | VARCHAR |
 
 ## ons_ear_diario
@@ -838,7 +1789,7 @@ Cortes de geração eólica (2023 em diante) e solar (abr/2024 em diante) por us
 Energia armazenada (EAR) diária nos reservatórios por subsistema do ONS, desde 2000. SE corresponde ao subsistema Sudeste/Centro-Oeste, embora o arquivo o rotule SUDESTE. Cada linha é um subsistema e uma data; traz a EAR verificada em MWmês, sua capacidade máxima em MWmês e o percentual de armazenamento. Útil para avaliar risco hidrológico e contexto do CMO.
 
 - Fonte: ONS, EAR Diário por Subsistema, https://dados.ons.org.br/dataset/ear-diario-por-subsistema
-- Linhas: 39.052
+- Linhas: 39.056
 - Ressalvas: MWmês é unidade de energia armazenada do ONS, não potência em MW nem geração em MWh. O percentual é o valor publicado pelo ONS; a EAR considera cascatas entre subsistemas. Dados recentes podem ser revisados; não são armazenamento de uma empresa ou usina específica.
 
 | Coluna | Tipo |
@@ -926,6 +1877,29 @@ Intercâmbio mensal de energia entre subsistemas (origem -> destino), verificado
 | `intercambio_verificado_mwh` | DOUBLE |
 | `intercambio_programado_mwh` | DOUBLE |
 | `horas` | BIGINT |
+
+## pareceres_auditoria
+
+Relatório do auditor independente e declarações dos diretores e do conselho fiscal que acompanham cada DFP e ITR, com o texto completo. tipo_relatorio diz se o parecer é sem ressalva, com ressalva, com ênfase ou adverso.
+
+- Fonte: CVM DFP e ITR, arquivos de parecer
+- Linhas: 6.303
+- Ressalvas: texto como entregue pela empresa (sem formatação); o tipo do relatório vem de TP_RELAT_AUD na DFP e TP_RELAT_ESP no ITR
+
+| Coluna | Tipo |
+|---|---|
+| `cnpj` | VARCHAR |
+| `empresa` | VARCHAR |
+| `documento` | VARCHAR |
+| `data_referencia` | DATE |
+| `ano` | BIGINT |
+| `trimestre` | BIGINT |
+| `tipo_relatorio` | VARCHAR |
+| `tipo_declaracao` | VARCHAR |
+| `item` | INTEGER |
+| `texto` | VARCHAR |
+| `versao` | INTEGER |
+| `fonte` | VARCHAR |
 
 ## participacoes_societarias
 
@@ -1018,6 +1992,28 @@ Projetos do Programa de Eficiência Energética (PEE) da ANEEL por distribuidora
 | `demanda_retirada_ponta_kw` | DOUBLE |
 | `inicio` | DATE |
 | `conclusao` | DATE |
+
+## perdas_distribuicao_anual
+
+Perdas de energia de cada distribuidora por ano: energia injetada na rede, perdas totais, técnicas (rede) e não técnicas (furto e fraude) em MWh, as perdas faturadas na tarifa e as perdas medidas como % da energia injetada. meses_declarados diz quantos meses do ano a distribuidora declarou (12 = ano completo).
+
+- Fonte: ANEEL, SAMP - balanço de energia
+- Linhas: visão
+- Ressalvas: compare só linhas com meses_declarados = 12; perdas_pct usa as perdas medidas, perdas_faturadas_mwh é o que entra na tarifa, e o limite regulatório de perdas definido pela ANEEL não está aqui. Cooperativas e permissionárias pequenas declaram de forma inconsistente (há perdas_pct negativa ou acima de 100%): para rankings filtre classificacao = 'Concessionária' e energia_injetada_mwh alta. perdas_tecnicas_mwh + perdas_nao_tecnicas_mwh só fecha com perdas_totais_mwh quando os três vêm dos mesmos meses
+
+| Coluna | Tipo |
+|---|---|
+| `cnpj` | VARCHAR |
+| `distribuidora` | VARCHAR |
+| `classificacao` | VARCHAR |
+| `ano` | INTEGER |
+| `meses_declarados` | BIGINT |
+| `energia_injetada_mwh` | DOUBLE |
+| `perdas_totais_mwh` | DOUBLE |
+| `perdas_tecnicas_mwh` | DOUBLE |
+| `perdas_nao_tecnicas_mwh` | DOUBLE |
+| `perdas_faturadas_mwh` | DOUBLE |
+| `perdas_pct` | DOUBLE |
 
 ## ranking_continuidade
 
@@ -1118,7 +2114,7 @@ Receita Anual Permitida (RAP) das transmissoras por módulo de transmissão (lin
 Tarifas homologadas das distribuidoras (TUSD e TE) por resolução, vigência, subgrupo (B1 residencial, A4...), modalidade, classe e posto. Para a tarifa atual filtre fim_vigencia >= current_date.
 
 - Fonte: ANEEL, tarifas homologadas
-- Linhas: 327.493
+- Linhas: 328.083
 - Ressalvas: tusd e te na unidade da coluna unidade (R$/MWh ou R$/kW); a sigla da distribuidora pode ser antiga (ELETROPAULO = Enel SP): prefira filtrar por cnpj
 
 | Coluna | Tipo |
@@ -1139,12 +2135,49 @@ Tarifas homologadas das distribuidoras (TUSD e TE) por resolução, vigência, s
 | `tusd` | DOUBLE |
 | `te` | DOUBLE |
 
+## transmissao_atos_legais
+
+Atos legais (resoluções autorizativas e despachos da ANEEL) que autorizaram reforços, melhorias e ampliações de transmissão, um por empreendimento: número e tipo do ato, data de publicação, ementa (o texto que diz o que foi autorizado) e link do cedoc, com o contrato de concessão, o CNPJ da concessionária e o prazo fixado. prazo_ato_legal é a data de entrada em operação que o ato determinou e data_operacao_comercial é a que valeu: compare as duas para medir atraso (903 dos 1.652 empreendimentos entraram depois do prazo, mediana de 24 dias). Para o texto do ato use link; para a RAP que o ato fixou, junte ato_rap em rap_transmissao_modulos.
+
+- Fonte: ANEEL SIGET, Resolução x Contrato x Agente, https://dadosabertos.aneel.gov.br/dataset/sistema-de-gestao-da-transmissao-siget
+- Linhas: 1.652
+- Ressalvas: cobre só empreendimentos com ato legal de autorização (reforços, melhorias e ampliações): são 1.652 empreendimentos de 164 contratos, contra os 2.352 de transmissao_empreendimentos, e nenhuma linha do contrato original licitado. Todos os contratos são do tipo CCO (Contrato de Concessão). data_operacao_efetiva vem vazia nos 193 empreendimentos 'Em andamento' e em 62 'Em Operação'. Não some nada: não há valor de receita aqui
+
+| Coluna | Tipo |
+|---|---|
+| `codigo_ato` | VARCHAR |
+| `numero_ato` | VARCHAR |
+| `tipo_ato` | VARCHAR |
+| `data_assinatura_ato` | DATE |
+| `data_emissao_ato` | DATE |
+| `data_publicacao_ato` | DATE |
+| `ementa` | VARCHAR |
+| `link` | VARCHAR |
+| `id_documento` | BIGINT |
+| `id_contrato` | BIGINT |
+| `numero_contrato` | VARCHAR |
+| `cnpj` | VARCHAR |
+| `concessionaria` | VARCHAR |
+| `uf` | VARCHAR |
+| `data_assinatura_contrato` | DATE |
+| `fim_concessao` | DATE |
+| `id_empreendimento` | BIGINT |
+| `codigo_ons_empreendimento` | VARCHAR |
+| `empreendimento` | VARCHAR |
+| `descricao` | VARCHAR |
+| `situacao` | VARCHAR |
+| `prazo_ato_legal` | DATE |
+| `data_operacao_comercial` | DATE |
+| `data_operacao_efetiva` | DATE |
+| `data_base` | DATE |
+
 ## transmissao_contratos
 
-Contratos de concessão de transmissão (SIGET/ANEEL) com a concessionária e o CNPJ.
+Contratos de concessão de transmissão (SIGET/ANEEL) com a concessionária e o CNPJ. data_assinatura é a data em que o contrato foi assinado e data_fim é quando a concessão vence.
 
 - Fonte: ANEEL SIGET
 - Linhas: 413
+- Ressalvas: data_assinatura NÃO é uma série anual: é a data do contrato, e não há contrato assinado em 1998, 1999, 2003 nem 2025 (a lacuna é do cadastro da ANEEL, não desta plataforma). Os atos legais que autorizaram reforços e ampliações de cada contrato estão em transmissao_atos_legais
 
 | Coluna | Tipo |
 |---|---|
@@ -1183,13 +2216,38 @@ Empreendimentos, obras e módulos de transmissão por contrato (linhas, subesta�
 | `valor_historico_receita_brl` | DOUBLE |
 | `fim_concessao` | DATE |
 
+## transmissao_termos_liberacao
+
+Termos de Liberação (TL) emitidos pelo ONS para obras de transmissão, um por obra: o TL atesta que a obra entrou em operação e é o documento que autoriza a ANEEL a incluir a receita dela no reajuste. Traz a concessionária com CNPJ, o contrato, o ato legal que autorizou a obra, o número e a data do TL, o ciclo tarifário em que a receita entrou e a obra e o módulo de transmissão liberados. Use para saber QUANDO cada obra passou a receber: junte id_modulo com rap_transmissao_modulos.id_modulo para o valor da RAP (14.500 das 14.887 obras casam) e codigo_ato com transmissao_atos_legais.codigo_ato para a ementa da autorização.
+
+- Fonte: ANEEL SIGET, Termos de Liberação processados no reajuste da RAP, https://dadosabertos.aneel.gov.br/dataset/sistema-de-gestao-da-transmissao-siget
+- Linhas: 14.887
+- Ressalvas: uma linha por OBRA (id_obra é único nas 14.887 linhas), não por TL nem por módulo: um TL libera várias obras (6.652 TLs) e um módulo pode aparecer em várias obras e ciclos (13.820 módulos distintos), então contar linhas conta obras liberadas, não termos. Ciclos tarifários de 2010-2011 a 2026-2027 (TLs assinados desde 2006, mas o arquivo só traz os processados nesses ciclos). codigo_ato é nulo nas 9.464 obras do contrato licitado original, que não passam por ato autorizativo, e das 5.423 com ato 5.394 casam com transmissao_atos_legais. Não tem valor de receita: a RAP está em rap_transmissao_modulos
+
+| Coluna | Tipo |
+|---|---|
+| `concessionaria` | VARCHAR |
+| `cnpj` | VARCHAR |
+| `contrato` | VARCHAR |
+| `ato_legal` | VARCHAR |
+| `codigo_ato` | VARCHAR |
+| `termo_liberacao` | VARCHAR |
+| `data_termo_liberacao` | DATE |
+| `ciclo_tarifario` | VARCHAR |
+| `id_obra` | BIGINT |
+| `obra` | VARCHAR |
+| `id_modulo` | BIGINT |
+| `modulo` | VARCHAR |
+| `codigo_ons_empreendimento` | VARCHAR |
+| `data_base` | DATE |
+
 ## usinas
 
-Usinas de geração do Brasil (SIGA/ANEEL), uma linha por usina: tipo (UHE, PCH, CGH, EOL, UFV, UTE, UTN), fase (Operação, Construção, Construção não iniciada), origem (Hídrica, Eólica, Solar, Fóssil, Biomassa, Nuclear), potência em kW.
+Usinas de geração do Brasil (SIGA/ANEEL), uma linha por usina: tipo (UHE, PCH, CGH, EOL, UFV, UTE, UTN), fase (Operação, Construção, Construção não iniciada), origem (Hídrica, Eólica, Solar, Fóssil, Biomassa, Nuclear), potência em kW. combustivel é o insumo detalhado (Óleo Diesel, Bagaço de Cana de Açúcar, Casca de Arroz...), mais fino que fonte_energia. fim_vigencia_outorga é quando a outorga (registro, autorização ou concessão) vence.
 
 - Fonte: ANEEL SIGA (dados abertos), data em data_base
-- Linhas: 25.133
-- Ressalvas: potência em kW (divida por 1000 para MW); donos em usinas_proprietarios
+- Linhas: 25.045
+- Ressalvas: potência em kW (divida por 1000 para MW); donos em usinas_proprietarios. garantia_fisica_kw é a energia assegurada da usina, não a potência (em Itaipu ela supera a potência instalada da parte brasileira, por causa do tratado). geracao_qualificada (cogeração qualificada) só está declarada para parte das usinas: false significa 'Não' ou campo em branco no SIGA. data_entrada_operacao é NULL em 2.398 usinas: a ANEEL preenche 03/01/1900 quando não há data (quase todas em 'Construção não iniciada'), e esse marcador foi anulado aqui. As datas anteriores a 1950 que sobram são reais (143 CGH, PCH, UHE e UTE antigas)
 
 | Coluna | Tipo |
 |---|---|
@@ -1200,6 +2258,7 @@ Usinas de geração do Brasil (SIGA/ANEEL), uma linha por usina: tipo (UHE, PCH,
 | `fase` | VARCHAR |
 | `origem` | VARCHAR |
 | `fonte_energia` | VARCHAR |
+| `combustivel` | VARCHAR |
 | `tipo_outorga` | VARCHAR |
 | `data_entrada_operacao` | DATE |
 | `potencia_outorgada_kw` | DOUBLE |
@@ -1209,6 +2268,9 @@ Usinas de geração do Brasil (SIGA/ANEEL), uma linha por usina: tipo (UHE, PCH,
 | `longitude` | DOUBLE |
 | `sub_bacia` | VARCHAR |
 | `municipios` | VARCHAR |
+| `inicio_vigencia_outorga` | DATE |
+| `fim_vigencia_outorga` | DATE |
+| `geracao_qualificada` | BOOLEAN |
 | `proprietarios_texto` | VARCHAR |
 | `data_base` | DATE |
 
@@ -1217,7 +2279,7 @@ Usinas de geração do Brasil (SIGA/ANEEL), uma linha por usina: tipo (UHE, PCH,
 Donos de cada usina do SIGA com CNPJ e percentual de participação (uma linha por usina e dono). regime: PIE (produtor independente), APE (autoprodutor), SP (serviço público), REG (registro).
 
 - Fonte: ANEEL SIGA, campo DscPropriRegimePariticipacao
-- Linhas: 25.466
+- Linhas: 25.378
 - Ressalvas: o dono é o titular direto, muitas vezes uma SPE: para um grupo, procure pelo nome (ILIKE) ou some as SPEs; o SIGA não traz o controlador final
 
 | Coluna | Tipo |

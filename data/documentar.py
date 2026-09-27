@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gera data/DADOS.md, a documentação das tabelas do banco, a partir do catálogo e do esquema de data/coppezip.duckdb.
+"""Gera data/DADOS.md, a documentação das tabelas do banco, a partir do catálogo e do esquema de data/energynexus.duckdb.
 
 Uso: python data/documentar.py      (depois de data/construir.py)
 Descrição, fonte e ressalvas vêm do catálogo, o mesmo texto que o modelo lê: para mudar o texto, mude o catálogo em
@@ -15,7 +15,7 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # raiz do re
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 
-con = duckdb.connect(os.path.join(RAIZ, "data", "coppezip.duckdb"), read_only=True)
+con = duckdb.connect(os.path.join(RAIZ, "data", "energynexus.duckdb"), read_only=True)
 catalogo = con.execute("SELECT tabela, descricao, fonte, ressalvas, linhas FROM catalogo ORDER BY tabela").fetchall()
 tipos = dict(con.execute("SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = 'main'").fetchall())
 colunas = {}
@@ -36,10 +36,10 @@ def tamanho(t, n):
 
 
 texto = ["# Dados do EnergyNexus", "",
-         f"Tabelas e visões do `coppezip.duckdb` em {datetime.date.today():%d/%m/%Y}, geradas do catálogo por "
+         f"Tabelas e visões do `energynexus.duckdb` em {datetime.date.today():%d/%m/%Y}, geradas do catálogo por "
          "`data/documentar.py`. Não edite à mão: descrição, fonte e ressalvas vêm do catálogo em "
          "`data/construir.py`, o mesmo texto que o modelo lê. O formato dos arquivos brutos de cada fonte está em "
-         "`researches/DATA_DICTIONARY.md`.", "",
+         "`data/raw/README.md` (e o levantamento inicial, em `researches/DATA_DICTIONARY.md`).", "",
          "| Tabela | Linhas | Descrição | Fonte |", "|---|---:|---|---|"]
 texto += [f"| [`{t}`](#{t}) | {tamanho(t, n)} | {celula(d)} | {celula(f)} |" for t, d, f, _, n in catalogo]
 for t, d, f, r, n in catalogo:
@@ -50,7 +50,7 @@ for t, d, f, r, n in catalogo:
 sem_catalogo = sorted(set(tipos) - {t for t, *_ in catalogo} - {"catalogo"})
 if sem_catalogo:
     texto += ["", "## Sem descrição no catálogo", "",
-              "O modelo não vê a descrição destas tabelas; acrescente-as ao catálogo em `build_duckdb.py`:", ""]
+              "O modelo não vê a descrição destas tabelas; acrescente-as ao catálogo em `data/construir.py`:", ""]
     texto += [f"- `{t}`" for t in sem_catalogo]
 with open(os.path.join(AQUI, "DADOS.md"), "w") as saida:
     saida.write("\n".join(texto) + "\n")

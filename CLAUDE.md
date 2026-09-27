@@ -9,7 +9,7 @@ EnergyNexus: chat de inteligência do setor elétrico. A raiz é o LibreChat v0.
 `client/vite.config.ts`), o painel lateral, que mostra o relatório em PDF (`client/src/utils/artifacts.ts` e o teste
 `client/src/utils/__tests__/artifacts.test.ts`, `client/src/components/Artifacts/ArtifactTabs.tsx`,
 `DownloadArtifact.tsx` e `ArtifactButton.tsx`) e as abas Painel, Busca, Grafo e Timeline (telas em
-`client/src/components/Coppezip/`, registradas em `client/src/routes/index.tsx`,
+`client/src/components/EnergyNexus/`, registradas em `client/src/routes/index.tsx`,
 `client/src/hooks/Nav/useSideNavLinks.ts` e nas traduções). Tudo o que é nosso está em:
 
 - `librechat.yaml`: modelos (vLLM `EnergyNexus` e `bedrock`), perfis do analista com o prompt (âncora `&prompt`,
@@ -29,10 +29,11 @@ o Bedrock corta a resposta em 4096 tokens, a chamada chega sem `conteudo` e o ag
 
 ## Regras
 
-- **Estrutura fixa, sem fallbacks.** Os caminhos saem da raiz do repositório: `data/coppezip.duckdb` (o banco guarda o
-  nome antigo), `data/docs_titan.duckdb` (índice dos PDFs em uso, Titan), `data/docs.duckdb` (versão e5, sem uso),
-  `data/modelos/`, `data/raw/`, `.runtime/`. Não crie variáveis de ambiente para caminho nem valores padrão
-  alternativos; o que é configurável (portas, chaves, endereço do modelo) fica no `.env`.
+- **Estrutura fixa, sem fallbacks.** Os caminhos saem da raiz do repositório: `data/energynexus.duckdb`,
+  `data/docs_titan.duckdb` (índice dos PDFs em uso, Titan), `data/docs.duckdb` (versão e5, a fonte do texto que o
+  `data/indexar_docs_titan.py --do-indice-local` reaproveita), `data/modelos/`, `data/raw/`, `.runtime/`. Não crie
+  variáveis de ambiente para caminho nem valores padrão alternativos; o que é configurável (portas, chaves, endereço
+  do modelo) fica no `.env`.
 - **Mínimo e funcionando.** Não deixe código que não foi testado nem arquivos sem uso. Prefira mudar o que existe a
   criar camadas novas.
 - **Não mexa no código do LibreChat** (`api/`, `client/`, `packages/`, `config/`) além do tema, da logo, do painel de
@@ -77,9 +78,9 @@ Mudou o banco (`data/construir.py` ou `data/indexar_docs.py`)? Rode os testes da
 | nova tela (HTML) | seção "telas" de `proper_mcps/placar/server.py`; confira com `node eval/e2e/telas.js` |
 | regra de resposta | `promptPrefix` do perfil `energynexus-analista` no `librechat.yaml` |
 | formato do relatório final | regras de redação em `proper_skills/relatorio-energynexus/SKILL.md`; conferência e compilação em `proper_mcps/relatorio/server.py` (teste em `test_relatorio.py`) |
-| botão "Gerar relatório em PDF" e leitura do PDF | `client/src/components/Coppezip/BotaoRelatorio.tsx` (aparece nos perfis com `energynexus-relatorio`; ligado em `client/src/components/Chat/Input/ChatForm.tsx`) e o estado `ampliado` de `client/src/components/Artifacts/Artifacts.tsx` (PDF em tela cheia) |
+| botão "Gerar relatório em PDF" e leitura do PDF | `client/src/components/EnergyNexus/BotaoRelatorio.tsx` (aparece nos perfis com `energynexus-relatorio`; ligado em `client/src/components/Chat/Input/ChatForm.tsx`) e o estado `ampliado` de `client/src/components/Artifacts/Artifacts.tsx` (PDF em tela cheia) |
 | novo caso de regressão | `CASOS` em `eval/regressao.py`, com o valor conferido na fonte |
 | nova tabela na aba Painel | `CONJUNTOS` em `data/exportar_painel.py` |
-| aba Busca | `proper_mcps/docs/busca.py` (serviço) e `client/src/components/Coppezip/BuscaView.tsx` (tela) |
-| aba Grafo | `client/src/components/Coppezip/grafo/dados.ts` (nós a partir do `painel.json` e dos documentos), `modelo.ts` (layout), `GraphView.tsx` e `grafo.css` (tela); página em `GrafoView.tsx` |
+| aba Busca | `proper_mcps/docs/busca.py` (serviço) e `client/src/components/EnergyNexus/BuscaView.tsx` (tela) |
+| aba Grafo | `client/src/components/EnergyNexus/grafo/dados.ts` (nós a partir do `painel.json` e dos documentos), `modelo.ts` (layout), `GraphView.tsx` e `grafo.css` (tela); página em `GrafoView.tsx` |
 | aba Timeline | dados em `data/linha_do_tempo.py` (temas, eventos, trajetórias; teste em `data/test_linha_do_tempo.py`), tela em `client/src/components/Timeline/` (depois `npm run frontend`) |

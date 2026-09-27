@@ -131,7 +131,8 @@ export default function GrafoView() {
             <span className="kg-exp-aviso">Documentos indisponíveis: {dados.avisoDocs}</span>
           )}
           <span className="kg-exp-conta">
-            {filtradas.length} de {empresas.length} empresas
+            {/* conta o que o acervo tem, não o setor: empresas com série própria numa base ou com documento indexado */}
+            {filtradas.length} de {empresas.length} empresas com dados no acervo
             {filtradas.length > MAX_CARTOES ? ` · mostrando as ${MAX_CARTOES} primeiras` : ''}
           </span>
         </div>

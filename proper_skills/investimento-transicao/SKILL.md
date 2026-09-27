@@ -26,7 +26,8 @@ agregada por tabela (todas as empresas no mesmo `WHERE cnpj IN (...)`).
 | Matriz em operação e em construção | `capacidade_por_proprietario` (tipo_geracao, fase, potencia_mw); é do dono direto (SPE), não do grupo inteiro |
 | Cortes de geração | `curtailment_por_dono_mensal` (energia_cortada_mwh_estimada / referencia_mwh_estimada), estimativa por dono |
 | Expansão contratada | `leiloes_geracao`, `transmissao_empreendimentos` |
-| CAPEX por segmento, plano de investimento, metas | relatórios (`buscar_documentos`, `ler_pagina`), com página |
+| Plano de investimento das distribuidoras | `pdd_investimentos`: planejado_brl e realizado_brl por ano, tipo_obra e classe_obra (5.484 linhas; o plano 2026-2030 está aqui: Cemig-D R$ 31,21 bi, Enel SP R$ 30,30 bi). P&D e eficiência: `ped_projetos`, `pee_projetos` |
+| CAPEX por segmento e metas que não estão nas tabelas acima | relatórios (`buscar_documentos`, `ler_pagina`), com página |
 
 Percentuais, somas e razões: calcule por SQL e confira que o total bate com as parcelas.
 
@@ -38,6 +39,8 @@ Percentuais, somas e razões: calcule por SQL e confira que o total bate com as 
    documento e página). Métricas de conceitos diferentes ficam em colunas separadas, sem ranking conjunto.
 4. **Riscos e leitura**, separando fato de avaliação.
 5. **Lacunas**: CAPEX verde por empresa, investimento proporcional, dados só do RI, participação de grupo em SPEs.
+   Plano de investimento de distribuidora **não** é lacuna: consulte `pdd_investimentos` (planejado e realizado, até
+   2030) antes de dizer que não está na base.
 
 Memorando: siga o roteiro `relatorio-energynexus` (tese no Sumário Executivo, a tabela em Resultados, riscos e
 lacunas em Discussão e Pontos de Atenção) e termine com `gerar_relatorio`.

@@ -22,7 +22,7 @@ import {
   useAssistantsMapContext,
 } from '~/Providers';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
-import BotaoRelatorio from '~/components/Coppezip/BotaoRelatorio';
+import BotaoRelatorio from '~/components/EnergyNexus/BotaoRelatorio';
 import { cn, getModelSpec, removeFocusRings } from '~/utils';
 import { useGetStartupConfig } from '~/data-provider';
 import { mainTextareaId, BadgeItem } from '~/common';

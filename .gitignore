@@ -185,6 +185,7 @@ codedb.snapshot
 client/public/assets/relatorios
 client/public/assets/linha_do_tempo
 data/raw
+data/raw.antes
 data/parquet
 data/modelos
 data/*.duckdb*
@@ -196,4 +197,6 @@ __pycache__/
 *.pyc
 data/build_*/
 proper_mcps/agentcore/cdk.out/
-data/build_*/
+
+# build da vitrine estática (infra/publicar_site.py)
+client/dist-vitrine/

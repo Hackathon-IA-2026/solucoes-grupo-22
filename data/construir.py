@@ -1,12 +1,35 @@
 """Monta o banco DuckDB da plataforma a partir dos arquivos brutos: tabelas tipadas, unidade no nome da coluna e fonte.
 
 Uso: python data/construir.py
-Entradas (data/raw, trazidas por data/baixar.py e pelo rclone do Drive):
-  cvm/dfp/dfp_cia_aberta_AAAA.zip, cvm/fca/fca_cia_aberta_AAAA.zip, cvm/cad_cia_aberta.csv, cvm/anbima_deb.xlsx
-  aneel_ons_epe_bndes/*.csv  e  data/parquet/reg_decfec.parquet (compensações de continuidade; o CSV tem 1 GB)
-Saída: data/coppezip.duckdb, trocado de forma atômica (os servidores MCP abrem só para leitura).
+Lê TODOS os arquivos de dados de data/raw (trazidos por data/baixar.py e pelo rclone do Drive). Não há fallback: se
+faltar um arquivo, a montagem para e diz qual. Entradas:
+  cvm/dfp/*.zip e cvm/itr/*.zip — todos os membros: contas por demonstrativo (BPA, BPP, DRE, DRA, DFC_MI, DFC_MD, DVA),
+    DMPL, composição do capital, parecer e o índice de documentos da raiz do zip
+  cvm/fca/*.zip — todos os 9 CSVs cadastrais (geral, valor mobiliário, auditor, DRI, endereço, escriturador, canal de
+    divulgação, departamento de acionistas, país estrangeiro) e o índice de documentos
+  cvm/meta_dfp/*.txt — dicionário de dados da CVM (o que é CD_CONTA, ESCALA_MOEDA, ORDEM_EXERC...)
+  cvm/cad_cia_aberta.csv, cvm/anbima_deb.xlsx, cvm/iee_api.json (carteira do IEE na B3),
+    snd/debentures_caracteristicas.xls
+  aneel_ons_epe_bndes/*.csv (SIGA, leilões, SIGET, tarifas, PDD, P&D, PEE, BNDES: operações e desembolsos por setor)
+  aneel/** — DEC/FEC, agentes, societária, SIGET RAP (lista prévia, resolução contrato-agente e termos de liberação do
+    ONS), MMGD, RALIE, SAMP (mercado e balanço de energia), bandeiras (acionamento e adicionais), ranking de continuidade
+  ons/** — CMO, EAR, ENA, carga, balanço por subsistema, intercâmbio, geração por usina, curtailment e mapas de conjuntos
+  bcb/sgs_*.json e data/parquet/*.parquet (reg_decfec, reg_capacidade)
+  aneel_ons_epe_bndes/anuario_dados_brutos.xlsx (Anuário da EPE: consumo mensal por UF, classe, tensão e faixa),
+    pde2035_dados.zip (39 abas de 8 dos 12 capítulos do PDE 2035) e pde2035_transmissao.xlsx (expansão obra a obra)
+  cvm/deb_incentivadas.xls (portarias autorizativas da Lei 12.431; .xls BIFF antigo, que só o xlrd abre)
+Arquivos de data/raw que NÃO viram tabela (são cópia de outra fonte já lida; a evidência está no comentário junto da
+tabela que os cobre): aneel_ons_epe_bndes/capacidade.csv, coff2025.csv, siga_diario.csv, naoauto_sample.csv,
+desembolsos-mensais-sample.csv, aneel/siget_rap/siget-resolucao-empreendimento-obra-modulo.csv, cad_cia_aberta.csv (o
+da raiz de raw/, fora de cvm/) e cvm/dfp_cia_aberta_2024.zip (o da raiz de cvm/, fora de cvm/dfp/). Do
+pde2035_dados.zip ficam fora os capítulos 01, 05, 06 e 08 (economia, petróleo, derivados e biocombustíveis, fora do
+recorte elétrico) e as abas de resultado intermediário de simulação dos capítulos lidos; o critério aba a aba está em
+data/FONTES_PLANILHAS.md.
+Os PDFs de dicionário de dados de data/raw não são tabelas: vão para o índice de documentos (data/indexar_dados_local.py).
+Saída: data/energynexus.duckdb, trocado de forma atômica (os servidores MCP abrem só para leitura).
 """
 import csv
+import datetime
 import glob
 import os
 import re
@@ -16,6 +39,7 @@ import zipfile
 
 import duckdb
 import openpyxl
+import xlrd
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # raiz do repositório
 
@@ -23,11 +47,15 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # raiz do re
 DADOS = os.path.join(RAIZ, "data")
 RAW = os.path.join(DADOS, "raw")
 ANEEL = os.path.join(RAW, "aneel_ons_epe_bndes")
-destino = os.path.join(DADOS, "coppezip.duckdb")
-tmp = destino + ".tmp"
+AN = os.path.join(RAW, "aneel")
+ONS = os.path.join(RAW, "ons")
+PQ = os.path.join(DADOS, "parquet")
+destino = os.path.join(DADOS, "energynexus.duckdb")
+banco = os.path.realpath(destino)  # data/energynexus.duckdb costuma ser um link para o disco local: grava no destino real
+tmp = banco + ".tmp"
 if os.path.exists(tmp):
     os.remove(tmp)
-trabalho = tempfile.mkdtemp(prefix="build_", dir=DADOS)
+trabalho = tempfile.mkdtemp(prefix="build_", dir=os.path.dirname(banco))  # CSV extraído fica no mesmo disco do banco
 con = duckdb.connect(tmp)
 CATALOGO = []  # (tabela, descricao, fonte, ressalvas)
 
@@ -50,6 +78,59 @@ def csv_limpo(arquivo, codificacao):
     return f"read_csv('{saida}', delim=';', header=true, all_varchar=true, quote='\"', escape='\"')"
 
 
+DICA = "traga os dados com data/baixar.py ou com o rclone do Drive (EnergyNexus-dados-brutos)"
+
+
+def exigir(caminho, dica=DICA):
+    """Arquivo obrigatório. Estrutura fixa, sem fallback: se falta um arquivo, a montagem para e diz qual, para o banco
+    nunca sair com uma tabela de menos sem ninguém perceber."""
+    if not os.path.exists(caminho):
+        raise SystemExit(f"construir.py: falta {caminho} ({dica})")
+    return caminho
+
+
+def exigir_glob(padrao, dica=DICA):
+    """Lista (ordenada) dos arquivos que casam com o padrão; para a montagem se nenhum casar."""
+    achados = sorted(glob.glob(padrao))
+    if not achados:
+        raise SystemExit(f"construir.py: nenhum arquivo casa com {padrao} ({dica})")
+    return achados
+
+
+def exigir_sem_nulo(nome, coluna):
+    """Coluna que não pode ter NULL depois da conversão. Serve para as traduções por lista fixa (nome de mês da EPE, por
+    exemplo): se a planilha mudar a grafia, a conversão devolve NULL e o banco sairia com a coluna em branco sem
+    ninguém perceber. Melhor parar a montagem e dizer onde."""
+    n = con.execute(f"SELECT count(*) FROM {nome} WHERE {coluna} IS NULL").fetchone()[0]
+    if n:
+        raise SystemExit(f"construir.py: {nome}.{coluna} veio com {n} NULL (a planilha de origem mudou de formato?)")
+
+
+def ons_parquets(pasta):
+    """Padrão dos parquets de uma pasta do ONS, exigindo que a pasta tenha pelo menos um arquivo."""
+    padrao = os.path.join(ONS, pasta, "*.parquet")
+    exigir_glob(padrao)
+    return padrao
+
+
+def extrair(zp, membro):
+    """Extrai um membro de um zip para a pasta de trabalho e devolve o caminho."""
+    with zipfile.ZipFile(zp) as z:
+        z.extract(membro, trabalho)
+    return os.path.join(trabalho, membro)
+
+
+def carregar(nome_temp, itens, sql_de):
+    """Monta uma tabela temporária lendo um CSV de zip por vez: extrai, lê e apaga. Os CSVs da CVM somam mais de 4 GB
+    descompactados; lidos um a um, o disco nunca guarda mais de um arquivo por vez. Todos os itens têm o mesmo
+    conjunto de colunas (a SQL de cada um é montada com uma lista fixa), então o INSERT BY NAME nunca vê coluna nova."""
+    for i, item in enumerate(itens):
+        caminho = extrair(item[0], item[1])
+        sql = sql_de(caminho, *item[2:])
+        con.execute((f"CREATE TEMP TABLE {nome_temp} AS " if i == 0 else f"INSERT INTO {nome_temp} BY NAME ") + sql)
+        os.remove(caminho)
+
+
 # Números brasileiros ("1.234,56", ",72") e CNPJ sem máscara ("8635011000150") para o formato do cadastro da CVM
 con.execute(r"""CREATE MACRO num_br(x) AS TRY_CAST(replace(replace(trim(x), '.', ''), ',', '.') AS DOUBLE)""")
 con.execute(r"""CREATE MACRO digitos14(x) AS lpad(regexp_replace(x, '\D', '', 'g'), 14, '0')""")
@@ -57,9 +138,13 @@ con.execute(r"""CREATE MACRO fmt_cnpj(x) AS CASE WHEN length(regexp_replace(coal
   substr(digitos14(x), 1, 2) || '.' || substr(digitos14(x), 3, 3) || '.' || substr(digitos14(x), 6, 3) || '/'
   || substr(digitos14(x), 9, 4) || '-' || substr(digitos14(x), 13, 2) END""")
 con.execute(r"""CREATE MACRO data_br(x) AS COALESCE(TRY_CAST(x AS DATE), TRY_CAST(try_strptime(trim(x), '%d/%m/%Y') AS DATE))""")
+# quantidade inteira gravada com casas decimais ("5730834040.0000000000")
+con.execute(r"""CREATE MACRO inteiro(x) AS TRY_CAST(TRY_CAST(x AS DOUBLE) AS BIGINT)""")
 
 # ---------------------------------------------------------------- cadastro, tickers e apelidos
-cad = os.path.join(RAW, "cvm", "cad_cia_aberta.csv")
+# Há um cad_cia_aberta.csv na raiz de raw/ também: é a mesma planilha baixada em 13/09, com uma companhia de menos que
+# a de cvm/ (nenhum CNPJ exclusivo). Fica de fora; o cadastro corrente é o de cvm/, que o data/baixar.py atualiza.
+cad = exigir(os.path.join(RAW, "cvm", "cad_cia_aberta.csv"))
 tabela("empresas", f"""
 SELECT CNPJ_CIA AS cnpj, DENOM_SOCIAL AS nome_social, DENOM_COMERC AS nome_comercial, CD_CVM AS cd_cvm,
        SIT AS situacao, SETOR_ATIV AS setor, CONTROLE_ACIONARIO AS controle_acionario, UF AS uf, MUN AS municipio,
@@ -70,16 +155,42 @@ QUALIFY row_number() OVER (PARTITION BY CNPJ_CIA ORDER BY (SIT = 'ATIVO') DESC, 
 """, "Companhias abertas do setor elétrico registradas na CVM (uma linha por CNPJ). Use buscar_empresa para achar o CNPJ.",
     "CVM, cadastro de companhias abertas (cad_cia_aberta.csv)")
 
-fca = sorted(glob.glob(os.path.join(RAW, "cvm", "fca", "fca_cia_aberta_*.zip")))[-1]
-with zipfile.ZipFile(fca) as z:
-    nome = next(n for n in z.namelist() if "valor_mobiliario" in n)
-    z.extract(nome, trabalho)
-vm = os.path.join(trabalho, nome)
-con.execute(f"""CREATE TEMP TABLE tickers AS
-SELECT DISTINCT CNPJ_Companhia AS cnpj, upper(trim(Codigo_Negociacao)) AS ticker, Valor_Mobiliario AS tipo, Segmento AS segmento
-FROM read_csv('{vm}', delim=';', header=true, encoding='latin-1', all_varchar=true)
-WHERE coalesce(trim(Codigo_Negociacao), '') <> '' AND coalesce(Data_Fim_Negociacao, '') = ''
-  AND CNPJ_Companhia IN (SELECT cnpj FROM empresas)""")
+# ---------------------------------------------------------------- CVM FCA: o formulário cadastral inteiro
+# Cada zip do FCA (um por ano) traz 9 CSVs de conteúdo e o índice dos documentos entregues (o CSV sem nome de parte).
+FCA_PARTES = ["geral", "valor_mobiliario", "auditor", "dri", "endereco", "escriturador", "canal_divulgacao",
+              "departamento_acionistas", "pais_estrangeiro_negociacao"]
+fca_membros = {p: [] for p in FCA_PARTES}
+indices_cvm = []  # (zip, membro): o CSV da raiz de cada zip da CVM lista os documentos entregues
+for zp in exigir_glob(os.path.join(RAW, "cvm", "fca", "fca_cia_aberta_*.zip")):
+    with zipfile.ZipFile(zp) as z:
+        for n in z.namelist():
+            m = re.fullmatch(r"fca_cia_aberta_(?:(\w+)_)?(\d{4})\.csv", n)
+            if not m:
+                raise SystemExit(f"construir.py: membro inesperado em {zp}: {n}")
+            if m.group(1) is None:
+                indices_cvm.append((zp, n))
+            elif m.group(1) in fca_membros:
+                fca_membros[m.group(1)].append((zp, n))
+            else:
+                raise SystemExit(f"construir.py: parte nova do FCA em {zp}: {n} (acrescente-a a FCA_PARTES)")
+for parte, itens in fca_membros.items():
+    if not itens:
+        raise SystemExit(f"construir.py: nenhum zip do FCA tem a parte {parte}")
+    carregar(f"fca_bruto_{parte}", itens, lambda caminho: f"""
+SELECT * EXCLUDE (Data_Referencia, Versao), data_br(Data_Referencia) AS data_referencia,
+       TRY_CAST(Versao AS INTEGER) AS versao
+FROM read_csv('{caminho}', delim=';', header=true, encoding='latin-1', all_varchar=true)
+WHERE CNPJ_Companhia IN (SELECT cnpj FROM empresas)""")
+    # o FCA é refeito a cada ano e corrigido em versões: vale a entrega mais recente de cada empresa
+    con.execute(f"""CREATE TEMP TABLE fca_{parte} AS SELECT * FROM fca_bruto_{parte}
+QUALIFY dense_rank() OVER (PARTITION BY CNPJ_Companhia
+                           ORDER BY data_referencia DESC NULLS LAST, versao DESC NULLS LAST) = 1""")
+
+con.execute("""CREATE TEMP TABLE tickers AS
+SELECT DISTINCT CNPJ_Companhia AS cnpj, upper(trim(Codigo_Negociacao)) AS ticker, Valor_Mobiliario AS tipo,
+       Segmento AS segmento
+FROM fca_valor_mobiliario
+WHERE coalesce(trim(Codigo_Negociacao), '') <> '' AND coalesce(Data_Fim_Negociacao, '') = ''""")
 
 # Nomes pelos quais o mercado chama as empresas; o padrão é casado com o nome social do cadastro na montagem
 APELIDOS = [
@@ -156,20 +267,170 @@ UNION ALL SELECT DISTINCT regexp_replace(ticker, '\\d+$', ''), cnpj, 'ticker', '
 """, "Apelidos, marcas, nomes antigos e tickers da B3 de cada empresa, ligados ao CNPJ (base da ferramenta buscar_empresa).",
     "CVM FCA (valores mobiliários negociados) e lista curada de apelidos")
 
-# ---------------------------------------------------------------- CVM: demonstrações de 2020 em diante
-DEMOS = ["BPA", "BPP", "DRE", "DFC_MI", "DFC_MD", "DVA"]
-arquivos = []
-for zp in sorted(glob.glob(os.path.join(RAW, "cvm", "dfp", "dfp_cia_aberta_*.zip"))):
-    with zipfile.ZipFile(zp) as z:
-        for n in z.namelist():
-            m = re.match(r"dfp_cia_aberta_(\w+?)_(con|ind)_(\d{4})\.csv$", n)
-            if m and m.group(1) in DEMOS:
-                z.extract(n, trabalho)
-                arquivos.append((os.path.join(trabalho, n), m.group(1), m.group(2)))
-partes = [f"""SELECT *, '{d}' AS demonstrativo, '{'consolidado' if e == 'con' else 'individual'}' AS escopo
-FROM read_csv('{a}', delim=';', header=true, encoding='latin-1', all_varchar=true)
-WHERE CNPJ_CIA IN (SELECT cnpj FROM empresas)""" for a, d, e in arquivos]
-con.execute("CREATE TEMP TABLE dfp_bruto AS " + " UNION ALL BY NAME ".join(partes))
+FCA_FONTE = "CVM FCA, formulário cadastral (dados.cvm.gov.br)"
+FCA_RESSALVA = "só as empresas de energia elétrica (tabela empresas), na entrega mais recente de cada uma"
+
+tabela("empresas_cadastro_fca", """
+SELECT CNPJ_Companhia AS cnpj, Nome_Empresarial AS nome_empresarial, Nome_Empresarial_Anterior AS nome_anterior,
+       data_br(Data_Nome_Empresarial) AS data_nome_atual, data_br(Data_Constituicao) AS data_constituicao,
+       Codigo_CVM AS cd_cvm, data_br(Data_Registro_CVM) AS data_registro_cvm,
+       Categoria_Registro_CVM AS categoria_registro, Situacao_Registro_CVM AS situacao_registro,
+       Situacao_Emissor AS situacao_emissor, data_br(Data_Situacao_Emissor) AS data_situacao_emissor,
+       Especie_Controle_Acionario AS controle_acionario, Setor_Atividade AS setor_atividade,
+       Descricao_Atividade AS descricao_atividade, Pais_Origem AS pais_origem,
+       Pais_Custodia_Valores_Mobiliarios AS pais_custodia,
+       TRY_CAST(Dia_Encerramento_Exercicio_Social AS INTEGER) AS dia_fim_exercicio_social,
+       TRY_CAST(Mes_Encerramento_Exercicio_Social AS INTEGER) AS mes_fim_exercicio_social,
+       Pagina_Web AS pagina_web, data_referencia, versao
+FROM fca_geral
+""", "Cadastro declarado pela própria empresa no FCA: nome atual e anterior, data de constituição, registro na CVM, "
+     "situação do emissor, espécie de controle acionário, atividade, fim do exercício social e site. Complementa empresas.",
+    FCA_FONTE, FCA_RESSALVA + "; o que a empresa declarou, não o cadastro operacional da CVM (tabela empresas)")
+
+tabela("empresas_valores_mobiliarios", """
+SELECT CNPJ_Companhia AS cnpj, Nome_Empresarial AS empresa, Valor_Mobiliario AS valor_mobiliario,
+       upper(nullif(trim(Codigo_Negociacao), '')) AS ticker, Classe_Acao_Preferencial AS classe_preferencial,
+       Sigla_Classe_Acao_Preferencial AS sigla_classe_preferencial, Composicao_BDR_Unit AS composicao_bdr_unit,
+       Mercado AS mercado, Entidade_Administradora AS entidade_administradora, Segmento AS segmento,
+       data_br(Data_Inicio_Negociacao) AS inicio_negociacao, data_br(Data_Fim_Negociacao) AS fim_negociacao,
+       data_br(Data_Inicio_Listagem) AS inicio_listagem, data_br(Data_Fim_Listagem) AS fim_listagem,
+       coalesce(trim(Data_Fim_Negociacao), '') = '' AS em_negociacao, data_referencia, versao
+FROM fca_valor_mobiliario
+""", "Valores mobiliários de cada empresa (ações ON/PN, units, debêntures, BDR...): ticker, mercado, bolsa, segmento de "
+     "listagem e datas de início e fim de negociação. em_negociacao = true quando não há data de fim.",
+    FCA_FONTE, FCA_RESSALVA + "; papéis sem código de negociação (debêntures, notas) também aparecem, com ticker nulo. "
+    "composicao_bdr_unit só se aplica a BDR unit e por isso vem preenchida em 3 das 161 linhas: nulo aqui significa "
+    "'não é BDR unit', não dado faltando")
+
+tabela("empresas_auditoria", """
+SELECT CNPJ_Companhia AS cnpj, Nome_Empresarial AS empresa, Auditor AS auditor,
+       fmt_cnpj(CPF_CNPJ_Auditor) AS cnpj_auditor, Codigo_CVM_Auditor AS cd_cvm_auditor, Origem_Auditor AS origem_auditor,
+       data_br(Data_Inicio_Atuacao_Auditor) AS inicio_auditor, data_br(Data_Fim_Atuacao_Auditor) AS fim_auditor,
+       Responsavel_Tecnico AS responsavel_tecnico,
+       data_br(Data_Inicio_Atuacao_Responsavel_Tecnico) AS inicio_responsavel,
+       data_br(Data_Fim_Atuacao_Responsavel_Tecnico) AS fim_responsavel, data_referencia, versao
+FROM fca_auditor
+""", "Auditores independentes de cada empresa (uma linha por período de atuação): firma, CNPJ, código CVM, responsável "
+     "técnico e datas de início e fim. Serve para ver troca de auditor e tempo de casa.",
+    FCA_FONTE, FCA_RESSALVA + "; o CPF do responsável técnico não é carregado (dado pessoal). fim_responsavel é NULL em "
+    "TODAS as linhas porque a CVM não publica esse campo no FCA (vem vazio nas 1.041 linhas do arquivo): NÃO leia o "
+    "nulo como 'o responsável técnico continua em atividade'. Para o auditor, fim_auditor é preenchido")
+
+ENDERECO = """Tipo_Endereco AS tipo_endereco, Logradouro AS logradouro, Complemento AS complemento, Bairro AS bairro,
+       Cidade AS cidade, Sigla_UF AS uf, Pais AS pais, CEP AS cep,
+       nullif(concat_ws(' ', nullif(trim(DDI_Telefone), ''), nullif(trim(DDD_Telefone), ''),
+                        nullif(trim(Telefone), '')), '') AS telefone, Email AS email"""
+tabela("empresas_contatos", f"""
+SELECT CNPJ_Companhia AS cnpj, Nome_Empresarial AS empresa, 'endereço' AS categoria, NULL::VARCHAR AS contato,
+       NULL::VARCHAR AS cargo_ou_documento, {ENDERECO}, NULL::DATE AS inicio, NULL::DATE AS fim, data_referencia, versao
+FROM fca_endereco
+UNION ALL BY NAME
+SELECT CNPJ_Companhia AS cnpj, Nome_Empresarial AS empresa, 'DRI' AS categoria, Responsavel AS contato,
+       Tipo_Responsavel::VARCHAR AS cargo_ou_documento, {ENDERECO}, data_br(Data_Inicio_Atuacao) AS inicio,
+       data_br(Data_Fim_Atuacao) AS fim, data_referencia, versao
+FROM fca_dri
+UNION ALL BY NAME
+SELECT CNPJ_Companhia AS cnpj, Nome_Empresarial AS empresa, 'escriturador' AS categoria, Escriturador AS contato,
+       fmt_cnpj(CNPJ_Escriturador) AS cargo_ou_documento, {ENDERECO}, data_br(Data_Inicio_Atuacao) AS inicio,
+       data_br(Data_Fim_Atuacao) AS fim, data_referencia, versao
+FROM fca_escriturador
+UNION ALL BY NAME
+SELECT CNPJ_Companhia AS cnpj, Nome_Empresarial AS empresa, 'departamento de acionistas' AS categoria,
+       Contato AS contato, NULL::VARCHAR AS cargo_ou_documento, {ENDERECO}, data_br(Data_Inicio_Contato) AS inicio,
+       data_br(Data_Fim_Contato) AS fim, data_referencia, versao
+FROM fca_departamento_acionistas
+""", "Endereços e contatos declarados no FCA, numa tabela só: categoria = endereço (sede e correspondência), DRI "
+     "(diretor de relações com investidores), escriturador ou departamento de acionistas. Traz logradouro, cidade, UF, "
+     "CEP, telefone e e-mail.",
+    FCA_FONTE, FCA_RESSALVA + "; o CPF do DRI não é carregado (dado pessoal)")
+
+tabela("empresas_divulgacao", """
+SELECT CNPJ_Companhia AS cnpj, Nome_Empresarial AS empresa, Canal_Divulgacao AS canal, Sigla_UF AS uf,
+       data_referencia, versao
+FROM fca_canal_divulgacao
+""", "Jornais e canais em que cada empresa publica seus atos societários, por UF.", FCA_FONTE, FCA_RESSALVA)
+
+tabela("empresas_negociacao_exterior", """
+SELECT CNPJ_Companhia AS cnpj, Nome_Empresarial AS empresa, Pais AS pais,
+       data_br(Data_Admissao_Negociacao) AS data_admissao, data_referencia, versao
+FROM fca_pais_estrangeiro_negociacao
+""", "Países onde os papéis da empresa também são negociados (ADR, listagem no exterior) e a data de admissão.",
+    FCA_FONTE, FCA_RESSALVA)
+
+# ---------------------------------------------------------------- CVM: DFP (anual) e ITR (trimestral), todos os membros
+DEMOS = ["BPA", "BPP", "DRE", "DRA", "DFC_MI", "DFC_MD", "DVA"]
+SEM_INICIO = {"BPA", "BPP"}  # o balanço é um saldo numa data: esses CSV não têm a coluna DT_INI_EXERC
+# Lista fixa de colunas: o INSERT BY NAME do carregar() exige que todo arquivo entregue exatamente as mesmas colunas
+COLUNAS_CONTAS = ["CNPJ_CIA", "DT_REFER", "VERSAO", "DENOM_CIA", "CD_CVM", "GRUPO_DFP", "MOEDA", "ESCALA_MOEDA",
+                  "ORDEM_EXERC", "DT_INI_EXERC", "DT_FIM_EXERC", "CD_CONTA", "DS_CONTA", "VL_CONTA", "ST_CONTA_FIXA"]
+SO_SETOR = "WHERE CNPJ_CIA IN (SELECT cnpj FROM empresas)"
+LER = "read_csv('{}', delim=';', header=true, encoding='latin-1', all_varchar=true)"
+
+
+def cvm_membros(pasta):
+    """Classifica todos os membros dos zips de uma pasta da CVM (dfp ou itr) em contas, DMPL, composição do capital,
+    parecer e índice de documentos. Sem fallback: membro que não caia em nenhuma categoria para a montagem, porque
+    significa que a CVM mudou o pacote e o código precisa ser revisto antes de o banco sair incompleto."""
+    contas, dmpl, capital, parecer = [], [], [], []
+    for zp in exigir_glob(os.path.join(RAW, "cvm", pasta, f"{pasta}_cia_aberta_*.zip")):
+        with zipfile.ZipFile(zp) as z:
+            for n in z.namelist():
+                m = re.fullmatch(rf"{pasta}_cia_aberta_(.*?)_?(\d{{4}})\.csv", n)
+                if not m:
+                    raise SystemExit(f"construir.py: membro inesperado em {zp}: {n}")
+                miolo = m.group(1)
+                d = re.fullmatch(r"(\w+)_(con|ind)", miolo)
+                escopo = "consolidado" if d and d.group(2) == "con" else "individual"
+                if miolo == "":
+                    indices_cvm.append((zp, n))
+                elif miolo == "composicao_capital":
+                    capital.append((zp, n))
+                elif miolo == "parecer":
+                    parecer.append((zp, n))
+                elif d and d.group(1) == "DMPL":
+                    dmpl.append((zp, n, escopo))
+                elif d and d.group(1) in DEMOS:
+                    contas.append((zp, n, d.group(1), escopo))
+                else:
+                    raise SystemExit(f"construir.py: membro novo em {zp}: {n} (acrescente-o a DEMOS ou trate-o aqui)")
+    for nome, itens in (("contas", contas), ("DMPL", dmpl), ("composição do capital", capital), ("parecer", parecer)):
+        if not itens:
+            raise SystemExit(f"construir.py: os zips de {pasta} não têm nenhum arquivo de {nome}")
+    return contas, dmpl, capital, parecer
+
+
+def sql_contas(caminho, demo, escopo):
+    colunas = ", ".join("CAST(NULL AS VARCHAR) AS DT_INI_EXERC" if c == "DT_INI_EXERC" and demo in SEM_INICIO else c
+                        for c in COLUNAS_CONTAS)
+    return f"SELECT {colunas}, '{demo}' AS demonstrativo, '{escopo}' AS escopo FROM {LER.format(caminho)} {SO_SETOR}"
+
+
+def sql_dmpl(caminho, escopo):
+    return f"""SELECT CNPJ_CIA, DT_REFER, VERSAO, DENOM_CIA, CD_CVM, ESCALA_MOEDA, DT_INI_EXERC, DT_FIM_EXERC,
+       COLUNA_DF, CD_CONTA, DS_CONTA, VL_CONTA, '{escopo}' AS escopo
+FROM {LER.format(caminho)} {SO_SETOR} AND ORDEM_EXERC = 'ÚLTIMO'"""
+
+
+def sql_capital(caminho):
+    return f"""SELECT CNPJ_CIA, DT_REFER, VERSAO, DENOM_CIA, QT_ACAO_ORDIN_CAP_INTEGR, QT_ACAO_PREF_CAP_INTEGR,
+       QT_ACAO_TOTAL_CAP_INTEGR, QT_ACAO_ORDIN_TESOURO, QT_ACAO_PREF_TESOURO, QT_ACAO_TOTAL_TESOURO
+FROM {LER.format(caminho)} {SO_SETOR}"""
+
+
+def sql_parecer(coluna_tipo):
+    """A coluna com o tipo do relatório do auditor muda de nome: TP_RELAT_AUD na DFP, TP_RELAT_ESP no ITR."""
+    def montar(caminho):
+        return f"""SELECT CNPJ_CIA, DT_REFER, VERSAO, DENOM_CIA, {coluna_tipo} AS TIPO_RELATORIO, TP_PARECER_DECL,
+       NUM_ITEM_PARECER_DECL, TXT_PARECER_DECL
+FROM {LER.format(caminho)} {SO_SETOR}"""
+    return montar
+
+
+contas_dfp, dmpl_dfp, capital_dfp, parecer_dfp = cvm_membros("dfp")
+carregar("dfp_bruto", contas_dfp, sql_contas)
+carregar("dmpl_dfp", dmpl_dfp, sql_dmpl)
+carregar("capital_dfp", capital_dfp, sql_capital)
+carregar("parecer_dfp", parecer_dfp, sql_parecer("TP_RELAT_AUD"))
 tabela("contas_cvm", """
 WITH u AS (
   SELECT *, TRY_CAST(VERSAO AS INTEGER) AS v FROM dfp_bruto
@@ -182,8 +443,9 @@ SELECT CNPJ_CIA AS cnpj, CD_CVM AS cd_cvm, DENOM_CIA AS empresa, year(TRY_CAST(D
 FROM u
 QUALIFY v = max(v) OVER (PARTITION BY CNPJ_CIA, DT_REFER, demonstrativo, escopo)
 """, "Todas as contas das demonstrações financeiras anuais (DFP) das empresas do setor, de 2020 em diante, já em R$ "
-     "(escala MIL aplicada), última versão entregue. demonstrativo: BPA, BPP, DRE, DFC_MI, DFC_MD, DVA; escopo: "
-     "consolidado ou individual. Prefira kpis_financeiros para indicadores prontos.",
+     "(escala MIL aplicada), última versão entregue. demonstrativo: BPA e BPP (balanço), DRE, DRA (resultado "
+     "abrangente), DFC_MI e DFC_MD (fluxo de caixa), DVA; escopo: consolidado ou individual. As mutações do patrimônio "
+     "líquido estão em mutacoes_patrimonio_liquido. Prefira kpis_financeiros para indicadores prontos.",
     "CVM, DFP (dados.cvm.gov.br)", "valores em reais; despesas e saídas de caixa vêm negativas")
 
 tabela("kpis_financeiros", r"""
@@ -198,6 +460,8 @@ capex_contas AS (
 a AS (
   SELECT cnpj, ano, any_value(escopo) AS escopo, any_value(empresa) AS empresa,
     sum(valor_brl) FILTER (demonstrativo = 'DRE' AND cd_conta = '3.01') AS receita_liquida_brl,
+    -- custo dos produtos/serviços (3.02): na DRE vem NEGATIVO. Só entra aqui para checar o sinal, não é coluna da tabela.
+    sum(valor_brl) FILTER (demonstrativo = 'DRE' AND cd_conta = '3.02') AS custo_brl,
     sum(valor_brl) FILTER (demonstrativo = 'DRE' AND cd_conta = '3.05') AS ebit_brl,
     sum(valor_brl) FILTER (demonstrativo = 'DRE' AND cd_conta = '3.06') AS resultado_financeiro_brl,
     sum(valor_brl) FILTER (demonstrativo = 'DRE' AND cd_conta = '3.06.02') AS despesas_financeiras_brl,
@@ -230,16 +494,27 @@ SELECT a.cnpj, a.empresa, a.ano, a.escopo, receita_liquida_brl, ebit_brl, deprec
        obra.custo_construcao_brl AS custo_construcao_concessao_brl,
        greatest(coalesce(k.capex_brl, 0), coalesce(obra.custo_construcao_brl, 0)) AS investimento_total_brl,
        -dividendos_jcp_fluxo_brl AS dividendos_jcp_pagos_brl,
-       round(100 * ebit_brl / nullif(receita_liquida_brl, 0), 2) AS margem_ebit_pct,
-       round(100 * (ebit_brl + depreciacao_amortizacao_brl) / nullif(receita_liquida_brl, 0), 2) AS margem_ebitda_pct,
-       round(100 * lucro_liquido_brl / nullif(receita_liquida_brl, 0), 2) AS margem_liquida_pct,
-       round((divida_bruta_brl - caixa_aplicacoes_brl) / nullif(ebit_brl + depreciacao_amortizacao_brl, 0), 2) AS divida_liquida_ebitda,
+       -- Em algumas DFPs a empresa entregou o custo (3.02) com sinal positivo e propagou o erro para baixo: o lucro
+       -- bruto sai maior que a receita e as margens saem infladas. Marcamos e anulamos as margens em vez de inverter o
+       -- sinal em silêncio, porque não se sabe até onde o erro subiu na demonstração.
+       coalesce(custo_brl, 0) > 0 AS sinal_custo_invertido,
+       CASE WHEN coalesce(custo_brl, 0) > 0 THEN NULL
+            ELSE round(100 * ebit_brl / nullif(receita_liquida_brl, 0), 2) END AS margem_ebit_pct,
+       CASE WHEN coalesce(custo_brl, 0) > 0 THEN NULL
+            ELSE round(100 * (ebit_brl + depreciacao_amortizacao_brl) / nullif(receita_liquida_brl, 0), 2)
+       END AS margem_ebitda_pct,
+       CASE WHEN coalesce(custo_brl, 0) > 0 THEN NULL
+            ELSE round(100 * lucro_liquido_brl / nullif(receita_liquida_brl, 0), 2) END AS margem_liquida_pct,
+       CASE WHEN coalesce(custo_brl, 0) > 0 THEN NULL
+            ELSE round((divida_bruta_brl - caixa_aplicacoes_brl) / nullif(ebit_brl + depreciacao_amortizacao_brl, 0), 2)
+       END AS divida_liquida_ebitda,
        round((ebit_brl + depreciacao_amortizacao_brl) / nullif(abs(despesas_financeiras_brl), 0), 2) AS cobertura_juros_ebitda,
        round(100 * lucro_liquido_brl / nullif(patrimonio_liquido_brl, 0), 2) AS roe_pct,
        k.contas_capex,
        'CVM DFP ' || a.ano || ' (' || a.escopo || '): receita 3.01, EBIT 3.05, lucro 3.11, desp. financeiras 3.06.02; '
          || 'dívida bruta 2.01.04+2.02.01; caixa 1.01.01+1.01.02; PL 2.03; D&A, caixa operacional (6.01), CAPEX (6.02) '
-         || 'e dividendos (6.03) da DFC' AS fonte
+         || 'e dividendos/JCP pagos (subcontas de 6.03 cuja descrição cita dividendo ou juros sobre capital) da DFC'
+         AS fonte
 FROM a LEFT JOIN k USING (cnpj, ano) LEFT JOIN obra USING (cnpj, ano)
 """, "Indicadores financeiros anuais por empresa (2020 em diante), em R$, prontos para comparar: receita, EBIT, "
      "EBITDA calculado, lucro, dívida bruta e líquida, caixa, CAPEX, dividendos, margens, alavancagem, cobertura de juros e ROE. "
@@ -249,23 +524,23 @@ FROM a LEFT JOIN k USING (cnpj, ano) LEFT JOIN obra USING (cnpj, ano)
     "3.05 é EBIT, nunca chame de EBITDA. Dívida bruta = empréstimos, financiamentos e debêntures (2.01.04 + 2.02.01), sem "
     "arrendamentos. capex_brl soma as saídas de caixa de imobilizado, intangível e ativo de contrato (6.02, contas em "
     "contas_capex). Concessões (IFRS 15 / ICPC 01) lançam a obra como custo de construção: custo_construcao_concessao_brl. "
-    "Para 'quanto investiu', use investimento_total_brl (o maior dos dois, sem somar para não contar duas vezes).")
+    "Para 'quanto investiu', use investimento_total_brl (o maior dos dois, sem somar para não contar duas vezes). "
+    "sinal_custo_invertido = true nas 2 linhas em que a empresa entregou à CVM o custo (3.02) com sinal POSITIVO e "
+    "propagou o erro para baixo (Itapebi 2021 e Equatorial Pará 2025, as duas só com demonstração individual): o lucro "
+    "bruto sai maior que a receita, então margem_ebit_pct, margem_ebitda_pct, margem_liquida_pct e divida_liquida_ebitda "
+    "vêm NULL nessas linhas. ebit_brl, lucro_liquido_brl, roe_pct e cobertura_juros_ebitda ainda carregam o erro ali "
+    "(Equatorial PA 2025: EBIT de R$ 20,0 bi contra receita de R$ 12,2 bi e ROE de 371%) — descarte a linha em vez de "
+    "usá-la. São os valores que a empresa publicou e ficam como estão: NÃO inverta o sinal por conta própria. Outras "
+    "empresas erraram o sinal só no individual (AES Tietê 2020, CPFL Energia 2024, Rio Alto 2024) e não aparecem aqui "
+    "porque esta tabela usa o consolidado, que veio certo.")
 
 # ---------------------------------------------------------------- CVM: demonstrações trimestrais (ITR)
-arquivos_itr = []
-for zp in sorted(glob.glob(os.path.join(RAW, "cvm", "itr", "itr_cia_aberta_*.zip"))):
-    with zipfile.ZipFile(zp) as z:
-        for n in z.namelist():
-            m = re.match(r"itr_cia_aberta_(\w+?)_(con|ind)_(\d{4})\.csv$", n)
-            if m and m.group(1) in DEMOS:
-                z.extract(n, trabalho)
-                arquivos_itr.append((os.path.join(trabalho, n), m.group(1), m.group(2)))
-if arquivos_itr:
-    partes = [f"""SELECT *, '{d}' AS demonstrativo, '{'consolidado' if e == 'con' else 'individual'}' AS escopo
-FROM read_csv('{a}', delim=';', header=true, encoding='latin-1', all_varchar=true)
-WHERE CNPJ_CIA IN (SELECT cnpj FROM empresas)""" for a, d, e in arquivos_itr]
-    con.execute("CREATE TEMP TABLE itr_bruto AS " + " UNION ALL BY NAME ".join(partes))
-    tabela("contas_cvm_trimestral", """
+contas_itr, dmpl_itr, capital_itr, parecer_itr = cvm_membros("itr")
+carregar("itr_bruto", contas_itr, sql_contas)
+carregar("dmpl_itr", dmpl_itr, sql_dmpl)
+carregar("capital_itr", capital_itr, sql_capital)
+carregar("parecer_itr", parecer_itr, sql_parecer("TP_RELAT_ESP"))
+tabela("contas_cvm_trimestral", """
 WITH u AS (SELECT *, TRY_CAST(VERSAO AS INTEGER) AS v, TRY_CAST(DT_REFER AS DATE) AS ref,
                   TRY_CAST(DT_INI_EXERC AS DATE) AS ini, TRY_CAST(DT_FIM_EXERC AS DATE) AS fim
            FROM itr_bruto WHERE ORDEM_EXERC = 'ÚLTIMO')
@@ -280,8 +555,9 @@ FROM u
 QUALIFY v = max(v) OVER (PARTITION BY CNPJ_CIA, DT_REFER, demonstrativo, escopo)
 """, "Contas das demonstrações trimestrais (ITR) de 2024 em diante, em R$: periodo = trimestre (só os 3 meses), "
      "acumulado (desde janeiro) ou saldo (balanço no fim do trimestre). O 4º trimestre não existe no ITR: está na DFP anual.",
-        "CVM, ITR (dados.cvm.gov.br)", "valores em reais; despesas e saídas de caixa vêm negativas; a DFC do ITR é acumulada")
-    tabela("kpis_trimestrais", r"""
+    "CVM, ITR (dados.cvm.gov.br)", "valores em reais; despesas e saídas de caixa vêm negativas; a DFC do ITR é acumulada")
+
+tabela("kpis_trimestrais", r"""
 WITH esc AS (SELECT cnpj, data_referencia,
                     CASE WHEN bool_or(escopo = 'consolidado') THEN 'consolidado' ELSE 'individual' END AS escopo
              FROM contas_cvm_trimestral GROUP BY ALL),
@@ -333,23 +609,152 @@ LEFT JOIN q p ON p.cnpj = q.cnpj AND p.ano = q.ano - 1 AND p.trimestre = q.trime
 """, "Indicadores trimestrais (ITR) de 2024 em diante: receita, EBIT e lucro do trimestre e acumulados no ano, EBITDA, "
      "valores dos últimos 12 meses, dívida bruta e líquida no fim do trimestre, dívida líquida/EBITDA 12 meses e "
      "investimento acumulado. É o dado mais recente da base (a DFP anual vai até 2025).",
-        "CVM ITR e DFP; cálculo desta plataforma", "12 meses só existem quando há o ITR do mesmo trimestre do ano anterior; "
-        "EBITDA = EBIT + depreciação e amortização da DFC; investimento_acumulado_brl segue a regra de investimento_total_brl")
+    "CVM ITR e DFP; cálculo desta plataforma", "12 meses só existem quando há o ITR do mesmo trimestre do ano anterior; "
+    "EBITDA = EBIT + depreciação e amortização da DFC; investimento_acumulado_brl segue a regra de investimento_total_brl")
+
+# ---------------------------------------------------------------- CVM: DMPL, composição do capital, parecer e índice
+tabela("mutacoes_patrimonio_liquido", """
+WITH u AS (SELECT 'DFP' AS documento, * FROM dmpl_dfp UNION ALL BY NAME SELECT 'ITR' AS documento, * FROM dmpl_itr),
+v AS (SELECT *, TRY_CAST(VERSAO AS INTEGER) AS ver, TRY_CAST(DT_REFER AS DATE) AS ref FROM u)
+SELECT CNPJ_CIA AS cnpj, CD_CVM AS cd_cvm, DENOM_CIA AS empresa, documento, ref AS data_referencia, year(ref) AS ano,
+       quarter(ref) AS trimestre, escopo, COLUNA_DF AS coluna_pl, CD_CONTA AS cd_conta, DS_CONTA AS ds_conta,
+       TRY_CAST(DT_INI_EXERC AS DATE) AS inicio_periodo, TRY_CAST(DT_FIM_EXERC AS DATE) AS fim_periodo,
+       TRY_CAST(VL_CONTA AS DOUBLE) * CASE WHEN ESCALA_MOEDA = 'MIL' THEN 1000 ELSE 1 END AS valor_brl, ver AS versao,
+       'CVM ' || documento || ' ' || year(ref) || ', DMPL ' || escopo || ', ' || COLUNA_DF || ', conta ' || CD_CONTA AS fonte
+FROM v
+QUALIFY ver = max(ver) OVER (PARTITION BY CNPJ_CIA, ref, documento, escopo)
+""", "Demonstração das mutações do patrimônio líquido (DMPL), anual (DFP) e trimestral (ITR), em R$: cada linha é um "
+     "movimento (conta 5.xx, como saldos iniciais, lucro do período, dividendos, aumento de capital) numa coluna do PL "
+     "(coluna_pl: Capital Social Integralizado, Reservas de Lucro, Lucros Acumulados, Patrimônio Líquido Consolidado...).",
+    "CVM DFP e ITR, arquivos DMPL", "não some as colunas: coluna_pl já inclui totais (Patrimônio Líquido) junto com as "
+    "partes. Fica fora de contas_cvm justamente para não contar duas vezes")
+
+tabela("capital_social_acoes", """
+WITH u AS (SELECT 'DFP' AS documento, * FROM capital_dfp UNION ALL BY NAME SELECT 'ITR' AS documento, * FROM capital_itr),
+v AS (SELECT *, TRY_CAST(VERSAO AS INTEGER) AS ver, TRY_CAST(DT_REFER AS DATE) AS ref FROM u)
+SELECT CNPJ_CIA AS cnpj, DENOM_CIA AS empresa, documento, ref AS data_referencia, year(ref) AS ano,
+       quarter(ref) AS trimestre, inteiro(QT_ACAO_ORDIN_CAP_INTEGR) AS acoes_ordinarias,
+       inteiro(QT_ACAO_PREF_CAP_INTEGR) AS acoes_preferenciais, inteiro(QT_ACAO_TOTAL_CAP_INTEGR) AS acoes_total,
+       inteiro(QT_ACAO_ORDIN_TESOURO) AS acoes_ordinarias_tesouraria,
+       inteiro(QT_ACAO_PREF_TESOURO) AS acoes_preferenciais_tesouraria,
+       inteiro(QT_ACAO_TOTAL_TESOURO) AS acoes_tesouraria,
+       inteiro(QT_ACAO_TOTAL_CAP_INTEGR) - inteiro(QT_ACAO_TOTAL_TESOURO) AS acoes_em_circulacao, ver AS versao,
+       'CVM ' || documento || ' ' || year(ref) || ', composição do capital' AS fonte
+FROM v
+QUALIFY ver = max(ver) OVER (PARTITION BY CNPJ_CIA, ref, documento)
+""", "Quantidade de ações de cada empresa em cada data de referência (DFP anual e ITR trimestral): ordinárias, "
+     "preferenciais, total, o que está em tesouraria e as ações em circulação (total menos tesouraria). Serve para "
+     "lucro por ação e para peso de cada classe.",
+    "CVM DFP e ITR, composição do capital", "quantidade de ações, não valor; o capital social em R$ está no BPP (2.03.01)")
+
+tabela("pareceres_auditoria", """
+WITH u AS (SELECT 'DFP' AS documento, * FROM parecer_dfp UNION ALL BY NAME SELECT 'ITR' AS documento, * FROM parecer_itr),
+v AS (SELECT *, TRY_CAST(VERSAO AS INTEGER) AS ver, TRY_CAST(DT_REFER AS DATE) AS ref FROM u)
+SELECT CNPJ_CIA AS cnpj, DENOM_CIA AS empresa, documento, ref AS data_referencia, year(ref) AS ano,
+       quarter(ref) AS trimestre, nullif(trim(TIPO_RELATORIO), '') AS tipo_relatorio,
+       TP_PARECER_DECL AS tipo_declaracao, TRY_CAST(NUM_ITEM_PARECER_DECL AS INTEGER) AS item,
+       TXT_PARECER_DECL AS texto, ver AS versao,
+       'CVM ' || documento || ' ' || year(ref) || ', parecer/declaração: ' || TP_PARECER_DECL AS fonte
+FROM v
+QUALIFY ver = max(ver) OVER (PARTITION BY CNPJ_CIA, ref, documento)
+""", "Relatório do auditor independente e declarações dos diretores e do conselho fiscal que acompanham cada DFP e ITR, "
+     "com o texto completo. tipo_relatorio diz se o parecer é sem ressalva, com ressalva, com ênfase ou adverso.",
+    "CVM DFP e ITR, arquivos de parecer", "texto como entregue pela empresa (sem formatação); o tipo do relatório vem "
+    "de TP_RELAT_AUD na DFP e TP_RELAT_ESP no ITR")
+
+carregar("indices_cvm_bruto", indices_cvm, lambda caminho: f"""
+SELECT CNPJ_CIA, DT_REFER, VERSAO, DENOM_CIA, CD_CVM, CATEG_DOC, ID_DOC, DT_RECEB, LINK_DOC
+FROM {LER.format(caminho)} {SO_SETOR}""")
+tabela("documentos_cvm", """
+SELECT CNPJ_CIA AS cnpj, DENOM_CIA AS empresa, CD_CVM AS cd_cvm, CATEG_DOC AS categoria,
+       TRY_CAST(DT_REFER AS DATE) AS data_referencia, year(TRY_CAST(DT_REFER AS DATE)) AS ano,
+       quarter(TRY_CAST(DT_REFER AS DATE)) AS trimestre, TRY_CAST(VERSAO AS INTEGER) AS versao, ID_DOC AS id_documento,
+       TRY_CAST(DT_RECEB AS DATE) AS data_recebimento, LINK_DOC AS link
+FROM indices_cvm_bruto
+ORDER BY cnpj, data_referencia DESC, categoria, versao DESC
+""", "Documentos que cada empresa entregou à CVM (DFP anual, ITR trimestral e FCA cadastral), com a data de "
+     "recebimento, a versão e o link para baixar o documento original no sistema RAD da CVM.",
+    "CVM, índice de documentos dos pacotes DFP, ITR e FCA", "só as categorias DFP, ITR e FCA; o link abre o documento "
+    "completo no site da CVM (rad.cvm.gov.br)")
+
+# O zip cvm/dfp_cia_aberta_2024.zip da raiz de cvm/ é uma cópia mais antiga de cvm/dfp/dfp_cia_aberta_2024.zip: mesmos
+# 19 membros, mesmos tamanhos, e o único membro que difere (o índice) só tem uma linha em ordem diferente. O glob acima
+# é cvm/dfp/dfp_cia_aberta_*.zip, então a cópia da raiz nunca é lida duas vezes.
+
+# ---------------------------------------------------------------- CVM: dicionário de dados (o que é cada campo)
+# Blocos de texto em cp1252, um por campo: "Campo: X" e depois Descrição, Domínio, Tipo Dados e o tamanho, que vem
+# como "Tamanho" (texto e datas) ou como o par "Precisão"/"Scale" (numéricos). Estrutura fixa: bloco sem os três
+# primeiros atributos, ou sem nenhuma das duas formas de tamanho, para a montagem dizendo o arquivo e o campo.
+CAMPO_META = re.compile(r"Campo:[ \t]*(\S+)[ \t]*\r?\n-{5,}\r?\n(.*?)(?=\r?\n-{5,}\r?\n|\Z)", re.S)
+ATRIBUTO_META = re.compile(r"^[ \t]*([^:\n]+?)[ \t]*:[ \t]*(.*?)[ \t]*$")
+dicionario = []
+for arq in exigir_glob(os.path.join(RAW, "cvm", "meta_dfp", "meta_dfp_cia_aberta*.txt")):
+    nome_arquivo = os.path.basename(arq)
+    # meta_dfp_cia_aberta_BPA.txt -> BPA; meta_dfp_cia_aberta.txt (sem sufixo) descreve o índice de documentos do zip
+    sufixo = re.fullmatch(r"meta_dfp_cia_aberta_?(.*)\.txt", nome_arquivo).group(1)
+    demonstrativo = sufixo or "indice_documentos"
+    texto = open(arq, encoding="cp1252").read()
+    achados = CAMPO_META.findall(texto)
+    if not achados:
+        raise SystemExit(f"construir.py: {nome_arquivo} não tem nenhum bloco 'Campo:' (formato do dicionário mudou)")
+    for campo, corpo in achados:
+        a = dict(ATRIBUTO_META.match(l).groups() for l in corpo.splitlines() if ATRIBUTO_META.match(l))
+        faltando = [k for k in ("Descrição", "Domínio", "Tipo Dados") if k not in a]
+        if "Tamanho" not in a and not ("Precisão" in a and "Scale" in a):
+            faltando.append("Tamanho (ou o par Precisão/Scale)")
+        if faltando:
+            raise SystemExit(f"construir.py: campo {campo} em {nome_arquivo} sem {', '.join(faltando)}")
+        dicionario.append((demonstrativo, nome_arquivo, campo, a["Descrição"], a["Domínio"], a["Tipo Dados"],
+                           a.get("Tamanho"), a.get("Precisão"), a.get("Scale")))
+con.execute("""CREATE TEMP TABLE dic_bruto (demonstrativo VARCHAR, arquivo VARCHAR, campo VARCHAR, descricao VARCHAR,
+  dominio VARCHAR, tipo_dados VARCHAR, tamanho VARCHAR, precisao VARCHAR, escala VARCHAR)""")
+con.executemany("INSERT INTO dic_bruto VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", dicionario)
+tabela("dicionario_cvm", """
+SELECT demonstrativo, arquivo, campo, descricao, dominio, tipo_dados, TRY_CAST(tamanho AS INTEGER) AS tamanho,
+       TRY_CAST(precisao AS INTEGER) AS precisao, TRY_CAST(escala AS INTEGER) AS escala
+FROM dic_bruto ORDER BY demonstrativo, campo
+""", "Dicionário de dados da CVM: o que significa cada campo dos arquivos de DFP e ITR (CD_CONTA, ESCALA_MOEDA, "
+     "ORDEM_EXERC, GRUPO_DFP, ST_CONTA_FIXA...), com a descrição oficial, o domínio e o tipo. demonstrativo diz a "
+     "que arquivo o campo pertence: BPA e BPP (balanço patrimonial ativo e passivo), DRE, DRA, DFC_MI e DFC_MD "
+     "(fluxo de caixa indireto e direto), DVA, DMPL, composicao_capital, parecer e indice_documentos. Consulte aqui "
+     "antes de interpretar as colunas cruas de contas_cvm e contas_cvm_trimestral.",
+    "CVM, dicionário de dados dos pacotes de DFP (cvm/meta_dfp/*.txt)",
+    "é a documentação do arquivo ANUAL (DFP); o ITR usa os mesmos campos, com a exceção conhecida do tipo do relatório "
+    "do auditor (TP_RELAT_AUD na DFP, TP_RELAT_ESP no ITR). tamanho vale para campos de texto e data; nos numéricos o "
+    "tamanho vem como precisao e escala (casas decimais). Descreve os CSVs crus da CVM, não as colunas já renomeadas "
+    "das tabelas desta plataforma")
 
 # ---------------------------------------------------------------- ANEEL: usinas (SIGA) e seus donos
-siga = f"read_csv('{os.path.join(ANEEL, 'siga.csv')}', delim=';', header=true, all_varchar=true)"
+# siga_diario.csv é o MESMO conjunto do SIGA num retrato anterior (DatGeracaoConjuntoDados de 13/09 contra 26/09 do
+# siga.csv): mesmas 23 colunas, mesmas 25.045 linhas, e só 3 linhas diferem (sufixo de versão do CEG). Garantia física
+# e coordenadas, que seriam a razão de ler o diário, já estão no siga.csv e entram abaixo. Por isso não vira tabela: o
+# que faltava aproveitar eram as colunas de vigência da outorga e o combustível detalhado, acrescentados aqui.
+siga = f"read_csv('{exigir(os.path.join(ANEEL, 'siga.csv'))}', delim=';', header=true, all_varchar=true)"
 tabela("usinas", f"""
 SELECT CodCEG AS ceg, NomEmpreendimento AS nome, SigUFPrincipal AS uf, SigTipoGeracao AS tipo_geracao,
        DscFaseUsina AS fase, DscOrigemCombustivel AS origem, DscFonteCombustivel AS fonte_energia,
-       DscTipoOutorga AS tipo_outorga, TRY_CAST(DatEntradaOperacao AS DATE) AS data_entrada_operacao,
+       NomFonteCombustivel AS combustivel, DscTipoOutorga AS tipo_outorga,
+       -- 03/01/1900 é o marcador da ANEEL para "sem data de operação" (2.398 usinas, 2.099 delas nem começaram a obra):
+       -- vira NULL para não inventar uma safra de 1900 em gráfico de capacidade por ano.
+       nullif(TRY_CAST(DatEntradaOperacao AS DATE), DATE '1900-01-03') AS data_entrada_operacao,
        num_br(MdaPotenciaOutorgadaKw) AS potencia_outorgada_kw, num_br(MdaPotenciaFiscalizadaKw) AS potencia_fiscalizada_kw,
        num_br(MdaGarantiaFisicaKw) AS garantia_fisica_kw, num_br(NumCoordNEmpreendimento) AS latitude,
        num_br(NumCoordEEmpreendimento) AS longitude, trim(DscSubBacia) AS sub_bacia, DscMuninicpios AS municipios,
+       TRY_CAST(DatInicioVigencia AS DATE) AS inicio_vigencia_outorga,
+       TRY_CAST(DatFimVigencia AS DATE) AS fim_vigencia_outorga, IdcGeracaoQualificada = 'Sim' AS geracao_qualificada,
        DscPropriRegimePariticipacao AS proprietarios_texto, TRY_CAST(DatGeracaoConjuntoDados AS DATE) AS data_base
 FROM {siga}
 """, "Usinas de geração do Brasil (SIGA/ANEEL), uma linha por usina: tipo (UHE, PCH, CGH, EOL, UFV, UTE, UTN), fase "
-     "(Operação, Construção, Construção não iniciada), origem (Hídrica, Eólica, Solar, Fóssil, Biomassa, Nuclear), potência em kW.",
-    "ANEEL SIGA (dados abertos), data em data_base", "potência em kW (divida por 1000 para MW); donos em usinas_proprietarios")
+     "(Operação, Construção, Construção não iniciada), origem (Hídrica, Eólica, Solar, Fóssil, Biomassa, Nuclear), potência em kW. "
+     "combustivel é o insumo detalhado (Óleo Diesel, Bagaço de Cana de Açúcar, Casca de Arroz...), mais fino que "
+     "fonte_energia. fim_vigencia_outorga é quando a outorga (registro, autorização ou concessão) vence.",
+    "ANEEL SIGA (dados abertos), data em data_base", "potência em kW (divida por 1000 para MW); donos em "
+    "usinas_proprietarios. garantia_fisica_kw é a energia assegurada da usina, não a potência (em Itaipu ela supera a "
+    "potência instalada da parte brasileira, por causa do tratado). geracao_qualificada (cogeração qualificada) só "
+    "está declarada para parte das usinas: false significa 'Não' ou campo em branco no SIGA. "
+    "data_entrada_operacao é NULL em 2.398 usinas: a ANEEL preenche 03/01/1900 quando não há data (quase todas em "
+    "'Construção não iniciada'), e esse marcador foi anulado aqui. As datas anteriores a 1950 que sobram são reais "
+    "(143 CGH, PCH, UHE e UTE antigas)")
 
 PADRAO_DONO = r"([0-9]+(?:[.,][0-9]+)?)% para (.+?) - ([0-9]{2}\.[0-9]{3}\.[0-9]{3}/[0-9]{4}-[0-9]{2}|[0-9]{3}\.[0-9]{3}\.[0-9]{3}-[0-9]{2}) \(([A-Z]+)\)"
 tabela("usinas_proprietarios", f"""
@@ -373,7 +778,7 @@ CATALOGO.append(("capacidade_por_proprietario", "Capacidade instalada em MW por 
                  "pela participação de cada dono.", "ANEEL SIGA", "titular direto; grupos aparecem espalhados em SPEs", None))
 
 # ---------------------------------------------------------------- ANEEL: leilões de geração
-lei = csv_limpo(os.path.join(ANEEL, "leiloes.csv"), "cp1252")
+lei = csv_limpo(exigir(os.path.join(ANEEL, "leiloes.csv")), "cp1252")
 tabela("leiloes_geracao", f"""
 SELECT TRY_CAST(AnoLeilao AS INTEGER) AS ano, TRY_CAST(DatLeilao AS DATE) AS data_leilao, NumLeilao AS numero_leilao,
        DscNumeroLeilaoCCEE AS leilao_ccee, DscTipoLeilao AS tipo_leilao, NomEmpreendimento AS empreendimento, CodCEG AS ceg,
@@ -386,17 +791,26 @@ SELECT TRY_CAST(AnoLeilao AS INTEGER) AS ano, TRY_CAST(DatLeilao AS DATE) AS dat
 FROM {lei}
 """, "Resultados dos leilões de GERAÇÃO de energia (2005 em diante): empreendimento, fonte, potência, preço, deságio, "
      "investimento previsto e vencedor.", "ANEEL, resultado de leilões de geração",
-    "só geração; leilões de transmissão não estão nesta tabela. vencedor é texto (não tem CNPJ)")
+    "só geração; leilões de transmissão não estão nesta tabela. vencedor é texto (não tem CNPJ). O conjunto aberto da "
+    "ANEEL cobre 2005-2019, 2021, 2022 e 2025: faltam 2020, 2023 e 2024, e a falta é do conjunto, NÃO quer dizer que "
+    "não houve leilão nesses anos (houve). Não conclua queda de contratação a partir de um ano ausente")
 
 # ---------------------------------------------------------------- ANEEL: transmissão (SIGET)
-ag = csv_limpo(os.path.join(ANEEL, "siget_agente.csv"), "cp1252")
+ag = csv_limpo(exigir(os.path.join(ANEEL, "siget_agente.csv")), "cp1252")
 tabela("transmissao_contratos", f"""
 SELECT IdeCcd AS id_contrato, IdcTipoCcd AS tipo_contrato, NumCnaCcd AS numero_contrato, data_br(DatAsnCcd) AS data_assinatura,
        data_br(DatFimCcd) AS data_fim, fmt_cnpj(NumCNPJ) AS cnpj, DscRazaoSocial AS concessionaria, SigUF AS uf,
        TRY_CAST(DatGeracaoConjuntoDados AS DATE) AS data_base
 FROM {ag}
-""", "Contratos de concessão de transmissão (SIGET/ANEEL) com a concessionária e o CNPJ.", "ANEEL SIGET")
-emp = csv_limpo(os.path.join(ANEEL, "siget_empreendimento_obra_modulo.csv"), "utf-8")
+""", "Contratos de concessão de transmissão (SIGET/ANEEL) com a concessionária e o CNPJ. data_assinatura é a data em "
+     "que o contrato foi assinado e data_fim é quando a concessão vence.",
+    "ANEEL SIGET",
+    "data_assinatura NÃO é uma série anual: é a data do contrato, e não há contrato assinado em 1998, 1999, 2003 nem "
+    "2025 (a lacuna é do cadastro da ANEEL, não desta plataforma). Os atos legais que autorizaram reforços e "
+    "ampliações de cada contrato estão em transmissao_atos_legais")
+# siget-resolucao-empreendimento-obra-modulo.csv (pasta siget_rap) é um subconjunto deste arquivo: as 32 colunas são as
+# mesmas e todo IdeMdl de lá está aqui (o EXCEPT dá zero), com 10.230 módulos a mais aqui. Não vira tabela.
+emp = csv_limpo(exigir(os.path.join(ANEEL, "siget_empreendimento_obra_modulo.csv")), "utf-8")
 tabela("transmissao_empreendimentos", f"""
 SELECT e.IdeCcd AS id_contrato, c.cnpj, c.concessionaria, e.NomEpd AS empreendimento, e.DscEpd AS descricao,
        e.DscSituacaoEpd AS situacao, data_br(e.DatOprComEpd) AS data_operacao_comercial, e.DscObr AS obra,
@@ -408,7 +822,10 @@ FROM {emp} e LEFT JOIN transmissao_contratos c ON c.id_contrato = e.IdeCcd
     "confirmado: não some nem chame de RAP")
 
 # ---------------------------------------------------------------- BNDES
-bn = csv_limpo(os.path.join(ANEEL, "naoauto_full.csv"), "cp1252")
+# naoauto_sample.csv é literalmente os 3.001 primeiros bytes de naoauto_full.csv (mesmo md5 do prefixo), com a última
+# linha cortada no meio; desembolsos-mensais-sample.csv é outro conjunto do BNDES cortado do mesmo jeito, e o arquivo
+# completo dele não foi baixado. As duas amostras só servem para ver o formato: nenhuma vira tabela.
+bn = csv_limpo(exigir(os.path.join(ANEEL, "naoauto_full.csv")), "cp1252")
 tabela("bndes_operacoes", f"""
 SELECT trim(cliente) AS cliente, cnpj, trim(descricao_do_projeto) AS projeto, uf, municipio,
        TRY_CAST(data_da_contratacao AS DATE) AS data_contratacao, num_br(valor_contratado_reais) AS valor_contratado_brl,
@@ -423,6 +840,32 @@ FROM {bn}
 """, "Operações de financiamento não automáticas do BNDES (contratos diretos e indiretos), com cliente, CNPJ, projeto, "
      "valores contratado e desembolsado em R$, custo e prazos. setor_eletrico marca geração, transmissão e distribuição.",
     "BNDES dados abertos, operações não automáticas", "CNPJ é do tomador (muitas vezes SPE do grupo)")
+
+# Desembolsos totais do BNDES por macro-setor CNAE, mensais desde 1995. O arquivo vem largo (uma coluna por setor);
+# aqui ele virou longo, que é o formato em que se filtra e se soma. Os valores estão em R$ milhões na origem e são
+# convertidos para R$: a soma de 2023 dá R$ 114,4 bi, da mesma ordem dos R$ 112 bi que o BNDES divulgou no ano, e
+# confortavelmente acima dos R$ 23,7 bi de bndes_operacoes (que é só a carteira não automática).
+SETORES_BNDES = [("agropecuaria", "Agropecuária"), ("industria_extrativa", "Indústria extrativa"),
+                 ("industria_de_transformacao", "Indústria de transformação"),
+                 ("comercio_e_servicos", "Comércio e serviços")]
+cnae = csv_limpo(exigir(os.path.join(ANEEL, "desembolsos-cnae.csv")), "utf-8")
+tabela("bndes_desembolsos_setor_mensal", f"""
+WITH d AS (SELECT * FROM {cnae})
+{" UNION ALL ".join(f'''
+SELECT TRY_CAST(ano AS INTEGER) AS ano, TRY_CAST(mes AS INTEGER) AS mes,
+       CAST(make_date(TRY_CAST(ano AS INTEGER), TRY_CAST(mes AS INTEGER), 1) AS DATE) AS competencia,
+       '{rotulo}' AS setor, round(num_br({coluna}) * 1e6, 2) AS desembolso_brl
+FROM d''' for coluna, rotulo in SETORES_BNDES)}
+ORDER BY competencia, setor
+""", "Desembolsos totais do BNDES por mês e macro-setor CNAE (Agropecuária, Indústria extrativa, Indústria de "
+     "transformação, Comércio e serviços), em R$, desde janeiro de 1995. Uma linha por mês e setor: some por ano para "
+     "o desembolso anual do banco, ou filtre o setor para a série setorial. Serve de denominador para pôr o "
+     "financiamento do setor elétrico (bndes_operacoes) em perspectiva.",
+    "BNDES dados abertos, desembolsos por setor CNAE (valores da origem em R$ milhões, convertidos para R$ aqui)",
+    "são só QUATRO macro-setores: energia elétrica NÃO aparece separada (ela está dentro de 'Comércio e serviços', "
+    "onde o BNDES classifica eletricidade e gás). Para o setor elétrico use bndes_operacoes, que é a carteira não "
+    "automática por contrato e não fecha com estes totais. Valores nominais, sem correção pela inflação: não compare "
+    "1995 com 2026 sem deflacionar (use indicadores_macro_mensal). O último mês do arquivo é março de 2026")
 
 # ---------------------------------------------------------------- ANBIMA: debêntures incentivadas (Lei 12.431)
 wb = openpyxl.load_workbook(os.path.join(RAW, "cvm", "anbima_deb.xlsx"), read_only=True, data_only=True)
@@ -467,8 +910,30 @@ FROM deb
     "emissora é texto (sem CNPJ); dados até abril de 2024; na planilha original o art. 2º mistura R$ milhões (até 2017) "
     "e R$ mil (2018 em diante), já convertidos para R$ aqui")
 
+# ---------------------------------------------------------------- B3: carteira do IEE (índice de energia elétrica)
+# A API de índices da B3 devolve a carteira do dia; o ano de dois dígitos em header.date ("28/09/26") não passa pelo
+# data_br, que só entende %d/%m/%Y. O ticker liga com empresas_apelidos (tipo = 'ticker') e de lá com o CNPJ.
+IEE = exigir(os.path.join(RAW, "cvm", "iee_api.json"), "baixe com data/baixar.py --fonte b3")
+tabela("b3_iee_carteira", f"""
+WITH j AS (SELECT header, unnest(results) AS r FROM read_json('{IEE}')),
+c AS (SELECT CAST(try_strptime(j.header.date, '%d/%m/%y') AS DATE) AS data_carteira, j.r.cod AS ticker,
+             j.r.asset AS empresa_b3, trim(j.r.type) AS tipo_acao, num_br(j.r.part) AS participacao_pct,
+             num_br(j.r.theoricalQty) AS quantidade_teorica,
+             num_br(j.header.theoricalQty) AS quantidade_teorica_total_indice FROM j)
+SELECT c.*, a.cnpj FROM c LEFT JOIN (SELECT DISTINCT apelido, cnpj FROM empresas_apelidos WHERE tipo = 'ticker') a
+  ON a.apelido = c.ticker
+ORDER BY participacao_pct DESC
+""", "Carteira teórica do IEE (Índice de Energia Elétrica da B3) na data data_carteira: as ações do setor elétrico que "
+     "compõem o índice, com o peso de cada uma em % e a quantidade teórica. É o universo de comparação do mercado para "
+     "o setor: quem está no índice, e quanto cada empresa pesa. cnpj vem do ticker (empresas_apelidos) quando a "
+     "empresa tem registro na CVM.",
+    "B3, API de índices (GetPortfolioDay, índice IEEX), https://www.b3.com.br/pt_br/market-data-e-indices/indices/"
+    "indices-de-segmentos-e-setoriais/indice-de-energia-eletrica-iee-b3.htm",
+    "é uma FOTOGRAFIA de um dia, não uma série histórica: a API só devolve a carteira vigente, e a B3 rebalanceia o "
+    "índice a cada quadrimestre (jan, mai, set). Não é o valor (pontos) do índice nem preço de ação. participacao_pct "
+    "soma 100. Só ações listadas: subsidiárias e empresas fechadas do setor não aparecem")
+
 # ---------------------------------------------------------------- ANEEL: distribuição (tarifas, PDD, P&D, eficiência, compensações)
-PQ = os.path.join(DADOS, "parquet")
 tabela("tarifas_distribuicao", f"""
 SELECT DscREH AS resolucao, SigAgente AS distribuidora, fmt_cnpj(NumCNPJDistribuidora) AS cnpj,
        TRY_CAST(DatInicioVigencia AS DATE) AS inicio_vigencia, TRY_CAST(DatFimVigencia AS DATE) AS fim_vigencia,
@@ -506,7 +971,6 @@ SELECT DscCodProjeto AS codigo, NomAgente AS empresa, DscTituloProjeto AS titulo
 FROM {pee}
 """, "Projetos do Programa de Eficiência Energética (PEE) da ANEEL por distribuidora: tipologia, custo, energia economizada.",
     "ANEEL PEE", "sem CNPJ: filtre por empresa (ILIKE)")
-AN = os.path.join(RAW, "aneel")
 tabela("indicadores_codigos", f"""
 SELECT DISTINCT trim(SigIndicador) AS indicador, trim(DscIndicador) AS descricao
 FROM read_csv('{os.path.join(AN, 'dec_fec_dominio.csv')}', delim=';', header=true, all_varchar=true)
@@ -516,7 +980,7 @@ tabela("continuidade_conjuntos", f"""
 SELECT trim(d.SigAgente) AS distribuidora, fmt_cnpj(CAST(d.NumCNPJ AS VARCHAR)) AS cnpj, d.IdeConjUndConsumidoras AS id_conjunto,
        d.DscConjUndConsumidoras AS conjunto, d.SigIndicador AS indicador, c.descricao, d.AnoIndice AS ano,
        d.NumPeriodoIndice AS mes, d.VlrIndiceEnviado AS valor
-FROM '{os.path.join(AN, 'dec_fec_2020_2029.parquet')}' d LEFT JOIN indicadores_codigos c ON c.indicador = d.SigIndicador
+FROM '{exigir(os.path.join(AN, 'dec_fec_2020_2029.parquet'))}' d LEFT JOIN indicadores_codigos c ON c.indicador = d.SigIndicador
 """, "Indicadores de continuidade por conjunto de consumidores e mês (2020 em diante): DEC em horas e FEC em interrupções, "
      "com os componentes (programada, externa, dia crítico...) e NumCon (número de consumidores do conjunto).",
     "ANEEL, indicadores coletivos de continuidade", "para a distribuidora inteira use dec_fec_distribuidora_anual")
@@ -524,8 +988,12 @@ tabela("continuidade_limites", f"""
 SELECT trim(SigAgente) AS distribuidora, fmt_cnpj(NumCNPJ) AS cnpj, TRY_CAST(IdeConjUndConsumidoras AS BIGINT) AS id_conjunto,
        DscConjUndConsumidoras AS conjunto, SigIndicador AS indicador, TRY_CAST(AnoLimiteQualidade AS INTEGER) AS ano,
        num_br(VlrLimite) AS limite
-FROM read_csv('{os.path.join(AN, 'dec_fec_limites.csv')}', delim=';', header=true, all_varchar=true)
-""", "Limites regulatórios anuais de DEC e FEC por conjunto de consumidores, definidos pela ANEEL.", "ANEEL")
+FROM read_csv('{exigir(os.path.join(AN, 'dec_fec_limites.csv'))}', delim=';', header=true, all_varchar=true)
+""", "Limites regulatórios anuais de DEC e FEC por conjunto de consumidores, definidos pela ANEEL. Compare com "
+     "continuidade_conjuntos (o realizado) para ver quem estourou o limite.", "ANEEL",
+    "a série útil começa em 1997: a única linha de 1990 é erro de digitação da ANEEL no arquivo de origem (EDP ES, "
+    "conjunto GUACUI, FEC) e 1996 tem só 78 linhas contra ~9.600 em 1997, então filtre ano >= 1997 para comparar anos. "
+    "Traz anos futuros (até 2032), que são limites já definidos e não realizado")
 con.execute("""CREATE VIEW dec_fec_distribuidora_anual AS
 WITH n AS (SELECT cnpj, id_conjunto, ano, mes, valor AS consumidores FROM continuidade_conjuntos WHERE indicador = 'NumCon'),
 m AS (  -- DEC e FEC mensais da distribuidora: média dos conjuntos ponderada pelo número de consumidores
@@ -561,26 +1029,26 @@ tabela("compensacoes_continuidade", f"""
 SELECT d.SigAgente AS distribuidora, fmt_cnpj(d.NumCNPJ) AS cnpj, d.IdeConjUndConsumidoras AS id_conjunto,
        d.DscConjUndConsumidoras AS conjunto, d.SigIndicador AS indicador, c.descricao, TRY_CAST(d.AnoIndice AS INTEGER) AS ano,
        TRY_CAST(d.NumPeriodoIndice AS INTEGER) AS mes, num_br(d.VlrIndiceEnviado) AS valor
-FROM '{os.path.join(PQ, 'reg_decfec.parquet')}' d LEFT JOIN indicadores_codigos c ON c.indicador = d.SigIndicador
+FROM '{exigir(os.path.join(PQ, 'reg_decfec.parquet'))}' d LEFT JOIN indicadores_codigos c ON c.indicador = d.SigIndicador
 """, "Compensações pagas pelas distribuidoras aos consumidores por violação dos limites de continuidade, por conjunto e "
      "mês: PGU* = valor pago em R$, QTU* = quantidade de unidades compensadas (a coluna descricao explica cada código).",
     "ANEEL, compensação por violação de continuidade", "para DEC e FEC use dec_fec_distribuidora_anual")
 
 # ---------------------------------------------------------------- ONS
 cmo_arquivos = os.path.join(RAW, "ons", "cmo_semi_horario", "CMO_SEMIHORARIO_*.parquet")
-if glob.glob(cmo_arquivos):
-    tabela("ons_cmo_semihora", f"""
+exigir_glob(cmo_arquivos)
+tabela("ons_cmo_semihora", f"""
 SELECT id_subsistema AS subsistema, nom_subsistema AS nome_subsistema,
        din_instante AS instante, TRY_CAST(val_cmo AS DOUBLE) AS cmo_brl_mwh
 FROM read_parquet('{cmo_arquivos}')
 """, "CMO (Custo Marginal de Operação) do ONS por subsistema e instante semihorário, desde 2020. "
-       "SE corresponde ao subsistema Sudeste/Centro-Oeste, embora o arquivo o rotule SUDESTE. "
-       "Para comparar meses e submercados use ons_cmo_mensal; para horários e extremos use esta tabela.",
-       "ONS, CMO Semi-Horário, https://dados.ons.org.br/dataset/cmo-semi-horario",
-       "CMO em R$/MWh calculado pelo DESSEM; não é PLD nem preço recebido por gerador. "
-       "A série pode conter valores negativos e extremos; o ONS pode revisar os arquivos. "
-       "O mês corrente e o dia seguinte podem estar incompletos ou programados.")
-    tabela("ons_cmo_mensal", """
+    "SE corresponde ao subsistema Sudeste/Centro-Oeste, embora o arquivo o rotule SUDESTE. "
+    "Para comparar meses e submercados use ons_cmo_mensal; para horários e extremos use esta tabela.",
+    "ONS, CMO Semi-Horário, https://dados.ons.org.br/dataset/cmo-semi-horario",
+    "CMO em R$/MWh calculado pelo DESSEM; não é PLD nem preço recebido por gerador. "
+    "A série pode conter valores negativos e extremos; o ONS pode revisar os arquivos. "
+    "O mês corrente e o dia seguinte podem estar incompletos ou programados.")
+tabela("ons_cmo_mensal", """
 SELECT subsistema, any_value(nome_subsistema) AS nome_subsistema,
        CAST(date_trunc('month', instante) AS DATE) AS mes,
        round(avg(cmo_brl_mwh), 2) AS cmo_medio_brl_mwh,
@@ -592,21 +1060,21 @@ SELECT subsistema, any_value(nome_subsistema) AS nome_subsistema,
        day(last_day(mes)) - count(DISTINCT CAST(instante AS DATE)) AS dias_ausentes
 FROM ons_cmo_semihora GROUP BY subsistema, mes
 """, "CMO médio mensal do ONS por subsistema (N, NE, S, SE), em R$/MWh, desde 2020. "
-       "SE corresponde ao subsistema Sudeste/Centro-Oeste; o arquivo do ONS o rotula SUDESTE, "
-       "mas não há submercado Centro-Oeste separado. "
-       "Cada linha é um subsistema-mês; cmo_medio_brl_mwh é a média aritmética dos intervalos semihorários. "
-       "Use dias_ausentes, dias_com_dados e intervalos para avaliar cobertura antes de comparar meses; "
-       "um mês com dias_ausentes > 0 não tem média mensal completa.",
-       "ONS, CMO Semi-Horário, https://dados.ons.org.br/dataset/cmo-semi-horario; média calculada pela plataforma",
-       "Não é PLD nem preço spot de liquidação. A média mensal dá o mesmo peso a cada intervalo, "
-       "sem ponderação pela carga entre intervalos; o CMO semihorário do subsistema publicado pelo ONS "
-       "já pondera os CMOs das barras pelas respectivas cargas. "
-       "Meses com menos dias ou intervalos são parciais; "
-       "arquivos do ONS podem ser revisados, inclusive para o dia seguinte.")
+    "SE corresponde ao subsistema Sudeste/Centro-Oeste; o arquivo do ONS o rotula SUDESTE, "
+    "mas não há submercado Centro-Oeste separado. "
+    "Cada linha é um subsistema-mês; cmo_medio_brl_mwh é a média aritmética dos intervalos semihorários. "
+    "Use dias_ausentes, dias_com_dados e intervalos para avaliar cobertura antes de comparar meses; "
+    "um mês com dias_ausentes > 0 não tem média mensal completa.",
+    "ONS, CMO Semi-Horário, https://dados.ons.org.br/dataset/cmo-semi-horario; média calculada pela plataforma",
+    "Não é PLD nem preço spot de liquidação. A média mensal dá o mesmo peso a cada intervalo, "
+    "sem ponderação pela carga entre intervalos; o CMO semihorário do subsistema publicado pelo ONS "
+    "já pondera os CMOs das barras pelas respectivas cargas. "
+    "Meses com menos dias ou intervalos são parciais; "
+    "arquivos do ONS podem ser revisados, inclusive para o dia seguinte.")
 
 ear_arquivos = os.path.join(RAW, "ons", "ear_diario_subsistema", "EAR_DIARIO_SUBSISTEMA_*.parquet")
-if glob.glob(ear_arquivos):
-    tabela("ons_ear_diario", f"""
+exigir_glob(ear_arquivos)
+tabela("ons_ear_diario", f"""
 SELECT trim(id_subsistema) AS subsistema, trim(nom_subsistema) AS nome_subsistema,
        TRY_CAST(ear_data AS DATE) AS data,
        TRY_CAST(ear_max_subsistema AS DOUBLE) AS ear_maxima_mwmes,
@@ -614,35 +1082,50 @@ SELECT trim(id_subsistema) AS subsistema, trim(nom_subsistema) AS nome_subsistem
        TRY_CAST(ear_verif_subsistema_percentual AS DOUBLE) AS ear_verificada_pct
 FROM read_parquet('{ear_arquivos}')
 """, "Energia armazenada (EAR) diária nos reservatórios por subsistema do ONS, desde 2000. "
-       "SE corresponde ao subsistema Sudeste/Centro-Oeste, embora o arquivo o rotule SUDESTE. "
-       "Cada linha é um subsistema e uma data; traz a EAR verificada em MWmês, sua capacidade máxima "
-       "em MWmês e o percentual de armazenamento. Útil para avaliar risco hidrológico e contexto do CMO.",
-       "ONS, EAR Diário por Subsistema, https://dados.ons.org.br/dataset/ear-diario-por-subsistema",
-       "MWmês é unidade de energia armazenada do ONS, não potência em MW nem geração em MWh. "
-       "O percentual é o valor publicado pelo ONS; a EAR considera cascatas entre subsistemas. "
-       "Dados recentes podem ser revisados; não são armazenamento de uma empresa ou usina específica.")
+    "SE corresponde ao subsistema Sudeste/Centro-Oeste, embora o arquivo o rotule SUDESTE. "
+    "Cada linha é um subsistema e uma data; traz a EAR verificada em MWmês, sua capacidade máxima "
+    "em MWmês e o percentual de armazenamento. Útil para avaliar risco hidrológico e contexto do CMO.",
+    "ONS, EAR Diário por Subsistema, https://dados.ons.org.br/dataset/ear-diario-por-subsistema",
+    "MWmês é unidade de energia armazenada do ONS, não potência em MW nem geração em MWh. "
+    "O percentual é o valor publicado pelo ONS; a EAR considera cascatas entre subsistemas. "
+    "Dados recentes podem ser revisados; não são armazenamento de uma empresa ou usina específica.")
 
+# aneel_ons_epe_bndes/capacidade.csv é a ORIGEM deste parquet, não outra fonte: mesmas 18 colunas, mesmas 5.678 linhas,
+# mesmo conjunto de chaves (usina, unidade geradora, CEG) e a mesma soma de potência efetiva (207.233,2 MW). Por isso o
+# CSV não vira tabela; o que faltava dele eram a modalidade de operação e o agente operador, lidos aqui do parquet.
 tabela("ons_capacidade", f"""
 SELECT id_subsistema AS subsistema, id_estado AS uf, nom_agenteproprietario AS agente_proprietario,
+       nom_agenteoperador AS agente_operador, nom_modalidadeoperacao AS modalidade_operacao,
        nom_tipousina AS tipo_usina, nom_usina AS usina, ceg, nom_unidadegeradora AS unidade_geradora,
        nom_combustivel AS combustivel, TRY_CAST(dat_entradaoperacao AS DATE) AS entrada_operacao,
        TRY_CAST(dat_desativacao AS DATE) AS desativacao, TRY_CAST(val_potenciaefetiva AS DOUBLE) AS potencia_efetiva_mw
-FROM '{os.path.join(PQ, 'reg_capacidade.parquet')}'
-""", "Unidades geradoras despachadas pelo ONS com agente proprietário e potência efetiva em MW.", "ONS, capacidade instalada",
-    "agente sem CNPJ; ceg liga com usinas")
+FROM '{exigir(os.path.join(PQ, 'reg_capacidade.parquet'))}'
+""", "Unidades geradoras despachadas pelo ONS com agente proprietário e potência efetiva em MW. modalidade_operacao "
+     "diz como o ONS trata a unidade: TIPO I é despacho centralizado (143,6 GW das 207,2 GW da tabela) e TIPO II-A, "
+     "II-B e II-C são as demais modalidades de operação. agente_operador é quem opera (pode diferir do proprietário).",
+    "ONS, capacidade instalada",
+    "agente sem CNPJ; ceg liga com usinas. É a capacidade que o ONS acompanha (SIN), menor que a do SIGA, que inclui "
+    "usinas fora do SIN")
 # Cortes de geração (constrained-off) eólica e solar: valores do ONS em MW médio por meia hora (energia = MWmed × 0,5 h)
-ONS = os.path.join(RAW, "ons")
-partes = [f"SELECT '{fonte}' AS fonte, * FROM read_parquet('{os.path.join(ONS, pasta, '*.parquet')}', union_by_name=true)"
-          for pasta, fonte in (("restricao_coff_eolica_usi", "eólica"), ("restricao_coff_fotovoltaica", "solar"))
-          if glob.glob(os.path.join(ONS, pasta, "*.parquet"))]
+# aneel_ons_epe_bndes/coff2025.csv é junho/2025 da série eólica, linha por linha idêntico ao parquet
+# RESTRICAO_COFF_EOLICA_2025_06 lido aqui (223.536 linhas, EXCEPT vazio nos dois sentidos). Não vira tabela; as colunas
+# dele que faltavam — origem da restrição, texto da restrição e os minutos por motivo — entram na view e na tabela por
+# motivo abaixo, com o histórico inteiro e não só um mês.
+partes = [f"SELECT '{fonte}' AS fonte, * FROM read_parquet('{ons_parquets(pasta)}', union_by_name=true)"
+          for pasta, fonte in (("restricao_coff_eolica_usi", "eólica"), ("restricao_coff_fotovoltaica", "solar"))]
 con.execute(f"""CREATE VIEW ons_curtailment_semihora AS
 SELECT fonte, id_subsistema AS subsistema, id_estado AS uf, nom_usina AS usina, id_ons, nullif(ceg, '-') AS ceg,
        din_instante AS instante, val_geracao AS geracao_mwmed, val_geracaoreferencia AS referencia_mwmed,
-       val_geracaonaorealizadaapurada AS nao_realizada_mwmed, cod_razaorestricao AS razao, nom_agenteoperador AS agente_operador
+       val_geracaonaorealizadaapurada AS nao_realizada_mwmed, nullif(cod_razaorestricao, '') AS razao,
+       nullif(cod_origemrestricao, '') AS origem, nullif(dsc_restricao, '') AS restricao,
+       nullif(nom_pontoconexao, '') AS ponto_conexao, num_minutos_restricao AS minutos_restricao,
+       nom_agenteoperador AS agente_operador
 FROM ({' UNION ALL BY NAME '.join(partes)})""")
 CATALOGO.append(("ons_curtailment_semihora", "Cortes de geração eólica (2023 em diante) e solar (abr/2024 em diante) por usina e "
-                 "meia hora, em MW médio: geração verificada, geração de referência e geração não realizada apurada (GNRa).",
-                 "ONS, restrição de operação por constrained-off", "para séries e rankings use ons_curtailment_mensal", None))
+                 "meia hora, em MW médio: geração verificada, geração de referência e geração não realizada apurada (GNRa), "
+                 "com o motivo do corte (razao e origem), o texto da restrição e o ponto de conexão.",
+                 "ONS, restrição de operação por constrained-off", "para séries e rankings use ons_curtailment_mensal; "
+                 "por motivo, ons_curtailment_motivo_mensal", None))
 tabela("ons_curtailment_mensal", """
 SELECT fonte, subsistema, uf, usina, id_ons, any_value(ceg) AS ceg, any_value(agente_operador) AS agente_operador,
        CAST(date_trunc('month', instante) AS DATE) AS mes,
@@ -653,20 +1136,41 @@ FROM ons_curtailment_semihora GROUP BY ALL
 """, "Cortes de geração (curtailment) por usina e mês: geração, geração de referência e energia cortada em MWh, e % cortado. "
      "fonte = eólica (2023 em diante) ou solar (abr/2024 em diante).",
     "ONS, restrição de operação por constrained-off (GNRa = geração não realizada apurada)",
-    "energia cortada = GNRa × 0,5 h; motivos em ons_curtailment_semihora.razao: REL indisponibilidade externa (rede), "
-    "CNF confiabilidade, ENE razão energética (sobra de oferta), PAR parecer de acesso; ceg liga com usinas e donos; "
-    "o mês corrente é parcial")
+    "energia cortada = GNRa × 0,5 h; motivos em ons_curtailment_motivo_mensal e em ons_curtailment_semihora.razao: "
+    "REL indisponibilidade externa (rede), CNF confiabilidade, ENE razão energética (sobra de oferta), PAR parecer de "
+    "acesso; ceg liga com usinas e donos; o mês corrente é parcial")
+
+tabela("ons_curtailment_motivo_mensal", """
+SELECT fonte, subsistema, uf, usina, id_ons, any_value(ceg) AS ceg, any_value(agente_operador) AS agente_operador,
+       CAST(date_trunc('month', instante) AS DATE) AS mes, razao, origem,
+       round(sum(coalesce(nao_realizada_mwmed, 0)) * 0.5, 1) AS energia_cortada_mwh,
+       round(sum(coalesce(referencia_mwmed, 0)) * 0.5, 1) AS referencia_mwh,
+       sum(coalesce(minutos_restricao, 0)) AS minutos_restricao, count(*) AS intervalos,
+       count(DISTINCT restricao) AS restricoes_distintas, mode(restricao) AS restricao_predominante
+FROM ons_curtailment_semihora GROUP BY ALL
+""", "Energia cortada (curtailment) por usina, mês e MOTIVO do corte, em MWh. razao: ENE razão energética (sobra de "
+     "oferta, sem quem consuma), CNF confiabilidade (limite de segurança elétrica), REL indisponibilidade externa "
+     "(equipamento da rede fora), PAR parecer de acesso. origem: SIS restrição sistêmica (do SIN como um todo) ou LOC "
+     "restrição local (da rede onde a usina está). razao e origem nulos são as meias horas SEM restrição, em que a "
+     "usina gerou livremente: filtre razao IS NOT NULL para olhar só os cortes (as linhas sem razão somam 0,001 TWh de "
+     "corte contra 78,6 TWh das com razão). restricao_predominante nomeia a linha ou o controle que causou o corte com "
+     "mais frequência no mês.",
+    "ONS, restrição de operação por constrained-off (cod_razaorestricao, cod_origemrestricao e dsc_restricao)",
+    "energia cortada = GNRa × 0,5 h. NÃO some esta tabela junto com ons_curtailment_mensal: são a mesma energia, aqui "
+    "quebrada por motivo (somando os motivos de uma usina-mês você volta ao total de lá). referencia_mwh também é "
+    "quebrada por motivo e por isso não é o total de referência do mês. minutos_restricao é o campo do ONS somado nos "
+    "intervalos, não é tempo de parada da usina. restricao_predominante só existe de junho/2025 em diante (o ONS passou "
+    "a publicar dsc_restricao então): antes disso vem nula e restricoes_distintas = 0. Série de 2023 em diante; o mês "
+    "corrente é parcial e o ONS revisa os arquivos recentes")
 
 mapas = [f"SELECT DISTINCT '{fonte}' AS fonte, id_ons_conjuntousina AS id_conjunto, nom_conjuntousina AS conjunto, "
-         f"id_ons AS id_usina, nom_usina AS usina, ceg FROM '{os.path.join(ONS, arq)}'"
-         for arq, fonte in (("mapa_conjuntos_eolica.parquet", "eólica"), ("mapa_conjuntos_solar.parquet", "solar"))
-         if os.path.exists(os.path.join(ONS, arq))]
-if mapas:
-    tabela("ons_conjuntos_usinas", " UNION ALL ".join(mapas),
-           "Usinas eólicas e solares que formam cada conjunto do ONS (id_conjunto = id_ons de ons_curtailment_mensal), "
-           "com o CEG de cada usina.", "ONS, detalhamento por usina dos cortes de geração (ago/2026)",
-           "mapa de um mês; o CEG liga com usinas pelo núcleo, sem o sufixo de versão")
-    con.execute(r"""CREATE VIEW curtailment_por_dono_mensal AS
+         f"id_ons AS id_usina, nom_usina AS usina, ceg FROM '{exigir(os.path.join(ONS, arq))}'"
+         for arq, fonte in (("mapa_conjuntos_eolica.parquet", "eólica"), ("mapa_conjuntos_solar.parquet", "solar"))]
+tabela("ons_conjuntos_usinas", " UNION ALL ".join(mapas),
+       "Usinas eólicas e solares que formam cada conjunto do ONS (id_conjunto = id_ons de ons_curtailment_mensal), "
+       "com o CEG de cada usina.", "ONS, detalhamento por usina dos cortes de geração (ago/2026)",
+       "mapa de um mês; o CEG liga com usinas pelo núcleo, sem o sufixo de versão")
+con.execute(r"""CREATE VIEW curtailment_por_dono_mensal AS
 WITH membros AS (  -- usinas de cada conjunto (ou a própria usina) com a potência do SIGA
   SELECT m.id_ons, u.ceg, coalesce(u.potencia_fiscalizada_kw, u.potencia_outorgada_kw) AS kw
   FROM (SELECT DISTINCT id_ons, ceg FROM ons_curtailment_mensal WHERE ceg IS NOT NULL
@@ -679,15 +1183,15 @@ SELECT p.cnpj, any_value(p.proprietario) AS proprietario, c.fonte, c.mes,
        'Estimativa: corte do conjunto do ONS dividido pela potência das usinas (SIGA) e pela participação do dono' AS fonte_calculo
 FROM ons_curtailment_mensal c JOIN parte USING (id_ons) JOIN usinas_proprietarios p ON p.ceg = parte.ceg
 GROUP BY p.cnpj, c.fonte, c.mes""")
-    CATALOGO.append(("curtailment_por_dono_mensal", "Estimativa da energia cortada (curtailment) por dono de usina (CNPJ) e mês, "
-                     "eólica e solar.", "ONS e ANEEL SIGA; cálculo desta plataforma",
-                     "ESTIMATIVA: o ONS apura o corte por conjunto; aqui ele é dividido pela potência das usinas e pela "
-                     "participação de cada dono; o dono é o titular direto (SPE)", None))
+CATALOGO.append(("curtailment_por_dono_mensal", "Estimativa da energia cortada (curtailment) por dono de usina (CNPJ) e mês, "
+                 "eólica e solar.", "ONS e ANEEL SIGA; cálculo desta plataforma",
+                 "ESTIMATIVA: o ONS apura o corte por conjunto; aqui ele é dividido pela potência das usinas e pela "
+                 "participação de cada dono; o dono é o titular direto (SPE)", None))
 
 # ---------------------------------------------------------------- ANEEL: cadastro de agentes (CNPJ de todo o setor)
 AGENTES = os.path.join(AN, "agentes", "agentes-setor-eletrico.csv")
-if os.path.exists(AGENTES):
-    tabela("agentes_aneel", f"""
+exigir(AGENTES)
+tabela("agentes_aneel", f"""
 SELECT fmt_cnpj(NumCnpj) AS cnpj, nullif(trim(SigPessoa), '') AS sigla, trim(replace(NomRazaoSocial, '''''', '')) AS razao_social,
        IdcAtivo = 'A' AS ativo, IdcGeracao = '1' AS geracao, IdcTransmissao = '1' AS transmissao,
        IdcDistribuicao = '1' AS distribuicao, IdcComercializacao = '1' AS comercializacao,
@@ -695,28 +1199,28 @@ SELECT fmt_cnpj(NumCnpj) AS cnpj, nullif(trim(SigPessoa), '') AS sigla, trim(rep
 FROM read_csv('{AGENTES}', delim=';', header=true, all_varchar=true)
 WHERE length(regexp_replace(coalesce(NumCnpj, ''), '\\D', '', 'g')) > 11
 """, "Cadastro de agentes da ANEEL: CNPJ, sigla e razão social de geradoras, transmissoras, distribuidoras e "
-       "comercializadoras (inclusive as que não são companhias abertas). Use para achar o CNPJ de uma empresa que "
-       "não está em empresas.",
-       "ANEEL, Agentes do Setor Elétrico, https://dadosabertos.aneel.gov.br/dataset/agentes-do-setor-eletrico",
-       "cadastro, sem dados financeiros; um agente pode ter mais de um papel (geração, transmissão...)")
+    "comercializadoras (inclusive as que não são companhias abertas). Use para achar o CNPJ de uma empresa que "
+    "não está em empresas.",
+    "ANEEL, Agentes do Setor Elétrico, https://dadosabertos.aneel.gov.br/dataset/agentes-do-setor-eletrico",
+    "cadastro, sem dados financeiros; um agente pode ter mais de um papel (geração, transmissão...)")
 
 # ---------------------------------------------------------------- ANEEL: composição societária e grupos econômicos
 SOC = os.path.join(AN, "societaria", "composicao-societaria-polimero.parquet")
-if os.path.exists(SOC):
+exigir(SOC)
     # Cada declaração é uma árvore: a linha de nível 0 é o agente; as seguintes, os sócios diretos (nível 1) e indiretos.
     # PctParticipacaoNivelAcima é a participação efetiva (já multiplicada ao longo da cadeia) no agente da raiz.
-    con.execute(f"""CREATE TEMP TABLE soc_bruto AS
+con.execute(f"""CREATE TEMP TABLE soc_bruto AS
 SELECT *, sum(CASE WHEN NumNivelCadeiaSocietaria = 0 THEN 1 ELSE 0 END) OVER (ORDER BY NumOrdemCadeiaSocietaria) AS arvore
 FROM '{SOC}'""")
-    con.execute("""CREATE TEMP TABLE soc_raiz AS
+con.execute("""CREATE TEMP TABLE soc_raiz AS
 SELECT arvore, NumCPFCNPJSocio AS doc_agente, trim(NomRazaoSocialSocio) AS agente, AnoExercicio AS ano,
        IdcTrimestreFormulario AS trimestre, DatGeracaoConjuntoDados AS data_base
 FROM soc_bruto WHERE NumNivelCadeiaSocietaria = 0
   AND length(regexp_replace(coalesce(NumCPFCNPJSocio, ''), '\\D', '', 'g')) > 11
 QUALIFY row_number() OVER (PARTITION BY digitos14(NumCPFCNPJSocio)
                            ORDER BY AnoExercicio DESC, IdcTrimestreFormulario DESC, arvore DESC) = 1""")
-    # CPF de pessoa física não entra no banco: só o nome; CNPJ só de pessoa jurídica
-    con.execute(r"""CREATE TEMP TABLE soc AS
+# CPF de pessoa física não entra no banco: só o nome; CNPJ só de pessoa jurídica
+con.execute(r"""CREATE TEMP TABLE soc AS
 SELECT DISTINCT ON (r.arvore, b.NumNivelCadeiaSocietaria, b.NumCPFCNPJPaiCadeiaSocietaria, b.NomRazSocPaiCadeiaSocietaria,
                     b.NumCPFCNPJSocio, b.NomRazaoSocialSocio, b.PctParticipacaoNivelAcima)
   r.arvore, fmt_cnpj(r.doc_agente) AS cnpj_agente, r.agente, r.ano, r.trimestre, r.data_base,
@@ -731,27 +1235,27 @@ SELECT DISTINCT ON (r.arvore, b.NumNivelCadeiaSocietaria, b.NumCPFCNPJPaiCadeiaS
 FROM soc_raiz r JOIN soc_bruto b USING (arvore) WHERE b.NumNivelCadeiaSocietaria > 0
 ORDER BY r.arvore, b.NumNivelCadeiaSocietaria, b.NumOrdemCadeiaSocietaria""")
 
-    def chave_nome(nome):
-        return "#" + " ".join((nome or "").upper().split())
+def chave_nome(nome):
+    return "#" + " ".join((nome or "").upper().split())
 
-    # Cadeia de controle: um sócio está na cadeia se é controlador e o seu pai (nível acima) também está nela
-    from collections import defaultdict
-    arvores = defaultdict(list)
-    for linha in con.execute("SELECT arvore, ordem, nivel, cnpj_pai, pai, cnpj_socio, socio, controlador FROM soc "
-                             "ORDER BY arvore, nivel, ordem").fetchall():
-        arvores[linha[0]].append(linha)
-    marcas = []
-    for arv, linhas_arv in arvores.items():
-        na_cadeia = defaultdict(set)
-        for (_, ordem, nivel, cnpj_pai, pai, cnpj_socio, socio, controlador) in linhas_arv:
-            ok = controlador and (nivel == 1 or (cnpj_pai or chave_nome(pai)) in na_cadeia[nivel - 1]
-                                  or chave_nome(pai) in na_cadeia[nivel - 1])
-            if ok:
-                na_cadeia[nivel].update({cnpj_socio or chave_nome(socio), chave_nome(socio)})
-            marcas.append((arv, ordem, bool(ok)))
-    con.execute("CREATE TEMP TABLE soc_cadeia (arvore BIGINT, ordem BIGINT, na_cadeia BOOLEAN)")
-    con.executemany("INSERT INTO soc_cadeia VALUES (?, ?, ?)", marcas)
-    con.execute(r"""CREATE TEMP TABLE soc_marcada AS
+# Cadeia de controle: um sócio está na cadeia se é controlador e o seu pai (nível acima) também está nela
+from collections import defaultdict
+arvores = defaultdict(list)
+for linha in con.execute("SELECT arvore, ordem, nivel, cnpj_pai, pai, cnpj_socio, socio, controlador FROM soc "
+                         "ORDER BY arvore, nivel, ordem").fetchall():
+    arvores[linha[0]].append(linha)
+marcas = []
+for arv, linhas_arv in arvores.items():
+    na_cadeia = defaultdict(set)
+    for (_, ordem, nivel, cnpj_pai, pai, cnpj_socio, socio, controlador) in linhas_arv:
+        ok = controlador and (nivel == 1 or (cnpj_pai or chave_nome(pai)) in na_cadeia[nivel - 1]
+                              or chave_nome(pai) in na_cadeia[nivel - 1])
+        if ok:
+            na_cadeia[nivel].update({cnpj_socio or chave_nome(socio), chave_nome(socio)})
+        marcas.append((arv, ordem, bool(ok)))
+con.execute("CREATE TEMP TABLE soc_cadeia (arvore BIGINT, ordem BIGINT, na_cadeia BOOLEAN)")
+con.executemany("INSERT INTO soc_cadeia VALUES (?, ?, ?)", marcas)
+con.execute(r"""CREATE TEMP TABLE soc_marcada AS
 WITH s AS (
   SELECT s.*, c.na_cadeia, coalesce(s.cnpj_socio, '#' || upper(regexp_replace(s.socio, '\s+', ' ', 'g'))) AS chave,
          coalesce(s.cnpj_pai, '#' || upper(regexp_replace(s.pai, '\s+', ' ', 'g'))) AS chave_pai
@@ -759,7 +1263,7 @@ WITH s AS (
 SELECT s.*, s.na_cadeia AND NOT EXISTS (
   SELECT 1 FROM s f WHERE f.arvore = s.arvore AND f.nivel = s.nivel + 1 AND f.na_cadeia AND f.chave_pai = s.chave) AS topo
 FROM s""")
-    tabela("composicao_societaria", """
+tabela("composicao_societaria", """
 SELECT cnpj_agente, agente, ano, trimestre, nivel, cnpj_pai, pai, cnpj_socio, socio,
        CASE WHEN controlador THEN 'controlador' ELSE 'não controlador' END AS tipo_socio,
        round(participacao_pct, 4) AS participacao_indireta_pct, na_cadeia AS na_cadeia_de_controle,
@@ -767,14 +1271,14 @@ SELECT cnpj_agente, agente, ano, trimestre, nivel, cnpj_pai, pai, cnpj_socio, so
        ELSE 'outros (ações em bolsa, tesouraria)' END AS perfil, governo, estrangeiro, data_base
 FROM soc_marcada ORDER BY cnpj_agente, nivel, ordem
 """, "Cadeia societária declarada à ANEEL por cada agente do setor (usina, transmissora, distribuidora), da "
-       "declaração mais recente: sócios diretos (nivel 1) e indiretos (nivel 2, 3...) até o controlador final. "
-       "participacao_indireta_pct é a participação efetiva do sócio no agente (já multiplicada ao longo da cadeia). "
-       "Para somar por grupo use participacoes_societarias, grupos_economicos e capacidade_por_grupo.",
-       "ANEEL, Composição Societária (Polímero), https://dadosabertos.aneel.gov.br/dataset/composicao-societaria-polimero",
-       "declaração do próprio agente (REN 948/2021), trimestral; ano e trimestre indicam a declaração usada. "
-       "O mesmo sócio pode aparecer em mais de um ramo; CPF de pessoa física não é publicado aqui (só o nome). "
-       "na_cadeia_de_controle e controlador_final são calculados pela plataforma a partir do tipo de sócio")
-    tabela("participacoes_societarias", r"""
+    "declaração mais recente: sócios diretos (nivel 1) e indiretos (nivel 2, 3...) até o controlador final. "
+    "participacao_indireta_pct é a participação efetiva do sócio no agente (já multiplicada ao longo da cadeia). "
+    "Para somar por grupo use participacoes_societarias, grupos_economicos e capacidade_por_grupo.",
+    "ANEEL, Composição Societária (Polímero), https://dadosabertos.aneel.gov.br/dataset/composicao-societaria-polimero",
+    "declaração do próprio agente (REN 948/2021), trimestral; ano e trimestre indicam a declaração usada. "
+    "O mesmo sócio pode aparecer em mais de um ramo; CPF de pessoa física não é publicado aqui (só o nome). "
+    "na_cadeia_de_controle e controlador_final são calculados pela plataforma a partir do tipo de sócio")
+tabela("participacoes_societarias", r"""
 WITH nomes AS (SELECT cnpj, any_value(razao_social) AS nome FROM agentes_aneel GROUP BY cnpj),
 p AS (
   SELECT cnpj_agente, any_value(agente) AS agente, chave, any_value(cnpj_socio) AS cnpj_socio, mode(socio) AS socio,
@@ -792,13 +1296,13 @@ SELECT p.cnpj_agente, p.agente, p.cnpj_socio AS cnpj_participante, coalesce(n.no
        p.ano, p.trimestre
 FROM p LEFT JOIN nomes n ON n.cnpj = p.cnpj_socio
 """, "Participação direta e indireta de cada empresa ou pessoa em cada agente do setor (uma linha por agente e "
-       "participante), somando todos os caminhos da cadeia societária. na_cadeia_de_controle = o participante "
-       "controla o agente, direta ou indiretamente. Inclui o próprio agente com 100%. Serve para somar ativos por "
-       "grupo: junte cnpj_agente com o CNPJ do dono (usinas_proprietarios.cnpj, rap_transmissao_modulos.cnpj...).",
-       "ANEEL, Composição Societária (Polímero); cálculo desta plataforma",
-       "chave_participante = CNPJ, ou '#NOME' para estrangeiros e pessoas sem CNPJ. Ações em bolsa e tesouraria "
-       "ficam de fora. Participação limitada a 100% quando a declaração repete um sócio")
-    tabela("grupos_economicos", r"""
+    "participante), somando todos os caminhos da cadeia societária. na_cadeia_de_controle = o participante "
+    "controla o agente, direta ou indiretamente. Inclui o próprio agente com 100%. Serve para somar ativos por "
+    "grupo: junte cnpj_agente com o CNPJ do dono (usinas_proprietarios.cnpj, rap_transmissao_modulos.cnpj...).",
+    "ANEEL, Composição Societária (Polímero); cálculo desta plataforma",
+    "chave_participante = CNPJ, ou '#NOME' para estrangeiros e pessoas sem CNPJ. Ações em bolsa e tesouraria "
+    "ficam de fora. Participação limitada a 100% quando a declaração repete um sócio")
+tabela("grupos_economicos", r"""
 WITH finais AS (
   SELECT cnpj_agente, string_agg(DISTINCT participante, '; ' ORDER BY participante) AS controladores_finais,
          string_agg(DISTINCT cnpj_participante, '; ' ORDER BY cnpj_participante) AS cnpj_controladores_finais
@@ -817,17 +1321,17 @@ SELECT a.cnpj_agente AS cnpj, a.agente, diretos.controladores_diretos, finais.co
 FROM (SELECT DISTINCT cnpj_agente, agente, ano, trimestre FROM participacoes_societarias) a
 LEFT JOIN diretos USING (cnpj_agente) LEFT JOIN finais USING (cnpj_agente) LEFT JOIN listada USING (cnpj_agente)
 """, "Grupo econômico de cada agente do setor (uma linha por CNPJ): controladores diretos com participação, "
-       "controladores finais (topo da cadeia de controle, podem ser vários quando o controle é compartilhado) e a "
-       "companhia aberta do setor (CVM) que controla o agente, a mais próxima dele na cadeia (holding_cvm), que "
-       "costuma ser o grupo como o mercado o chama (ex.: SPE da Taesa -> Taesa; Coelba -> Neoenergia). Use para dizer a que grupo pertence uma SPE, usina ou concessão.",
-       "ANEEL, Composição Societária (Polímero); cálculo desta plataforma",
-       "controladores_finais pode ser um governo, fundo ou empresa estrangeira; holding_cvm é vazia quando nenhuma "
-       "companhia aberta do setor controla o agente. Declaração mais recente de cada agente (ano, trimestre)")
-    con.execute("""CREATE TEMP TABLE usina_dono AS
+    "controladores finais (topo da cadeia de controle, podem ser vários quando o controle é compartilhado) e a "
+    "companhia aberta do setor (CVM) que controla o agente, a mais próxima dele na cadeia (holding_cvm), que "
+    "costuma ser o grupo como o mercado o chama (ex.: SPE da Taesa -> Taesa; Coelba -> Neoenergia). Use para dizer a que grupo pertence uma SPE, usina ou concessão.",
+    "ANEEL, Composição Societária (Polímero); cálculo desta plataforma",
+    "controladores_finais pode ser um governo, fundo ou empresa estrangeira; holding_cvm é vazia quando nenhuma "
+    "companhia aberta do setor controla o agente. Declaração mais recente de cada agente (ano, trimestre)")
+con.execute("""CREATE TEMP TABLE usina_dono AS
 SELECT p.ceg, p.cnpj, p.participacao_pct, u.origem, u.tipo_geracao, u.fase,
        coalesce(u.potencia_fiscalizada_kw, u.potencia_outorgada_kw) AS kw
 FROM usinas_proprietarios p JOIN usinas u USING (ceg)""")
-    tabela("capacidade_por_grupo", """
+tabela("capacidade_por_grupo", """
 SELECT g.chave_participante, any_value(g.cnpj_participante) AS cnpj_participante, mode(g.participante) AS participante,
        d.origem, d.tipo_geracao, d.fase, count(DISTINCT d.ceg) AS usinas,
        round(sum(d.kw * d.participacao_pct / 100 * g.participacao_indireta_pct / 100) / 1000, 3) AS potencia_proporcional_mw,
@@ -837,16 +1341,15 @@ FROM usina_dono d JOIN participacoes_societarias g ON g.cnpj_agente = d.cnpj
 WHERE g.perfil = 'pessoa jurídica'
 GROUP BY g.chave_participante, d.origem, d.tipo_geracao, d.fase
 """, "Capacidade de geração (SIGA) atribuída a cada grupo ou empresa participante, direta ou indiretamente, por "
-       "origem, tipo e fase. potencia_proporcional_mw = potência × participação do dono na usina × participação "
-       "indireta do participante no dono (visão proporcional); potencia_controlada_mw = potência × participação do "
-       "dono, só nas usinas cujo dono o participante controla (visão consolidada). Para ranking de grupos filtre "
-       "fase = 'Operação' e agrupe por chave_participante.",
-       "ANEEL SIGA e Composição Societária (Polímero); cálculo desta plataforma",
-       "um mesmo grupo aparece em vários níveis (holding brasileira, subholding, controladora estrangeira): escolha o "
-       "CNPJ ou nome do grupo e não some níveis diferentes. Usinas cujo dono não declarou composição à ANEEL ficam "
-       "de fora (cerca de 12% da potência em operação). Titulares com CPF não entram")
-    if mapas:
-        con.execute("""CREATE VIEW curtailment_por_grupo_mensal AS
+    "origem, tipo e fase. potencia_proporcional_mw = potência × participação do dono na usina × participação "
+    "indireta do participante no dono (visão proporcional); potencia_controlada_mw = potência × participação do "
+    "dono, só nas usinas cujo dono o participante controla (visão consolidada). Para ranking de grupos filtre "
+    "fase = 'Operação' e agrupe por chave_participante.",
+    "ANEEL SIGA e Composição Societária (Polímero); cálculo desta plataforma",
+    "um mesmo grupo aparece em vários níveis (holding brasileira, subholding, controladora estrangeira): escolha o "
+    "CNPJ ou nome do grupo e não some níveis diferentes. Usinas cujo dono não declarou composição à ANEEL ficam "
+    "de fora (cerca de 12% da potência em operação). Titulares com CPF não entram")
+con.execute("""CREATE VIEW curtailment_por_grupo_mensal AS
 SELECT g.chave_participante, any_value(g.cnpj_participante) AS cnpj_participante, mode(g.participante) AS participante,
        c.fonte, c.mes,
        round(sum(c.energia_cortada_mwh_estimada * g.participacao_indireta_pct / 100), 1) AS energia_cortada_mwh_proporcional,
@@ -856,17 +1359,17 @@ SELECT g.chave_participante, any_value(g.cnpj_participante) AS cnpj_participante
 FROM curtailment_por_dono_mensal c JOIN participacoes_societarias g ON g.cnpj_agente = c.cnpj
 WHERE g.perfil = 'pessoa jurídica'
 GROUP BY g.chave_participante, c.fonte, c.mes""")
-        CATALOGO.append(("curtailment_por_grupo_mensal", "Estimativa da energia eólica e solar cortada (curtailment) por grupo "
-                         "econômico e mês: proporcional à participação indireta do grupo em cada SPE e controlada (100% das "
-                         "SPEs que o grupo controla).", "ONS, ANEEL SIGA e Composição Societária; cálculo desta plataforma",
-                         "ESTIMATIVA sobre curtailment_por_dono_mensal (o ONS apura o corte por conjunto de usinas). O mesmo "
-                         "grupo aparece em vários níveis: não some chaves diferentes do mesmo grupo", None))
+CATALOGO.append(("curtailment_por_grupo_mensal", "Estimativa da energia eólica e solar cortada (curtailment) por grupo "
+                 "econômico e mês: proporcional à participação indireta do grupo em cada SPE e controlada (100% das "
+                 "SPEs que o grupo controla).", "ONS, ANEEL SIGA e Composição Societária; cálculo desta plataforma",
+                 "ESTIMATIVA sobre curtailment_por_dono_mensal (o ONS apura o corte por conjunto de usinas). O mesmo "
+                 "grupo aparece em vários níveis: não some chaves diferentes do mesmo grupo", None))
 
 # ---------------------------------------------------------------- ANEEL SIGET: RAP das transmissoras por módulo
 RAP = os.path.join(AN, "siget_rap", "siget-lista-modulos-previa-reajuste-rap.csv")
-if os.path.exists(RAP):
-    rap = csv_limpo(RAP, "cp1252")
-    tabela("rap_transmissao_modulos", f"""
+exigir(RAP)
+rap = csv_limpo(RAP, "cp1252")
+tabela("rap_transmissao_modulos", f"""
 WITH r AS (SELECT * FROM {rap}),
 cnpj_contrato AS (  -- o CNPJ da receita vem do módulo do mesmo contrato (NumCNPJConcessionariaRct vem quase sempre vazio)
   SELECT SigConcessionariaReceita, NumContratoReceita, any_value(NumCNPJConcessionariaMdl) AS cnpj
@@ -886,28 +1389,27 @@ SELECT trim(r.SigConcessionariaReceita) AS concessionaria, fmt_cnpj(c.cnpj) AS c
        trim(r.SigConcessionariaUsr) AS usuario_exclusivo, CAST(TRY_CAST(r.DatGeracaoConjuntoDados AS DATE) AS DATE) AS data_base
 FROM r LEFT JOIN cnpj_contrato c USING (SigConcessionariaReceita, NumContratoReceita)
 """, "Receita Anual Permitida (RAP) das transmissoras por módulo de transmissão (linha, subestação, equipamento), "
-       "da lista prévia do reajuste da ANEEL: concessionária com CNPJ, contrato, tipo de receita e situação. "
-       "rap_ciclo_brl é o valor do módulo no ciclo tarifário da coluna ciclo_tarifario; some por concessionária "
-       "ou contrato (ou use rap_transmissao_concessionaria). situacao 'Ativa' = receita em vigor; 'Prevista' = obra "
-       "ainda não em operação.",
-       "ANEEL SIGET, Lista de Módulos Prévia - Reajuste RAP, "
-       "https://dadosabertos.aneel.gov.br/dataset/sistema-de-gestao-da-transmissao-siget",
-       "lista PRÉVIA ao reajuste (não é a resolução homologatória) e sem a Parcela de Ajuste (PA): pode diferir da RAP "
-       "divulgada pela empresa. Valores de 100% da concessão (não proporcionais à participação do grupo; para isso "
-       "junte com participacoes_societarias). Tipos: RBSE e RPC = instalações antigas prorrogadas (Lei 12.783); RBL = "
-       "licitadas; RBNI = reforços e melhorias autorizados; RMEL = melhorias; sufixo A/P = prevista. "
-       "Some Ativa e Prevista separadamente")
-    con.execute("""CREATE VIEW rap_transmissao_concessionaria AS
+    "da lista prévia do reajuste da ANEEL: concessionária com CNPJ, contrato, tipo de receita e situação. "
+    "rap_ciclo_brl é o valor do módulo no ciclo tarifário da coluna ciclo_tarifario; some por concessionária "
+    "ou contrato (ou use rap_transmissao_concessionaria). situacao 'Ativa' = receita em vigor; 'Prevista' = obra "
+    "ainda não em operação.",
+    "ANEEL SIGET, Lista de Módulos Prévia - Reajuste RAP, "
+    "https://dadosabertos.aneel.gov.br/dataset/sistema-de-gestao-da-transmissao-siget",
+    "lista PRÉVIA ao reajuste (não é a resolução homologatória) e sem a Parcela de Ajuste (PA): pode diferir da RAP "
+    "divulgada pela empresa. Valores de 100% da concessão (não proporcionais à participação do grupo; para isso "
+    "junte com participacoes_societarias). Tipos: RBSE e RPC = instalações antigas prorrogadas (Lei 12.783); RBL = "
+    "licitadas; RBNI = reforços e melhorias autorizados; RMEL = melhorias; sufixo A/P = prevista. "
+    "Some Ativa e Prevista separadamente")
+con.execute("""CREATE VIEW rap_transmissao_concessionaria AS
 SELECT concessionaria, cnpj, contrato, situacao, any_value(ciclo_tarifario) AS ciclo_tarifario,
        round(sum(rap_ciclo_brl), 2) AS rap_ciclo_brl, count(*) AS modulos,
        string_agg(DISTINCT tipo_receita, ', ') AS tipos_receita
 FROM rap_transmissao_modulos GROUP BY concessionaria, cnpj, contrato, situacao""")
-    CATALOGO.append(("rap_transmissao_concessionaria", "RAP das transmissoras somada por concessionária (com CNPJ), "
-                     "contrato e situação (Ativa ou Prevista), em R$ por ano, no ciclo da coluna ciclo_tarifario.",
-                     "ANEEL SIGET, Lista de Módulos Prévia - Reajuste RAP; soma desta plataforma",
-                     "lista prévia, sem Parcela de Ajuste; 100% da concessão. Para RAP por grupo use rap_por_grupo", None))
-    if os.path.exists(SOC):
-        con.execute("""CREATE VIEW rap_por_grupo AS
+CATALOGO.append(("rap_transmissao_concessionaria", "RAP das transmissoras somada por concessionária (com CNPJ), "
+                 "contrato e situação (Ativa ou Prevista), em R$ por ano, no ciclo da coluna ciclo_tarifario.",
+                 "ANEEL SIGET, Lista de Módulos Prévia - Reajuste RAP; soma desta plataforma",
+                 "lista prévia, sem Parcela de Ajuste; 100% da concessão. Para RAP por grupo use rap_por_grupo", None))
+con.execute("""CREATE VIEW rap_por_grupo AS
 SELECT g.chave_participante, any_value(g.cnpj_participante) AS cnpj_participante, mode(g.participante) AS participante,
        r.situacao, any_value(r.ciclo_tarifario) AS ciclo_tarifario, count(DISTINCT r.contrato) AS contratos,
        round(sum(r.rap_ciclo_brl * g.participacao_indireta_pct / 100), 2) AS rap_proporcional_brl,
@@ -915,39 +1417,108 @@ SELECT g.chave_participante, any_value(g.cnpj_participante) AS cnpj_participante
 FROM rap_transmissao_modulos r JOIN participacoes_societarias g ON g.cnpj_agente = r.cnpj
 WHERE g.perfil = 'pessoa jurídica'
 GROUP BY g.chave_participante, r.situacao""")
-        CATALOGO.append(("rap_por_grupo", "RAP de transmissão atribuída a cada grupo ou empresa: proporcional à "
-                         "participação indireta em cada concessionária e controlada (100% das concessionárias que o grupo "
-                         "controla), por situação (Ativa ou Prevista), em R$ por ano. Para a RAP das concessões em nome da própria "
-                         "empresa (sem SPEs e participações) use rap_transmissao_concessionaria filtrando o cnpj.",
-                         "ANEEL SIGET (RAP) e Composição Societária; cálculo desta plataforma",
-                         "lista prévia do reajuste, sem Parcela de Ajuste; concessionárias sem declaração societária ficam "
-                         "fora; um grupo aparece em vários níveis (não some chaves diferentes)", None))
+CATALOGO.append(("rap_por_grupo", "RAP de transmissão atribuída a cada grupo ou empresa: proporcional à "
+                 "participação indireta em cada concessionária e controlada (100% das concessionárias que o grupo "
+                 "controla), por situação (Ativa ou Prevista), em R$ por ano. Para a RAP das concessões em nome da própria "
+                 "empresa (sem SPEs e participações) use rap_transmissao_concessionaria filtrando o cnpj.",
+                 "ANEEL SIGET (RAP) e Composição Societária; cálculo desta plataforma",
+                 "lista prévia do reajuste, sem Parcela de Ajuste; concessionárias sem declaração societária ficam "
+                 "fora; um grupo aparece em vários níveis (não some chaves diferentes)", None))
+
+# ---------------------------------------------------------------- ANEEL SIGET: atos legais dos empreendimentos
+# siget-resolucao-contrato-agente.csv (pasta siget_rap) não é outra lista de contratos: contrato, CNPJ e prazo dele já
+# estão em transmissao_contratos (413 contratos contra os 164 daqui) e empreendimento/situação/datas já estão em
+# transmissao_empreendimentos (2.352 empreendimentos contra os 1.652 daqui, e nenhum IdeEpd, IdeDoc ou IdeCcd deste
+# arquivo falta lá). O que só existe aqui é o ATO LEGAL: número, tipo, as três datas, a ementa e o link do cedoc da
+# resolução ou do despacho que autorizou cada empreendimento. Por isso a tabela é dos atos, com o contrato e o
+# empreendimento como contexto. Uma linha por empreendimento (IdeEpd é único); um ato costuma cobrir vários.
+atos = csv_limpo(exigir(os.path.join(AN, "siget_rap", "siget-resolucao-contrato-agente.csv")), "utf-8")
+tabela("transmissao_atos_legais", f"""
+SELECT a.CodReg AS codigo_ato, a.NumAto AS numero_ato,
+       CASE substr(a.CodReg, 1, 3) WHEN 'REA' THEN 'Resolução Autorizativa' WHEN 'DSP' THEN 'Despacho'
+            WHEN 'RES' THEN 'Resolução' ELSE substr(a.CodReg, 1, 3) END AS tipo_ato,
+       TRY_CAST(a.DatAssDoc AS DATE) AS data_assinatura_ato, TRY_CAST(a.DatEmiDoc AS DATE) AS data_emissao_ato,
+       TRY_CAST(a.DatPubDoc AS DATE) AS data_publicacao_ato, a.DscEmentaCcd AS ementa, a.DscLink AS link,
+       TRY_CAST(a.IdeDoc AS BIGINT) AS id_documento, TRY_CAST(a.IdeCcd AS BIGINT) AS id_contrato,
+       a.NumCnaCcd AS numero_contrato, fmt_cnpj(a.NumCNPJ) AS cnpj, c.concessionaria, c.uf,
+       TRY_CAST(a.DatAsnCcd AS DATE) AS data_assinatura_contrato, TRY_CAST(a.DatFimCcd AS DATE) AS fim_concessao,
+       TRY_CAST(a.IdeEpd AS BIGINT) AS id_empreendimento, a.IdeOnsEpd AS codigo_ons_empreendimento,
+       a.NomEpd AS empreendimento, a.DscEpd AS descricao, a.DscSituacaoEpd AS situacao,
+       TRY_CAST(a.DatCaoCgmAtoLgl AS DATE) AS prazo_ato_legal, TRY_CAST(a.DatOprComEpd AS DATE) AS data_operacao_comercial,
+       TRY_CAST(a.DatEfeOprComEpd AS DATE) AS data_operacao_efetiva, TRY_CAST(a.DatGeracaoConjuntoDados AS DATE) AS data_base
+FROM {atos} a LEFT JOIN transmissao_contratos c ON c.id_contrato = a.IdeCcd
+""", "Atos legais (resoluções autorizativas e despachos da ANEEL) que autorizaram reforços, melhorias e ampliações de "
+     "transmissão, um por empreendimento: número e tipo do ato, data de publicação, ementa (o texto que diz o que foi "
+     "autorizado) e link do cedoc, com o contrato de concessão, o CNPJ da concessionária e o prazo fixado. "
+     "prazo_ato_legal é a data de entrada em operação que o ato determinou e data_operacao_comercial é a que valeu: "
+     "compare as duas para medir atraso (903 dos 1.652 empreendimentos entraram depois do prazo, mediana de 24 dias). "
+     "Para o texto do ato use link; para a RAP que o ato fixou, junte ato_rap em rap_transmissao_modulos.",
+    "ANEEL SIGET, Resolução x Contrato x Agente, "
+    "https://dadosabertos.aneel.gov.br/dataset/sistema-de-gestao-da-transmissao-siget",
+    "cobre só empreendimentos com ato legal de autorização (reforços, melhorias e ampliações): são 1.652 "
+    "empreendimentos de 164 contratos, contra os 2.352 de transmissao_empreendimentos, e nenhuma linha do contrato "
+    "original licitado. Todos os contratos são do tipo CCO (Contrato de Concessão). data_operacao_efetiva vem vazia "
+    "nos 193 empreendimentos 'Em andamento' e em 62 'Em Operação'. Não some nada: não há valor de receita aqui")
+
+# ---------------------------------------------------------------- ANEEL SIGET: termos de liberação do ONS
+# O ONS emite um Termo de Liberação (TL) atestando que a obra entrou em operação; sem ele a ANEEL não libera a receita
+# no reajuste. É a ponte entre a obra e o ciclo tarifário em que a RAP dela passou a ser paga. SigAgente vem com
+# espaços à direita no arquivo (campo de tamanho fixo), por isso o trim.
+tl = csv_limpo(exigir(os.path.join(AN, "siget_rap", "siget-termo-liberacao-reajuste-rap-processado.csv")), "cp1252")
+tabela("transmissao_termos_liberacao", f"""
+-- NumAtoLegal vem em três formas: "CC 008/2005" (obra do contrato licitado original), "REA 2412/2010" e "DSP 852/2024"
+-- (obra autorizada por ato). codigo_ato reescreve as duas últimas no formato de transmissao_atos_legais.codigo_ato
+-- (REA-2010-2412), para o analista não ter de refazer a conversão; nas linhas "CC" fica nulo, que é o caso sem ato.
+SELECT trim(SigAgente) AS concessionaria, fmt_cnpj(NumCnpj) AS cnpj, NumContrato AS contrato,
+       NumAtoLegal AS ato_legal, nullif(regexp_replace(NumAtoLegal, '^(REA|DSP) (\\d+)/(\\d{{4}})$', '\\1-\\3-\\2'),
+       NumAtoLegal) AS codigo_ato, NumTL AS termo_liberacao,
+       CAST(TRY_CAST(DatTL AS TIMESTAMP) AS DATE) AS data_termo_liberacao, DscCicloTarifario AS ciclo_tarifario,
+       TRY_CAST(IdeObr AS BIGINT) AS id_obra, DscObra AS obra, TRY_CAST(IdeMdl AS BIGINT) AS id_modulo,
+       NomModulo AS modulo, IdeOnsEpd AS codigo_ons_empreendimento,
+       TRY_CAST(DatGeracaoConjuntoDados AS DATE) AS data_base
+FROM {tl}
+""", "Termos de Liberação (TL) emitidos pelo ONS para obras de transmissão, um por obra: o TL atesta que a obra entrou "
+     "em operação e é o documento que autoriza a ANEEL a incluir a receita dela no reajuste. Traz a concessionária com "
+     "CNPJ, o contrato, o ato legal que autorizou a obra, o número e a data do TL, o ciclo tarifário em que a receita "
+     "entrou e a obra e o módulo de transmissão liberados. Use para saber QUANDO cada obra passou a receber: junte "
+     "id_modulo com rap_transmissao_modulos.id_modulo para o valor da RAP (14.500 das 14.887 obras casam) e codigo_ato "
+     "com transmissao_atos_legais.codigo_ato para a ementa da autorização.",
+    "ANEEL SIGET, Termos de Liberação processados no reajuste da RAP, "
+    "https://dadosabertos.aneel.gov.br/dataset/sistema-de-gestao-da-transmissao-siget",
+    "uma linha por OBRA (id_obra é único nas 14.887 linhas), não por TL nem por módulo: um TL libera várias obras "
+    "(6.652 TLs) e um módulo pode aparecer em várias obras e ciclos (13.820 módulos distintos), então contar linhas "
+    "conta obras liberadas, não termos. Ciclos tarifários de 2010-2011 a 2026-2027 (TLs assinados desde 2006, mas o "
+    "arquivo só traz os processados nesses ciclos). codigo_ato é nulo nas 9.464 obras do contrato licitado original, "
+    "que não passam por ato autorizativo, e das 5.423 com ato 5.394 casam com transmissao_atos_legais. Não tem valor de "
+    "receita: a RAP está em rap_transmissao_modulos")
 
 # ---------------------------------------------------------------- ANEEL: micro e minigeração distribuída (MMGD)
 MMGD = os.path.join(AN, "mmgd", "empreendimento-geracao-distribuida.parquet")
-if os.path.exists(MMGD):
-    tabela("gd_mmgd", f"""
+exigir(MMGD)
+tabela("gd_mmgd", f"""
 SELECT fmt_cnpj(CAST(NumCNPJDistribuidora AS VARCHAR)) AS cnpj_distribuidora, any_value(SigAgente) AS distribuidora,
        SigUF AS uf, DscClasseConsumo AS classe, SigTipoGeracao AS tipo_geracao, DscFonteGeracao AS fonte,
        DscPorte AS porte, DscModalidadeHabilitado AS modalidade,
-       CAST(date_trunc('month', DthAtualizaCadastralEmpreend) AS DATE) AS mes_cadastro,
+       -- mesmo marcador de data ausente do SIGA (aqui 01/01/1900, em 16 empreendimentos): NULL em vez de mês de 1900
+       nullif(CAST(date_trunc('month', DthAtualizaCadastralEmpreend) AS DATE), DATE '1900-01-01') AS mes_cadastro,
        count(*) AS empreendimentos, sum(MdaPotenciaInstaladaKW) / 1000 AS potencia_mw,
        sum(QtdUCRecebeCredito) AS ucs_recebem_credito, any_value(AnmPeriodoReferencia) AS periodo_referencia
 FROM '{MMGD}' GROUP BY ALL
 """, "Micro e minigeração distribuída (MMGD, painéis solares em telhados e usinas de até 5 MW na rede da "
-       "distribuidora) agregada por distribuidora, UF, classe de consumo, fonte, porte, modalidade e mês de cadastro: "
-       "número de empreendimentos e potência instalada em MW. Some tudo para o total conectado; filtre mes_cadastro "
-       "para a evolução.",
-       "ANEEL, Relação de Empreendimentos de Geração Distribuída, "
-       "https://dadosabertos.aneel.gov.br/dataset/relacao-de-empreendimentos-de-geracao-distribuida",
-       "mes_cadastro é a data da última atualização cadastral do empreendimento (aproxima a data de conexão, mas pode ser "
-       "posterior); a base é uma fotografia do estoque conectado em periodo_referencia. Titulares (CPF/CNPJ) não entram")
+    "distribuidora) agregada por distribuidora, UF, classe de consumo, fonte, porte, modalidade e mês de cadastro: "
+    "número de empreendimentos e potência instalada em MW. Some tudo para o total conectado; filtre mes_cadastro "
+    "para a evolução.",
+    "ANEEL, Relação de Empreendimentos de Geração Distribuída, "
+    "https://dadosabertos.aneel.gov.br/dataset/relacao-de-empreendimentos-de-geracao-distribuida",
+    "mes_cadastro é a data da última atualização cadastral do empreendimento (aproxima a data de conexão, mas pode ser "
+    "posterior) e é NULL em 16 empreendimentos, onde a ANEEL gravou o marcador 01/01/1900 em vez da data; a base é uma "
+    "fotografia do estoque conectado em periodo_referencia. Titulares (CPF/CNPJ) não entram")
 
 # ---------------------------------------------------------------- ANEEL: RALIE, expansão da geração em implantação
 RALIE = os.path.join(AN, "ralie", "ralie-usina-atual.csv")
-if os.path.exists(RALIE):
-    ralie_ug = os.path.join(AN, "ralie", "ralie-unidade-geradora-atual.csv")
-    tabela("expansao_geracao", f"""
+exigir(RALIE)
+ralie_ug = os.path.join(AN, "ralie", "ralie-unidade-geradora-atual.csv")
+tabela("expansao_geracao", f"""
 WITH ug AS (
   SELECT CodCEG, count(*) AS unidades,
          min(TRY_CAST(DatUGInicioOpComerOutorgado AS DATE)) AS primeira_operacao_outorgada,
@@ -968,22 +1539,22 @@ SELECT u.CodCEG AS ceg, u.NomEmpreendimento AS nome, u.SigUFPrincipal AS uf, u.D
        TRY_CAST(u.DatRalie AS DATE) AS data_base
 FROM read_csv('{RALIE}', delim=';', header=true, all_varchar=true) u LEFT JOIN ug USING (CodCEG)
 """, "Usinas outorgadas ainda não concluídas acompanhadas pela ANEEL (RALIE): potência, situação da obra (em "
-       "andamento, não iniciada, paralisada), viabilidade, situação do cronograma e datas de entrada em operação "
-       "outorgada (ato de outorga) e prevista pela fiscalização da ANEEL, por unidade geradora. Use para a expansão "
-       "da oferta e atrasos; os donos com CNPJ estão em usinas_proprietarios pelo ceg.",
-       "ANEEL, RALIE, https://dadosabertos.aneel.gov.br/dataset/"
-       "ralie-relatorio-de-acompanhamento-da-expansao-da-oferta-de-geracao-de-energia-eletrica",
-       "potência em MW; datas previstas pela ANEEL (SFG) podem ser revistas a cada mês; primeira/última = primeira e "
-       "última unidade geradora da usina")
+    "andamento, não iniciada, paralisada), viabilidade, situação do cronograma e datas de entrada em operação "
+    "outorgada (ato de outorga) e prevista pela fiscalização da ANEEL, por unidade geradora. Use para a expansão "
+    "da oferta e atrasos; os donos com CNPJ estão em usinas_proprietarios pelo ceg.",
+    "ANEEL, RALIE, https://dadosabertos.aneel.gov.br/dataset/"
+    "ralie-relatorio-de-acompanhamento-da-expansao-da-oferta-de-geracao-de-energia-eletrica",
+    "potência em MW; datas previstas pela ANEEL (SFG) podem ser revistas a cada mês; primeira/última = primeira e "
+    "última unidade geradora da usina")
 
 # ---------------------------------------------------------------- ANEEL: SAMP, mercado e receita das distribuidoras
-samp = sorted(glob.glob(os.path.join(AN, "samp", "samp-*.parquet")))
-samp = [f for f in samp if re.search(r"samp-\d{4}\.parquet$", f)]
-if samp:
-    lista = ", ".join(f"'{f}'" for f in samp)
-    tabela("mercado_distribuidoras_mensal", f"""
+# um parquet por ano (samp-2020.parquet...) mais o samp-balanco.parquet, que tem outro formato e vira outra tabela
+samp = exigir_glob(os.path.join(AN, "samp", "samp-[0-9][0-9][0-9][0-9].parquet"))
+lista = ", ".join(f"'{f}'" for f in samp)
+tabela("mercado_distribuidoras_mensal", f"""
 WITH s AS (SELECT *, lower(DscDetalheMercado) AS d, NomTipoMercado ILIKE '%refaturamento%' AS refat
-           FROM read_parquet([{lista}], union_by_name=true))
+           FROM read_parquet([{lista}], union_by_name=true)),
+m AS (
 SELECT fmt_cnpj(CAST(NumCNPJAgenteDistribuidora AS VARCHAR)) AS cnpj, any_value(SigAgenteDistribuidora) AS distribuidora,
        CAST(DatCompetencia AS DATE) AS mes, DscClasseConsumoMercado AS classe, DscOpcaoEnergia AS mercado,
        sum(VlrMercado) FILTER (d = 'número de consumidores' AND NOT refat) AS consumidores,
@@ -998,54 +1569,137 @@ SELECT fmt_cnpj(CAST(NumCNPJAgenteDistribuidora AS VARCHAR)) AS cnpj, any_value(
        round(sum(VlrMercado) FILTER (d IN ('pis/pasep (r$)', 'cofins (r$)', 'pis/cofins (r$)')), 2) AS pis_cofins_brl,
        round((sum(VlrMercado) FILTER (d IN ('receita energia (r$)', 'receita demanda (r$)')))
              / nullif(sum(VlrMercado) FILTER (d = 'energia tusd (kwh)') / 1000, 0), 2) AS tarifa_media_sem_tributos_brl_mwh
-FROM s GROUP BY ALL
+FROM s GROUP BY ALL)
+-- As duas marcas de erro de declaração saem daqui, comparando cada mês com os outros da mesma distribuidora, classe e
+-- mercado: tarifa acima de 3x a mediana da série (o caso Cemig D) e mês que repete consumidores e receita do anterior
+-- (declaração copiada). São AVISOS, não filtros: a linha fica na tabela com o valor que a ANEEL publicou.
+SELECT *, tarifa_media_sem_tributos_brl_mwh > 3 * median(tarifa_media_sem_tributos_brl_mwh)
+            OVER (PARTITION BY cnpj, classe, mercado) AS tarifa_media_suspeita,
+       consumidores = lag(consumidores) OVER w AND receita_energia_brl = lag(receita_energia_brl) OVER w
+         AND coalesce(consumidores, 0) > 0 AS mes_repetido
+FROM m
+WINDOW w AS (PARTITION BY cnpj, classe, mercado ORDER BY mes)
 """, "Mercado e faturamento mensal de cada distribuidora por classe de consumo (Residencial, Comercial, Industrial, "
-       "Rural...) e mercado (CATIVO, LIVRE, GERAÇÃO, SUPRIMENTO), de 2020 em diante: consumidores, energia faturada em "
-       "MWh, receitas de energia, demanda e bandeiras, tributos e a tarifa média sem tributos em R$/MWh. Para a tarifa "
-       "média do ano some receita_energia_brl + receita_demanda_brl e divida pela soma de energia_tusd_mwh (não tire "
-       "média das médias mensais).",
-       "ANEEL, SAMP - Sistema de Acompanhamento de Informações de Mercado, https://dadosabertos.aneel.gov.br/dataset/samp",
-       "dado declarado pela distribuidora ao SAMP; mercado LIVRE paga só a TUSD (fio): não compare a tarifa média "
-       "do livre com a do cativo. Receitas sem ICMS e PIS/COFINS; refaturamentos entram nas energias e receitas mas "
-       "não no número de consumidores. O ano corrente é parcial e meses recentes podem ser revistos. Há erros de "
-       "declaração na fonte (ex.: Cemig D, Residencial, jul/2025 e out/2025, receita de energia ~10 vezes o normal): "
-       "confira a tarifa média mês a mês antes de somar o ano e aponte meses discrepantes")
+    "Rural...) e mercado (CATIVO, LIVRE, GERAÇÃO, SUPRIMENTO, DISTRIBUIÇÃO), de 2020 em diante: consumidores, energia "
+    "faturada em MWh, receitas de energia, demanda e bandeiras, tributos e a tarifa média sem tributos em R$/MWh. Para a "
+    "tarifa média do ano some receita_energia_brl + receita_demanda_brl e divida pela soma de energia_tusd_mwh (não tire "
+    "média das médias mensais).",
+    "ANEEL, SAMP - Sistema de Acompanhamento de Informações de Mercado, https://dadosabertos.aneel.gov.br/dataset/samp",
+    "dado declarado pela distribuidora ao SAMP; mercado LIVRE paga só a TUSD (fio): não compare a tarifa média "
+    "do livre com a do cativo. SEMPRE filtre mercado: somar a tabela inteira mistura consumo final (CATIVO e LIVRE) com "
+    "energia repassada a outro agente (DISTRIBUIÇÃO, 2.846 linhas, e SUPRIMENTO, 1.235), o que conta a mesma energia duas "
+    "vezes; GERAÇÃO não tem energia faturada. Receitas sem ICMS e PIS/COFINS; refaturamentos entram nas energias e "
+    "receitas mas não no número de consumidores. O ano corrente é parcial e meses recentes podem ser revistos. "
+    "tarifa_media_suspeita = true quando a tarifa do mês passa de 3x a mediana da própria série (distribuidora, classe e "
+    "mercado): é erro de declaração na fonte, como Cemig D Residencial em jul/2025 e out/2025 — descarte esses meses "
+    "antes de somar o ano ou some receita e energia do ano e divida no fim. mes_repetido = true quando o mês repete "
+    "consumidores E receita de energia do mês anterior, sinal de declaração copiada: não leia como estabilidade real. "
+    "As duas marcas são NULL onde não há como comparar (mes_repetido no primeiro mês de cada série, 5.173 linhas; "
+    "tarifa_media_suspeita onde a tarifa é nula, 5.810 linhas, quase todas do mercado GERAÇÃO): use "
+    "'NOT coalesce(marca, false)' e não 'NOT marca', que descartaria essas linhas em silêncio")
+
+# O balanço de energia do SAMP: de onde vem e para onde vai a energia de cada distribuidora, inclusive as perdas.
+BALANCO = exigir(os.path.join(AN, "samp", "samp-balanco.parquet"))
+tabela("balanco_energia_distribuidoras", f"""
+SELECT fmt_cnpj(CAST(NumCPFCNPJ AS VARCHAR)) AS cnpj, NomAgente AS distribuidora,
+       DscClassificacaoAgente AS classificacao, CAST(AnoReferenciaBalanco AS INTEGER) AS ano,
+       CAST(MesReferenciaBalanco AS INTEGER) AS mes,
+       make_date(CAST(AnoReferenciaBalanco AS INTEGER), CAST(MesReferenciaBalanco AS INTEGER), 1) AS competencia,
+       DscFluxoEnergia AS fluxo, DscModalidadeBalanco AS modalidade, DscCctBalanco AS rubrica,
+       DscDetalheBalanco AS medida, round(VlrEnergia / 1000.0, 3) AS energia_mwh
+FROM '{BALANCO}'
+""", "Balanço mensal de energia de cada distribuidora desde 2003, em MWh: disponibilidades (energia recebida, injetada, "
+     "geração própria), requisitos (energia vendida e entregue por mercado) e saldo (perdas técnicas, não técnicas e "
+     "totais, medidas e faturadas). fluxo = Disponibilidades, Requisitos ou Saldo; modalidade é a linha do balanço; "
+     "rubrica detalha a modalidade; medida diz se é energia medida, faturada, calculada ou gerada e o nível de tensão. "
+     "Para perdas prontas use perdas_distribuicao_anual.",
+    "ANEEL, SAMP - balanço de energia, https://dadosabertos.aneel.gov.br/dataset/samp",
+    "NÃO some energia_mwh sem filtrar: as rubricas terminadas em TOTAL e a medida "
+    "'Total (todos os níveis de tensão)' já somam as linhas de detalhe, e 'Perdas Totais' já é técnicas + não técnicas. "
+    "Perdas aparecem em duas versões (valor medido e valor faturado). O ano corrente é parcial; o CNPJ 07.732.105/0001-84 "
+    "aparece em 2007 com dois agentes diferentes na fonte")
+# A energia injetada total vem da linha agregada do balanço (modalidade = rubrica = 'Energia Injetada Total', medida
+# 'Energia Medida (kWh)'), não das linhas por nível de tensão, que só existem em parte dos anos.
+con.execute("""CREATE VIEW perdas_distribuicao_anual AS
+SELECT cnpj, any_value(distribuidora) AS distribuidora, any_value(classificacao) AS classificacao, ano,
+       count(DISTINCT mes) FILTER (modalidade = 'Energia Injetada Total' AND rubrica = 'Energia Injetada Total')
+         AS meses_declarados,
+       round(sum(energia_mwh) FILTER (modalidade = 'Energia Injetada Total'
+                                      AND rubrica = 'Energia Injetada Total'), 1) AS energia_injetada_mwh,
+       round(sum(energia_mwh) FILTER (modalidade = 'Perdas na Distribuição (valor medido)'
+                                      AND rubrica = 'Perdas Totais'), 1) AS perdas_totais_mwh,
+       round(sum(energia_mwh) FILTER (modalidade = 'Perdas na Distribuição (valor medido)'
+                                      AND rubrica = 'Perdas Técnicas'), 1) AS perdas_tecnicas_mwh,
+       round(sum(energia_mwh) FILTER (modalidade = 'Perdas na Distribuição (valor medido)'
+                                      AND rubrica = 'Perdas Não-Técnicas'), 1) AS perdas_nao_tecnicas_mwh,
+       round(sum(energia_mwh) FILTER (modalidade = 'Perdas na Distribuição (valor faturado)'
+                                      AND rubrica = 'Perdas Totais'), 1) AS perdas_faturadas_mwh,
+       round(100 * sum(energia_mwh) FILTER (modalidade = 'Perdas na Distribuição (valor medido)'
+                                            AND rubrica = 'Perdas Totais')
+             / nullif(sum(energia_mwh) FILTER (modalidade = 'Energia Injetada Total'
+                                               AND rubrica = 'Energia Injetada Total'), 0), 2) AS perdas_pct
+FROM balanco_energia_distribuidoras WHERE medida = 'Energia Medida (kWh)' OR medida = 'Energia Calculada (kWh)'
+GROUP BY cnpj, ano""")
+CATALOGO.append(("perdas_distribuicao_anual", "Perdas de energia de cada distribuidora por ano: energia injetada na rede, "
+                 "perdas totais, técnicas (rede) e não técnicas (furto e fraude) em MWh, as perdas faturadas na tarifa e "
+                 "as perdas medidas como % da energia injetada. meses_declarados diz quantos meses do ano a "
+                 "distribuidora declarou (12 = ano completo).",
+                 "ANEEL, SAMP - balanço de energia",
+                 "compare só linhas com meses_declarados = 12; perdas_pct usa as perdas medidas, perdas_faturadas_mwh é "
+                 "o que entra na tarifa, e o limite regulatório de perdas definido pela ANEEL não está aqui. "
+                 "Cooperativas e permissionárias pequenas declaram de forma inconsistente (há perdas_pct negativa ou "
+                 "acima de 100%): para rankings filtre classificacao = 'Concessionária' e energia_injetada_mwh alta. "
+                 "perdas_tecnicas_mwh + perdas_nao_tecnicas_mwh só fecha com perdas_totais_mwh quando os três vêm dos "
+                 "mesmos meses", None))
 
 # ---------------------------------------------------------------- ANEEL: bandeiras tarifárias
 BAND = os.path.join(AN, "bandeiras", "bandeira-tarifaria-acionamento.csv")
-if os.path.exists(BAND):
-    tabela("bandeiras_tarifarias", f"""
+exigir(BAND)
+tabela("bandeiras_tarifarias", f"""
 SELECT CAST(TRY_CAST(DatCompetencia AS DATE) AS DATE) AS mes, trim(NomBandeiraAcionada) AS bandeira,
        num_br(VlrAdicionalBandeira) AS adicional_brl_mwh
 FROM read_csv('{BAND}', delim=';', header=true, all_varchar=true) ORDER BY mes
 """, "Bandeira tarifária acionada pela ANEEL em cada mês (Verde, Amarela, Vermelha P1, Vermelha P2, Escassez "
-       "Hídrica) e o adicional cobrado na conta, em R$/MWh, desde 2015.",
-       "ANEEL, Bandeiras Tarifárias - Acionamento, https://dadosabertos.aneel.gov.br/dataset/bandeiras-tarifarias",
-       "adicional em R$/MWh (divida por 10 para R$ por 100 kWh); vale para o consumidor cativo do SIN")
+    "Hídrica) e o adicional cobrado na conta, em R$/MWh, desde 2015.",
+    "ANEEL, Bandeiras Tarifárias - Acionamento, https://dadosabertos.aneel.gov.br/dataset/bandeiras-tarifarias",
+    "adicional em R$/MWh (divida por 10 para R$ por 100 kWh); vale para o consumidor cativo do SIN")
+ADICIONAL = exigir(os.path.join(AN, "bandeiras", "bandeira-tarifaria-adicional.csv"))
+tabela("bandeiras_tarifarias_valores", f"""
+SELECT DscResolucao AS resolucao, TRY_CAST(DatVigencia AS DATE) AS inicio_vigencia,
+       trim(NomBandeiraAcionada) AS bandeira, num_br(VlrAdicionalBandeiraRSMWh) AS adicional_brl_mwh
+FROM read_csv('{ADICIONAL}', delim=';', header=true, encoding='utf-8', all_varchar=true, quote='"')
+ORDER BY inicio_vigencia, bandeira
+""", "Tabela de adicionais das bandeiras tarifárias: quanto cada bandeira custa, em R$/MWh, a partir de cada resolução "
+     "homologatória da ANEEL (2015 em diante). É o preço da bandeira; qual bandeira valeu em cada mês está em "
+     "bandeiras_tarifarias.",
+    "ANEEL, Bandeiras Tarifárias - Adicional, https://dadosabertos.aneel.gov.br/dataset/bandeiras-tarifarias",
+    "vigora até a resolução seguinte (não há data de fim na fonte); a bandeira verde não aparece porque o adicional é "
+    "zero. NÃO é série anual: só existe linha nas datas em que a ANEEL reviu o valor (2015, 2016, 2017, 2018, 2019 duas "
+    "vezes, 2021 duas vezes, 2022 e 2024), e a ausência de 2020 e 2023 significa que o valor não mudou nesses anos. "
+    "Para saber a bandeira e o adicional de um mês use bandeiras_tarifarias, que é mensal e completa")
 
 # ---------------------------------------------------------------- ANEEL: ranking de continuidade (DGC)
 paginas = sorted(glob.glob(os.path.join(AN, "ranking_continuidade", "ranking_*.html")))
-if paginas:
-    import html as html_mod
-    ranking = []
-    for pagina in paginas:
-        ano = int(re.search(r"ranking_(\d{4})", pagina).group(1))
-        texto = open(pagina, encoding="utf-8", errors="replace").read()
-        for i_tab, tab in enumerate(re.findall(r"<table.*?</table>", texto, flags=re.S)[:2]):
-            porte = "mais de 400 mil unidades consumidoras" if i_tab == 0 else "até 400 mil unidades consumidoras"
-            for tr in re.findall(r"<tr.*?</tr>", tab, flags=re.S):
-                cel = [html_mod.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", c))).strip()
-                       for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", tr, flags=re.S)]
-                if len(cel) >= 5 and re.match(r"^\d+", cel[0]):
-                    ranking.append((ano, porte, int(re.match(r"\d+", cel[0]).group(0)),
-                                    float(cel[1].replace(",", ".")) if re.fullmatch(r"[\d,.]+", cel[1]) else None,
-                                    cel[2], cel[3], cel[4]))
-    con.execute("""CREATE TEMP TABLE ranking_bruto (ano INTEGER, porte VARCHAR, posicao INTEGER, dgc DOUBLE,
+import html as html_mod
+ranking = []
+for pagina in paginas:
+    ano = int(re.search(r"ranking_(\d{4})", pagina).group(1))
+    texto = open(pagina, encoding="utf-8", errors="replace").read()
+    for i_tab, tab in enumerate(re.findall(r"<table.*?</table>", texto, flags=re.S)[:2]):
+        porte = "mais de 400 mil unidades consumidoras" if i_tab == 0 else "até 400 mil unidades consumidoras"
+        for tr in re.findall(r"<tr.*?</tr>", tab, flags=re.S):
+            cel = [html_mod.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", c))).strip()
+                   for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", tr, flags=re.S)]
+            if len(cel) >= 5 and re.match(r"^\d+", cel[0]):
+                ranking.append((ano, porte, int(re.match(r"\d+", cel[0]).group(0)),
+                                float(cel[1].replace(",", ".")) if re.fullmatch(r"[\d,.]+", cel[1]) else None,
+                                cel[2], cel[3], cel[4]))
+con.execute("""CREATE TEMP TABLE ranking_bruto (ano INTEGER, porte VARCHAR, posicao INTEGER, dgc DOUBLE,
                    sigla VARCHAR, empresa VARCHAR, regiao VARCHAR)""")
-    con.executemany("INSERT INTO ranking_bruto VALUES (?, ?, ?, ?, ?, ?, ?)", ranking)
-    con.execute(r"""CREATE MACRO chave_razao(x) AS
+con.executemany("INSERT INTO ranking_bruto VALUES (?, ?, ?, ?, ?, ?, ?)", ranking)
+con.execute(r"""CREATE MACRO chave_razao(x) AS
       trim(regexp_replace(upper(strip_accents(regexp_replace(x, '[^A-Za-z0-9À-ú]', ' ', 'g'))), '\s+', ' ', 'g'))""")
-    tabela("ranking_continuidade", r"""
+tabela("ranking_continuidade", r"""
 WITH nomes AS (  -- razão social do ranking -> CNPJ pelo cadastro de agentes da ANEEL (distribuidoras)
   SELECT chave_razao(razao_social) AS chave, any_value(cnpj) AS cnpj FROM agentes_aneel WHERE distribuicao GROUP BY 1),
 r AS (SELECT r.*, n.cnpj FROM ranking_bruto r LEFT JOIN nomes n ON n.chave = chave_razao(r.empresa)),
@@ -1054,23 +1708,25 @@ SELECT r.ano, r.porte, r.posicao, r.dgc, r.sigla, r.empresa, coalesce(r.cnpj, s.
 FROM r LEFT JOIN por_sigla s USING (sigla)
 ORDER BY r.ano, r.porte, r.posicao
 """, "Ranking oficial de continuidade da ANEEL: posição de cada distribuidora pelo Desempenho Global de Continuidade "
-       "(DGC), de 2021 a 2025, separado em dois grupos de porte. DGC é a média dos DEC e FEC apurados divididos pelos "
-       "limites: quanto menor, melhor; abaixo de 1 = dentro dos limites.",
-       "ANEEL, Ranking de Continuidade, https://www.gov.br/aneel/pt-br/centrais-de-conteudos/relatorios-e-indicadores/"
-       "distribuicao/ranking-de-continuidade",
-       "posição dentro do grupo de porte (empates têm a mesma posição); cnpj ligado pela razão social ao cadastro de "
-       "agentes da ANEEL, vazio quando o nome não casou; o ano é o dos indicadores, publicado no ano seguinte")
+    "(DGC), de 2021 a 2025, separado em dois grupos de porte. DGC é a média dos DEC e FEC apurados divididos pelos "
+    "limites: quanto menor, melhor; abaixo de 1 = dentro dos limites.",
+    "ANEEL, Ranking de Continuidade, https://www.gov.br/aneel/pt-br/centrais-de-conteudos/relatorios-e-indicadores/"
+    "distribuicao/ranking-de-continuidade",
+    "posição dentro do grupo de porte (empates têm a mesma posição); cnpj ligado pela razão social ao cadastro de "
+    "agentes da ANEEL, vazio quando o nome não casou; o ano é o dos indicadores, publicado no ano seguinte")
 
 # ---------------------------------------------------------------- Banco Central: indicadores macro
 BCB = os.path.join(RAW, "bcb")
-if glob.glob(os.path.join(BCB, "sgs_*.json")):
-    partes = []
-    for arq in sorted(glob.glob(os.path.join(BCB, "sgs_*.json"))):
-        codigo, nome = re.match(r"sgs_(\d+)_(\w+)\.json$", os.path.basename(arq)).groups()
-        partes.append(f"""SELECT '{nome}' AS serie, {codigo} AS codigo, strptime(data, '%d/%m/%Y')::DATE AS data,
+# a mesma lista de baixar.py: exigida uma a uma para nenhuma coluna de indicadores_macro_mensal sair vazia em silêncio
+SGS = {433: "ipca_mensal", 13522: "ipca_12m", 189: "igpm_mensal", 4390: "selic_mensal", 4391: "cdi_mensal",
+       432: "selic_meta", 3698: "dolar_ptax_venda_media_mensal"}
+partes = []
+for codigo, nome in SGS.items():
+    arq = exigir(os.path.join(BCB, f"sgs_{codigo}_{nome}.json"))
+    partes.append(f"""SELECT '{nome}' AS serie, {codigo} AS codigo, strptime(data, '%d/%m/%Y')::DATE AS data,
                           TRY_CAST(valor AS DOUBLE) AS valor FROM read_json('{arq}', columns={{data: 'VARCHAR', valor: 'VARCHAR'}})""")
-    con.execute("CREATE TEMP TABLE bcb AS " + " UNION ALL ".join(partes))
-    tabela("indicadores_macro_mensal", """
+con.execute("CREATE TEMP TABLE bcb AS " + " UNION ALL ".join(partes))
+tabela("indicadores_macro_mensal", """
 WITH m AS (SELECT serie, CAST(date_trunc('month', data) AS DATE) AS mes, arg_max(valor, data) AS ultimo, avg(valor) AS media
            FROM bcb GROUP BY ALL)
 SELECT mes,
@@ -1086,29 +1742,23 @@ SELECT mes,
        max(ultimo) FILTER (serie = 'dolar_ptax_venda_media_mensal') AS dolar_ptax_medio_brl
 FROM m WHERE mes <= current_date GROUP BY mes ORDER BY mes
 """, "Indicadores macroeconômicos mensais do Banco Central desde 2000: IPCA do mês e em 12 meses, IGP-M do mês e em "
-       "12 meses (índices de reajuste de tarifas e RAP), Selic e CDI acumulados no mês, meta Selic no fim do mês "
-       "(% ao ano) e dólar PTAX de venda médio do mês. Use para contexto de tarifas, RAP e custo da dívida.",
-       "Banco Central, SGS (api.bcb.gov.br): séries 433 (IPCA), 13522 (IPCA 12 meses), 189 (IGP-M), 4390 (Selic "
-       "mensal), 4391 (CDI mensal), 432 (meta Selic), 3698 (dólar PTAX venda, média mensal)",
-       "IPCA, IGP-M, Selic e CDI do mês em % no mês (não anualizados); igpm_12m_pct é acumulado pela plataforma; "
-       "o mês corrente pode estar vazio ou parcial (Selic e CDI acumulados até o último dia útil publicado)")
+    "12 meses (índices de reajuste de tarifas e RAP), Selic e CDI acumulados no mês, meta Selic no fim do mês "
+    "(% ao ano) e dólar PTAX de venda médio do mês. Use para contexto de tarifas, RAP e custo da dívida.",
+    "Banco Central, SGS (api.bcb.gov.br): séries 433 (IPCA), 13522 (IPCA 12 meses), 189 (IGP-M), 4390 (Selic "
+    "mensal), 4391 (CDI mensal), 432 (meta Selic), 3698 (dólar PTAX venda, média mensal)",
+    "IPCA, IGP-M, Selic e CDI do mês em % no mês (não anualizados); igpm_12m_pct é acumulado pela plataforma; "
+    "o mês corrente pode estar vazio ou parcial (Selic e CDI acumulados até o último dia útil publicado)")
 
 # ---------------------------------------------------------------- ONS: carga, ENA, balanço por fonte, intercâmbio, geração por usina
-def ons_parquets(pasta):
-    return os.path.join(ONS, pasta, "*.parquet") if glob.glob(os.path.join(ONS, pasta, "*.parquet")) else None
-
-
-if ons_parquets("carga_energia_diaria"):
-    tabela("ons_carga_diaria", f"""
+tabela("ons_carga_diaria", f"""
 SELECT trim(id_subsistema) AS subsistema, CAST(din_instante AS DATE) AS data,
        TRY_CAST(val_cargaenergiamwmed AS DOUBLE) AS carga_mwmed
 FROM read_parquet('{ons_parquets("carga_energia_diaria")}', union_by_name=true)
 """, "Carga de energia diária do SIN por subsistema (N, NE, S, SE = Sudeste/Centro-Oeste), em MW médio, desde 2000. "
-       "Energia do dia em MWh = carga_mwmed × 24.", "ONS, Carga de Energia, https://dados.ons.org.br/dataset/carga-energia",
-       "MW médio (média do dia), não MWh; inclui estimativa de micro e minigeração conforme a metodologia do ONS; "
-       "dados recentes podem ser revistos")
-if ons_parquets("ena_diario_subsistema"):
-    tabela("ons_ena_diaria", f"""
+    "Energia do dia em MWh = carga_mwmed × 24.", "ONS, Carga de Energia, https://dados.ons.org.br/dataset/carga-energia",
+    "MW médio (média do dia), não MWh; inclui estimativa de micro e minigeração conforme a metodologia do ONS; "
+    "dados recentes podem ser revistos")
+tabela("ons_ena_diaria", f"""
 SELECT trim(id_subsistema) AS subsistema, TRY_CAST(ena_data AS DATE) AS data,
        TRY_CAST(ena_bruta_regiao_mwmed AS DOUBLE) AS ena_bruta_mwmed,
        TRY_CAST(ena_bruta_regiao_percentualmlt AS DOUBLE) AS ena_bruta_pct_mlt,
@@ -1116,11 +1766,10 @@ SELECT trim(id_subsistema) AS subsistema, TRY_CAST(ena_data AS DATE) AS data,
        TRY_CAST(ena_armazenavel_regiao_percentualmlt AS DOUBLE) AS ena_armazenavel_pct_mlt
 FROM read_parquet('{ons_parquets("ena_diario_subsistema")}', union_by_name=true)
 """, "Energia Natural Afluente (ENA) diária por subsistema, em MW médio e em % da média de longo termo (MLT), desde "
-       "2021: mede quanta água chega aos reservatórios. Abaixo de 100% da MLT = afluência abaixo da média histórica.",
-       "ONS, ENA Diário por Subsistema, https://dados.ons.org.br/dataset/ena-diario-por-subsistema",
-       "SE = Sudeste/Centro-Oeste; para média mensal faça a média dos dias; dados recentes podem ser revistos")
-if ons_parquets("balanco_energia_subsistema"):
-    tabela("ons_geracao_fonte_mensal", f"""
+    "2021: mede quanta água chega aos reservatórios. Abaixo de 100% da MLT = afluência abaixo da média histórica.",
+    "ONS, ENA Diário por Subsistema, https://dados.ons.org.br/dataset/ena-diario-por-subsistema",
+    "SE = Sudeste/Centro-Oeste; para média mensal faça a média dos dias; dados recentes podem ser revistos")
+tabela("ons_geracao_fonte_mensal", f"""
 WITH b AS (SELECT trim(id_subsistema) AS subsistema, din_instante,
                   TRY_CAST(val_gerhidraulica AS DOUBLE) AS h, TRY_CAST(val_gertermica AS DOUBLE) AS t,
                   TRY_CAST(val_gereolica AS DOUBLE) AS e, TRY_CAST(val_gersolar AS DOUBLE) AS s,
@@ -1132,58 +1781,64 @@ SELECT subsistema, CAST(date_trunc('month', din_instante) AS DATE) AS mes,
        round(sum(c), 1) AS carga_mwh, round(sum(i), 1) AS intercambio_liquido_mwh, count(*) AS horas
 FROM b GROUP BY ALL
 """, "Geração mensal por fonte (hidráulica, térmica, eólica, solar) e carga por subsistema (N, NE, S, SE e SIN), em "
-       "MWh, desde 2015, somando o balanço horário do ONS. Use para matriz de geração, participação das renováveis e "
-       "exportação do Nordeste. subsistema 'SIN' é o total do sistema.",
-       "ONS, Balanço de Energia nos Subsistemas, https://dados.ons.org.br/dataset/balanco-energia-subsistema",
-       "térmica inclui nuclear; solar é a centralizada despachada pelo ONS (a micro e minigeração entra abatendo a "
-       "carga); intercâmbio positivo = exportação do subsistema; mês corrente parcial (veja horas)")
-if ons_parquets("intercambio_nacional"):
-    tabela("ons_intercambio_mensal", f"""
+    "MWh, desde 2015, somando o balanço horário do ONS. Use para matriz de geração, participação das renováveis e "
+    "exportação do Nordeste. subsistema 'SIN' é o total do sistema.",
+    "ONS, Balanço de Energia nos Subsistemas, https://dados.ons.org.br/dataset/balanco-energia-subsistema",
+    "térmica inclui nuclear; solar é a centralizada despachada pelo ONS (a micro e minigeração entra abatendo a "
+    "carga); intercâmbio positivo = exportação do subsistema; mês corrente parcial (veja horas)")
+tabela("ons_intercambio_mensal", f"""
 SELECT trim(id_subsistema_origem) AS origem, trim(id_subsistema_destino) AS destino,
        CAST(date_trunc('month', din_instante) AS DATE) AS mes,
        round(sum(TRY_CAST(val_intercambiomwmed AS DOUBLE)), 1) AS intercambio_verificado_mwh,
        round(sum(TRY_CAST(val_intercambioprogmwmed AS DOUBLE)), 1) AS intercambio_programado_mwh, count(*) AS horas
 FROM read_parquet('{ons_parquets("intercambio_nacional")}', union_by_name=true) GROUP BY ALL
 """, "Intercâmbio mensal de energia entre subsistemas (origem -> destino), verificado e programado, em MWh, desde "
-       "2023, somando os valores horários do ONS.", "ONS, Intercâmbio Nacional, https://dados.ons.org.br/dataset/intercambio-nacional",
-       "valor negativo = fluxo no sentido destino -> origem; mês corrente parcial")
-if ons_parquets("geracao_usina"):
-    tabela("ons_geracao_usina_mensal", f"""
+    "2023, somando os valores horários do ONS.", "ONS, Intercâmbio Nacional, https://dados.ons.org.br/dataset/intercambio-nacional",
+    "valor negativo = fluxo no sentido destino -> origem; mês corrente parcial")
+tabela("ons_geracao_usina_mensal", f"""
 SELECT trim(id_subsistema) AS subsistema, id_estado AS uf, nom_usina AS usina, nullif(trim(ceg), '-') AS ceg,
        id_ons, nom_tipousina AS tipo_usina, nom_tipocombustivel AS combustivel, cod_modalidadeoperacao AS modalidade,
        CAST(date_trunc('month', din_instante) AS DATE) AS mes,
        round(sum(TRY_CAST(val_geracao AS DOUBLE)), 3) AS geracao_mwh, count(*) AS horas
 FROM read_parquet('{ons_parquets("geracao_usina")}', union_by_name=true) GROUP BY ALL
 """, "Geração verificada mensal de cada usina despachada ou monitorada pelo ONS, em MWh, desde 2020 (soma da "
-       "geração horária). ceg liga com usinas e usinas_proprietarios (use o núcleo do CEG, sem o sufixo de versão); "
-       "para fator de capacidade divida por potência × horas.",
-       "ONS, Geração por Usina em Base Horária, https://dados.ons.org.br/dataset/geracao-usina-2",
-       "só usinas do SIN com dado no ONS (Tipo I, II e conjuntos); 'Pequenas Usinas (MMGD)' são estimativas agregadas "
-       "por estado; conjuntos eólicos e solares aparecem com o nome do conjunto e sem ceg; mês corrente parcial")
+    "geração horária). ceg liga com usinas e usinas_proprietarios (use o núcleo do CEG, sem o sufixo de versão); "
+    "para fator de capacidade divida por potência × horas.",
+    "ONS, Geração por Usina em Base Horária, https://dados.ons.org.br/dataset/geracao-usina-2",
+    "só usinas do SIN com dado no ONS (Tipo I, II e conjuntos); 'Pequenas Usinas (MMGD)' são estimativas agregadas "
+    "por estado; conjuntos eólicos e solares aparecem com o nome do conjunto e sem ceg; mês corrente parcial")
 
 # ---------------------------------------------------------------- SND (ANBIMA/B3): debêntures com vencimento e taxa
 SND = os.path.join(RAW, "snd", "debentures_caracteristicas.xls")
-if os.path.exists(SND):
-    with open(SND, encoding="latin-1") as f:
-        linhas_snd = [l.rstrip("\r\n").split("\t") for l in f]
-    i_cab = next(i for i, l in enumerate(linhas_snd) if l and l[0].strip() == "Codigo do Ativo")
-    cab = linhas_snd[i_cab]
-    snd_csv = os.path.join(trabalho, "snd.csv")
-    with open(snd_csv, "w", newline="") as g:
-        w = csv.writer(g, delimiter=";", quoting=csv.QUOTE_ALL)
-        w.writerow([f"c{j}" for j in range(len(cab))])
-        for l in linhas_snd[i_cab + 1:]:
-            if len(l) >= len(cab) - 2 and l[0].strip():
-                w.writerow([v.strip() for v in (l + [""] * len(cab))[:len(cab)]])
-    col = {nome.strip(): f"c{j}" for j, nome in reversed(list(enumerate(cab)))}  # primeira ocorrência de cada nome
+exigir(SND)
+with open(SND, encoding="latin-1") as f:
+    linhas_snd = [l.rstrip("\r\n").split("\t") for l in f]
+i_cab = next(i for i, l in enumerate(linhas_snd) if l and l[0].strip() == "Codigo do Ativo")
+cab = linhas_snd[i_cab]
+snd_csv = os.path.join(trabalho, "snd.csv")
+with open(snd_csv, "w", newline="") as g:
+    w = csv.writer(g, delimiter=";", quoting=csv.QUOTE_ALL)
+    w.writerow([f"c{j}" for j in range(len(cab))])
+    for l in linhas_snd[i_cab + 1:]:
+        if len(l) >= len(cab) - 2 and l[0].strip():
+            w.writerow([v.strip() for v in (l + [""] * len(cab))[:len(cab)]])
+col = {nome.strip(): f"c{j}" for j, nome in reversed(list(enumerate(cab)))}  # primeira ocorrência de cada nome
 
-    def c(nome):
-        return col[nome]
-    tabela("debentures_snd", f"""
+def c(nome):
+    return col[nome]
+tabela("debentures_snd", f"""
 WITH d AS (SELECT * FROM read_csv('{snd_csv}', delim=';', header=true, all_varchar=true, quote='"', escape='"')),
-setor AS (SELECT cnpj FROM empresas UNION SELECT cnpj FROM agentes_aneel WHERE geracao OR transmissao OR distribuicao)
+-- Três origens, em colunas separadas: "outorga de geração na ANEEL" pegava Vale, Sabesp e Suzano, que são
+-- AUTOPRODUTORAS (geram para a própria fábrica) e não empresas de energia. Por isso setor_eletrico não usa geracao.
+cvm AS (SELECT cnpj FROM empresas),
+conc AS (SELECT cnpj FROM agentes_aneel WHERE transmissao OR distribuicao),
+ger AS (SELECT cnpj FROM agentes_aneel WHERE geracao)
 SELECT d.{c('Codigo do Ativo')} AS codigo, d.{c('Empresa')} AS emissora, fmt_cnpj(d.{c('CNPJ')}) AS cnpj,
-       fmt_cnpj(d.{c('CNPJ')}) IN (SELECT cnpj FROM setor) AS setor_eletrico,
+       fmt_cnpj(d.{c('CNPJ')}) IN (SELECT cnpj FROM cvm) AS emissora_cvm,
+       fmt_cnpj(d.{c('CNPJ')}) IN (SELECT cnpj FROM conc) AS concessionaria_aneel,
+       fmt_cnpj(d.{c('CNPJ')}) IN (SELECT cnpj FROM ger) AS gerador_ou_autoprodutor_aneel,
+       fmt_cnpj(d.{c('CNPJ')}) IN (SELECT cnpj FROM cvm) OR fmt_cnpj(d.{c('CNPJ')}) IN (SELECT cnpj FROM conc)
+         AS setor_eletrico,
        d.{c('Situacao')} AS situacao, d.{c('Emissao')} AS emissao, d.{c('Serie')} AS serie, d.{c('ISIN')} AS isin,
        data_br(d.{c('Data de Emissao')}) AS data_emissao, data_br(d.{c('Data de Vencimento')}) AS data_vencimento,
        data_br(d.{c('Data de Saida / Novo Vencimento')}) AS data_saida_ou_novo_vencimento, d.{c('Motivo de Saida')} AS motivo_saida,
@@ -1193,28 +1848,761 @@ SELECT d.{c('Codigo do Ativo')} AS codigo, d.{c('Empresa')} AS emissora, fmt_cnp
        TRY_CAST(d.{c('Quantidade Emitida')} AS BIGINT) AS quantidade_emitida,
        TRY_CAST(d.{c('Quantidade em Mercado')} AS BIGINT) AS quantidade_em_mercado,
        num_br(d.{c('Valor Nominal na Emissao')}) AS valor_nominal_emissao_brl,
-       num_br(d.{c('Valor Nominal Atual')}) AS valor_nominal_atual_brl, data_br(d.{c('Data Ult. VNA')}) AS data_valor_nominal_atual,
+       num_br(d.{c('Valor Nominal Atual')}) AS valor_nominal_atual_brl,
+       -- 01/01/1900 no SND é "sem data do último VNA" (1 debênture), não uma data: NULL para não datar o saldo em 1900
+       nullif(data_br(d.{c('Data Ult. VNA')}), DATE '1900-01-01') AS data_valor_nominal_atual,
        TRY_CAST(d.{c('Quantidade Emitida')} AS BIGINT) * num_br(d.{c('Valor Nominal na Emissao')}) AS volume_emitido_brl,
        TRY_CAST(d.{c('Quantidade em Mercado')} AS BIGINT) * num_br(d.{c('Valor Nominal Atual')}) AS saldo_em_mercado_brl,
        d.{c('Resgate Antecipado')} = 'S' AS permite_resgate_antecipado, d.{c('Coordenador Lider')} AS coordenador_lider,
        d.{c('Agente Fiduciario')} AS agente_fiduciario
 FROM d
 """, "Todas as debêntures registradas no SND (Sistema Nacional de Debêntures), com CNPJ da emissora, data de emissão "
-       "e de vencimento, indexador (DI, IPCA, PRE...) e taxa, se é incentivada (Lei 12.431), garantia, quantidade e "
-       "saldo em mercado. setor_eletrico marca emissoras do setor (CVM ou agentes da ANEEL). Use para cronograma de "
-       "vencimentos e custo da dívida em debêntures de uma empresa (filtre situacao = 'Registrado' para as vigentes).",
-       "SND/ANBIMA, Características das Debêntures, https://www.debentures.com.br/exploreosnd/consultaadados/"
-       "emissoesdedebentures/caracteristicas_r.asp",
-       "saldo_em_mercado_brl = quantidade em mercado × valor nominal atualizado na data_valor_nominal_atual, sem juros "
-       "acumulados (aproxima o principal, não o valor contábil); não inclui amortizações futuras por data (só o "
-       "vencimento final); taxa_juros_pct_aa é a sobretaxa ou taxa pré conforme o índice (ex.: DI + 1,2% ou IPCA + 6%), "
-       "e percentual_indice é o % do índice (ex.: 100% do DI). SPEs de um grupo emitem com CNPJ próprio: junte com "
-       "participacoes_societarias para somar por grupo")
+    "e de vencimento, indexador (DI, IPCA, PRE...) e taxa, se é incentivada (Lei 12.431), garantia, quantidade e "
+    "saldo em mercado. Três marcas de origem, independentes: emissora_cvm (1.283 debêntures de companhia de energia "
+    "registrada na CVM, tabela empresas), concessionaria_aneel (1.146, agente de transmissão ou distribuição) e "
+    "gerador_ou_autoprodutor_aneel (2.624, tem outorga de geração — inclui AUTOPRODUTOR industrial, que gera para a "
+    "própria fábrica). setor_eletrico = emissora_cvm OR concessionaria_aneel (1.629 debêntures). Use para cronograma de "
+    "vencimentos e custo da dívida em debêntures de uma empresa (filtre situacao = 'Registrado' para as vigentes).",
+    "SND/ANBIMA, Características das Debêntures, https://www.debentures.com.br/exploreosnd/consultaadados/"
+    "emissoesdedebentures/caracteristicas_r.asp",
+    "saldo_em_mercado_brl = quantidade em mercado × valor nominal atualizado na data_valor_nominal_atual, sem juros "
+    "acumulados (aproxima o principal, não o valor contábil); não inclui amortizações futuras por data (só o "
+    "vencimento final); taxa_juros_pct_aa é a sobretaxa ou taxa pré conforme o índice (ex.: DI + 1,2% ou IPCA + 6%), "
+    "e percentual_indice é o % do índice (ex.: 100% do DI). SPEs de um grupo emitem com CNPJ próprio: junte com "
+    "participacoes_societarias para somar por grupo. 4 debêntures da VESTE (LLIS10, LLIS17, LLIS18 e LLIS20) vêm com "
+    "data_vencimento 31/12/9999 no SND, que é o marcador de vencimento não definido: filtre "
+    "data_vencimento < DATE '2100-01-01' antes de montar cronograma de vencimentos. NÃO use "
+    "gerador_ou_autoprodutor_aneel como 'empresa de energia': ele inclui autoprodutor industrial, e é por isso que "
+    "Vale, Sabesp e Suzano aparecem marcados ali (1.686 debêntures só têm essa marca)")
+
+# ---------------------------------------------------------------- EPE: Anuário Estatístico de Energia Elétrica
+# Base bruta do Anuário: consumo mensal realizado de 2011 a 2025, aberto por UF, classe, tensão e faixa de consumo.
+# É a única das quatro planilhas lida tipada (sem all_varchar): não há rodapé de texto, então a inferência funciona.
+# A coluna Data é um DOUBLE no formato yyyymmdd (20110101) — a macro data_br não serve aqui.
+ANUARIO = exigir(os.path.join(ANEEL, "anuario_dados_brutos.xlsx"))
+tabela("epe_anuario_consumo_mensal", f"""
+SELECT strptime(CAST(CAST("Data" AS BIGINT) AS VARCHAR), '%Y%m%d')::DATE AS mes,
+       "TipoConsumidor" AS tipo_consumidor, "Sistema" AS subsistema, "UF" AS uf,
+       "Setor Econômico - N1" AS classe, nullif("Setor Econômico - N2", 'TOTAL') AS subclasse,
+       nullif("Setor Econômico - N3", 'TOTAL') AS subclasse_detalhe,
+       "Tipo Tensão - N1" AS grupo_tensao, nullif("Tipo Tensão - N2", 'TOTAL') AS subgrupo_tensao,
+       nullif("Tipo Tensão - N3", 'TOTAL') AS subgrupo_tensao_detalhe,
+       "Faixa de Consumo N1" AS faixa_consumo, "Faixa de Consumo N2" AS faixa_consumo_detalhe,
+       CAST("Consumidores" AS BIGINT) AS consumidores, "Consumo" AS consumo_mwh
+FROM read_xlsx('{ANUARIO}', sheet='Sheet1', header=true)
+""", "Consumo de energia elétrica e número de consumidores REALIZADOS, mês a mês de 01/2011 a 12/2025, por UF, "
+     "subsistema, tipo de consumidor (Cativo ou Livre), classe de consumo em três níveis (classe, subclasse, "
+     "subclasse_detalhe), grupo e subgrupo de tensão e faixa de consumo em kWh. consumo_mwh em MWh; consumidores é o "
+     "estoque de unidades consumidoras do mês. É a série de consumo mais longa e mais detalhada do banco: começa em "
+     "2011, inclui consumidor livre e é a única com abertura por faixa de consumo e por nível de tensão.",
+    "EPE, Anuário Estatístico de Energia Elétrica, base bruta de consumo (anuario_dados_brutos.xlsx)",
+    "a unidade é MWh (a planilha não diz): a soma de 2024 dá 561,57 milhões de MWh, que é o consumo total de 561,5 TWh "
+    "publicado pela EPE. consumidores é ESTOQUE mensal: não some ao longo dos meses; para o ano use a média "
+    "(sum(consumidores)/12 = 93,29 milhões em 2024 e 94,83 em 2025). 'TOTAL' nas colunas N2/N3 da origem significa "
+    "'sem desagregação neste nível' e foi anulado com nullif — quem somar sem anular conta duas vezes. 14.640 linhas "
+    "com consumo_mwh NULL, 5.882 com consumidores NULL e 876 com consumo_mwh NEGATIVO (ajuste retroativo da "
+    "distribuidora): filtre antes de agregar. Perímetros diferentes dos de mercado_distribuidoras_mensal (por "
+    "distribuidora, de 2020 em diante, com faturamento) e de ons_carga_diaria (carga do SIN em MW médio, com perdas): "
+    "os três números não fecham entre si e não devem entrar na mesma série")
+
+# ---------------------------------------------------------------- EPE: PDE 2035 (Plano Decenal de Expansão de Energia)
+# Uma pasta de trabalho por capítulo do plano dentro do zip; os nomes dos membros têm acento e espaço. Extraímos só os
+# 8 capítulos que viram tabela: 01 (economia), 05 (petróleo e gás), 06 (derivados) e 08 (biocombustíveis) estão fora do
+# recorte de setor elétrico. O inventário aba a aba, com o motivo de cada exclusão, está em data/FONTES_PLANILHAS.md.
+PDE_ZIP = exigir(os.path.join(ANEEL, "pde2035_dados.zip"))
+PDE_MEMBROS = {
+    2: "PDE 2035_Dados_Capítulo 02_Demanda de Energia.xlsx",
+    3: "PDE 2035_Dados_Capítulo 03_Geração Centralizada de Energia Elétrica.xlsx",
+    4: "PDE 2035_Dados_Capítulo 04_Transmissão de Energia Elétrica.xlsx",
+    7: "PDE 2035_Dados_Capítulo 07_Gás Natural.xlsx",
+    9: "PDE 2035_Dados_Capítulo 09_Eficiência Energética e Recursos Energéticos Distribuídos.xlsx",
+    10: "PDE 2035_Dados_Capítulo 10_Análise Socioambiental.xlsx",
+    11: "PDE 2035_Dados_Capítulo 11_Transição Energética.xlsx",
+    12: "PDE 2035_Dados_Capítulo 12_Consolidação dos Resultados.xlsx",
+}
+with zipfile.ZipFile(PDE_ZIP) as z:
+    dentro = set(z.namelist())
+    faltando = [m for m in PDE_MEMBROS.values() if m not in dentro]
+    if faltando:
+        raise SystemExit(f"construir.py: {PDE_ZIP} não tem os membros {faltando} (a EPE republicou o zip?)")
+    for membro in PDE_MEMBROS.values():
+        z.extract(membro, trabalho)
+PDE_CAP = {cap: os.path.join(trabalho, m) for cap, m in PDE_MEMBROS.items()}
+# Layout fixo das 254 abas do PDE: L1 'Índice', L2 vazia, L3 título, L4 'Fonte:', L5 vazia, L6 cabeçalho, dados de L7.
+PDE_ANO = 'TRY_CAST("Ano" AS INTEGER) BETWEEN 1990 AND 2100'  # descarta o cabeçalho e a nota de rodapé em texto
+MESES_PDE = ("['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro',"
+             "'Novembro','Dezembro']")
+
+
+def pde(cap, aba, faixa, cabecalho="true"):
+    """Leitura de uma aba do PDE. all_varchar é obrigatório: quase toda aba tem nota de rodapé em texto abaixo dos
+    dados e sem ele a leitura morre em "Could not convert string 'Nota:' to DOUBLE". O range precisa ser um intervalo
+    completo ('A6' sozinho dá Binder Error). Depois cada coluna é tipada por TRY_CAST."""
+    return (f"read_xlsx('{PDE_CAP[cap]}', sheet='{aba}', range='{faixa}', header={cabecalho}, "
+            f"all_varchar=true, empty_as_varchar=true)")
+
+
+def pde_por_ano(cap, aba, faixa, categoria, valor, sufixo, excluir=""):
+    """Aba larga da EPE (uma linha por ano, uma coluna por série) no formato longo do banco. Atenção: no WHERE o nome
+    da categoria resolve para a coluna CRUA do UNPIVOT (ainda com o sufixo de unidade), não para o alias do SELECT —
+    por isso o filtro de exclusão repete o replace, senão a coluna de total passa e vira uma categoria falsa."""
+    ex = f" AND replace({categoria}, '{sufixo}', '') NOT IN ({excluir})" if excluir else ""
+    return f"""
+WITH bruto AS (SELECT * FROM {pde(cap, aba, faixa)} WHERE {PDE_ANO})
+SELECT CAST(ano AS INTEGER) AS ano, replace({categoria}, '{sufixo}', '') AS {categoria},
+       TRY_CAST(valor AS DOUBLE) AS {valor}
+FROM (UNPIVOT (SELECT "Ano" AS ano, * EXCLUDE ("Ano") FROM bruto) ON COLUMNS(* EXCLUDE (ano))
+      INTO NAME {categoria} VALUE valor)
+WHERE valor IS NOT NULL{ex} ORDER BY ano, {categoria}
+"""
+
+
+def fonte_pde(cap, abas):
+    return (f"EPE/MME, Plano Decenal de Expansão de Energia 2035, dados abertos das figuras e tabelas "
+            f"(pde2035_dados.zip), capítulo {cap:02d}, aba {abas}")
+
+
+# Vale para TODAS as tabelas epe_pde2035_*: é projeção, não realizado. Fica no começo do ressalvas de cada uma.
+PDE_PROJ = ("PROJEÇÃO, não realizado: ano-base 2025 e horizonte 2035 (a lista de transmissão vai a 2038). Todo número "
+            "vem de rodada do modelo de expansão da EPE com as premissas do Cenário de Referência, salvo onde a "
+            "própria coluna nomeia outro cenário, e os valores monetários estão em reais de 2025 (câmbio referencial "
+            "declarado no plano: R$ 6,10/US$ de dez/2024). NÃO encadeie uma série do PDE com série realizada (ANEEL, "
+            "ONS, CCEE) na mesma coluna: o plano parte da base de dez/2025 e reprojeta o histórico recente. ")
+
+# ---- capítulo 02: demanda de energia
+tabela("epe_pde2035_carga_energia_cenario",
+       pde_por_ano(2, "Figura 2-25", "A6:D40", "cenario", "carga_gwmed", " (GWmédio)"),
+       "Carga de energia do SIN projetada ano a ano (2025-2035) nos três cenários de demanda da EPE (Cenário "
+       "Inferior, Referência e Superior), em GW médio.", fonte_pde(2, "Figura 2-25"),
+       PDE_PROJ + "é CARGA, não consumo: inclui perdas e está em GW médio, então não compara com consumo_mwh de "
+       "epe_anuario_consumo_mensal nem com consumo_rede_twh de epe_pde2035_red_demanda_eletricidade. Ao citar 'a "
+       "carga projetada' diga o cenário: em 2035 o superior (138,29 GWméd) está 20,7% acima do de referência (114,61)")
+
+tabela("epe_pde2035_demanda_maxima_sin_mes", f"""
+WITH bruto AS (SELECT * FROM {pde(2, 'Figura 2-22', 'A6:C40')} WHERE "Mês" IS NOT NULL)
+SELECT CAST(regexp_extract(serie, '\\d{{4}}') AS INTEGER) AS ano,
+       list_position({MESES_PDE}, "Mês") AS mes, TRY_CAST(valor AS DOUBLE) AS demanda_maxima_gwh_h
+FROM (UNPIVOT bruto ON COLUMNS(* EXCLUDE ("Mês")) INTO NAME serie VALUE valor)
+WHERE valor IS NOT NULL ORDER BY ano, mes
+""", "Demanda máxima instantânea projetada do SIN, mês a mês, nos dois anos-limite do plano (2025 e 2035), em GWh/h "
+     "(= GW médio na hora de ponta).", fonte_pde(2, "Figura 2-22"),
+    PDE_PROJ + "só 2025 e 2035, não a série completa: a figura de origem compara os extremos do decênio. O mês vem "
+    "como nome em português na planilha e foi convertido para número")
+exigir_sem_nulo("epe_pde2035_demanda_maxima_sin_mes", "mes")
+
+tabela("epe_pde2035_curva_carga_horaria", f"""
+SELECT list_position(['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'], "Mês") AS mes,
+       CAST("Hora" AS INTEGER) AS hora, "Classe" AS classe, TRY_CAST("Carga (GWh/h)" AS DOUBLE) AS carga_gwh_h
+FROM {pde(2, 'Figura 2-23', 'A6:D2000')}
+WHERE "Mês" IS NOT NULL AND TRY_CAST("Hora" AS INTEGER) IS NOT NULL
+ORDER BY classe, mes, hora
+""", "Curva de carga horária projetada para o dia de ponta de cada mês de 2035, hora a hora (0 a 23) e por classe de "
+     "consumo, em GWh/h. 12 meses x 24 horas x 5 classes.", fonte_pde(2, "Figura 2-23"),
+    PDE_PROJ + "é só 2035 e só o DIA DE PONTA de cada mês, não curva média nem série horária do ano inteiro. A classe "
+    "'Perdas e Diferenças' não é consumo: é o fechamento do balanço, e somar as cinco classes dá a carga, não o "
+    "consumo. Nesta aba os meses vêm abreviados (Jan), ao contrário de epe_pde2035_demanda_maxima_sin_mes (Janeiro)")
+exigir_sem_nulo("epe_pde2035_curva_carga_horaria", "mes")
+
+tabela("epe_pde2035_crescimento_consumo_classe", f"""
+WITH bruto AS (SELECT * FROM {pde(2, 'Figura 2-26', 'A6:D40')} WHERE "Classe" IS NOT NULL)
+SELECT "Classe" AS classe, replace(cenario, ' (% ao ano)', '') AS cenario,
+       round(TRY_CAST(valor AS DOUBLE) * 100, 4) AS crescimento_pct_aa
+FROM (UNPIVOT bruto ON COLUMNS(* EXCLUDE ("Classe")) INTO NAME cenario VALUE valor)
+WHERE valor IS NOT NULL ORDER BY classe, cenario
+""", "Taxa média anual de crescimento do consumo de eletricidade na rede no decênio 2025-2035, por classe "
+     "(Residencial, Industrial, Comercial e Outros) e cenário de demanda, em % ao ano.", fonte_pde(2, "Figura 2-26"),
+    PDE_PROJ + "a planilha guarda FRAÇÃO (0,03039) apesar do título dizer '%': multiplicado por 100 e arredondado em "
+    "4 casas, e é por isso que a unidade está no nome da coluna. É a taxa média do decênio, não taxa ano a ano. A "
+    "classe 'Outros' agrega Rural, Poder Público, Iluminação Pública e Serviço Público, que em "
+    "epe_anuario_consumo_mensal são quatro classes separadas: não cruze classe a classe sem reagrupar")
+
+# ---- capítulo 03: geração centralizada
+tabela("epe_pde2035_capacidade_instalada_fonte",
+       pde_por_ano(3, "Figura 3-6", "A6:K40", "fonte", "potencia_gw", ""),
+       "Capacidade instalada existente e contratada do SIN por fonte, ano a ano de 2025 a 2035, em GW. 10 fontes "
+       "(UHE, PCH, EOLICA, Solar, GAS, CARVAO, NUCLEAR, BIOMASSA, PCT e DIESEL / ÓLEO).", fonte_pde(3, "Figura 3-6"),
+       PDE_PROJ + "a grafia da fonte é a da planilha, inconsistente na origem (EOLICA e CARVAO em maiúscula sem "
+       "acento convivendo com Solar em caixa mista, e 'DIESEL / ÓLEO' com espaços em volta da barra): quem cruzar com "
+       "usinas (SIGA) precisa de tabela de equivalência. 'Solar' INCLUI MMGD — marca 60,27 GW em 2025, muito acima da "
+       "solar centralizada do SIGA —, então esta tabela não é comparável com o total de usinas/capacidade_por_grupo e "
+       "somá-la com epe_pde2035_mmgd_capacidade_cenario conta a MMGD duas vezes. PCT é pequena central termelétrica e "
+       "PCH pequena central hidrelétrica; a planilha não abre a legenda")
+
+tabela("epe_pde2035_demanda_subsistema", f"""
+SELECT CAST("Ano" AS INTEGER) AS ano, TRY_CAST("Sudeste (MWmédio)" AS DOUBLE) AS sudeste_mwmed,
+       TRY_CAST("Sul (MWmédio)" AS DOUBLE) AS sul_mwmed, TRY_CAST("Nordeste (MWmédio)" AS DOUBLE) AS nordeste_mwmed,
+       TRY_CAST("Norte (MWmédio)" AS DOUBLE) AS norte_mwmed,
+       TRY_CAST("Demanda Máxima - SIN (MW)" AS DOUBLE) AS demanda_maxima_sin_mw
+FROM {pde(3, 'Figura 3-7', 'A6:F40')} WHERE {PDE_ANO} ORDER BY ano
+""", "Demanda projetada de cada subsistema (Sudeste/Centro-Oeste, Sul, Nordeste e Norte) em MW médio e demanda máxima "
+     "do SIN em MW de ponta, ano a ano de 2026 a 2035, no cenário de referência.", fonte_pde(3, "Figura 3-7"),
+    PDE_PROJ + "tabela larga de propósito: as quatro colunas de subsistema estão em MW MÉDIO e a última em MW de "
+    "PONTA — despivotar jogaria duas unidades na mesma coluna de valor. Começa em 2026, não 2025. 'Sudeste' aqui é o "
+    "submercado Sudeste/Centro-Oeste, que em epe_anuario_consumo_mensal aparece como 'Sudeste / Centro-Oeste'")
+
+tabela("epe_pde2035_mmgd_expansao_fonte", f"""
+WITH bruto AS (SELECT * FROM {pde(3, 'Figura 3-8', 'A6:K40')} WHERE {PDE_ANO})
+SELECT CAST(ano AS INTEGER) AS ano,
+       regexp_replace(serie, '^(Potência \\(MW\\)|Energia \\(MWmédio\\)) - ', '') AS fonte,
+       CASE WHEN serie LIKE 'Potência%' THEN 'potencia_mw' ELSE 'energia_mwmed' END AS grandeza,
+       TRY_CAST(valor AS DOUBLE) AS valor
+FROM (UNPIVOT (SELECT "Ano" AS ano, * EXCLUDE ("Ano") FROM bruto) ON COLUMNS(* EXCLUDE (ano))
+      INTO NAME serie VALUE valor)
+WHERE valor IS NOT NULL AND fonte <> 'Total' ORDER BY ano, fonte, grandeza
+""", "Expansão projetada da micro e minigeração distribuída (MMGD) de 2026 a 2035, por fonte (Fotovoltaica, Eólica, "
+     "Termelétrica e CGH), em potência e em energia. A unidade está na coluna grandeza: 'potencia_mw' (MW) ou "
+     "'energia_mwmed' (MW médio).", fonte_pde(3, "Figura 3-8"),
+    PDE_PROJ + "coluna valor GENÉRICA: a unidade está em grandeza, não no nome, porque a aba mede as mesmas fontes de "
+    "duas formas. SEMPRE filtre grandeza antes de agregar. A energia em MWmédio vem arredondada a inteiro na planilha "
+    "enquanto a potência tem 8 decimais: precisão diferente na mesma linha. As colunas de total foram descartadas e "
+    "são recalculáveis. Sobrepõe-se a gd_mmgd (ANEEL, cadastro de conexões realizadas) no conceito: não encadeie as "
+    "duas séries, uma é cadastro e a outra é modelo de adoção")
+
+tabela("epe_pde2035_custos_referencia_fonte", f"""
+SELECT 'capex_brl_kw' AS grandeza, "Tipo" AS tecnologia, TRY_CAST("Investimento (R$/kW)" AS DOUBLE) AS valor
+FROM {pde(3, 'Figura 3-19', 'A6:B60')} WHERE "Tipo" IS NOT NULL
+UNION ALL
+SELECT 'om_fixo_brl_kw_ano', "Tipo", TRY_CAST("O&M Anual (R$/kW.ano)" AS DOUBLE)
+FROM {pde(3, 'Figura 3-20', 'A6:B60')} WHERE "Tipo" IS NOT NULL
+UNION ALL
+SELECT 'encargos_brl_kw_ano', "Tipo", TRY_CAST("Encargos (R$/kW.ano)" AS DOUBLE)
+FROM {pde(3, 'Figura 3-21', 'A6:B60')} WHERE "Tipo" IS NOT NULL
+ORDER BY grandeza, tecnologia
+""", "Parâmetros de custo de referência que a EPE usou no modelo de expansão, por tecnologia de geração ou "
+     "armazenamento: CAPEX ('capex_brl_kw', R$/kW), O&M fixo anual ('om_fixo_brl_kw_ano', R$/kW.ano) e encargos, taxas "
+     "e impostos ('encargos_brl_kw_ano', R$/kW.ano). A unidade está na coluna grandeza.",
+    fonte_pde(3, "Figuras 3-19, 3-20 e 3-21"),
+    PDE_PROJ + "coluna valor GENÉRICA: filtre grandeza antes de comparar. As três abas NÃO têm a mesma lista de "
+    "tecnologias (32, 22 e 32 linhas; a de O&M não abre Fotovoltaica em faixas), então uma consulta que junte CAPEX e "
+    "O&M pela tecnologia perde linhas — use LEFT JOIN consciente disso. As 'Faixas' (Fotovoltaica e Bateria - Faixa "
+    "1/2/3) são faixas de custo do modelo, não de porte, e a planilha não define os limites. São parâmetros de "
+    "entrada em R$ de 2025, não custo observado em leilão")
+
+tabela("epe_pde2035_expansao_indicativa",
+       pde_por_ano(3, "Figura 3-23", "A6:K40", "fonte", "potencia_acumulada_mw", " (MW)", excluir="'Total'"),
+       "Expansão indicativa ACUMULADA da geração no horizonte 2026-2035, por fonte (Hidro, Eólica, Solar, UTE Flex, "
+       "UTE Inflex, UTE Bio, Nuclear, Armazenamento e RD), em MW. É o resultado central do capítulo de geração.",
+       fonte_pde(3, "Figura 3-23"),
+       PDE_PROJ + "é ACUMULADA: o valor de 2035 é o total do decênio e a adição de um ano é a diferença entre dois "
+       "anos consecutivos — somar a coluna ao longo dos anos é erro grosseiro. É INDICATIVA: é a expansão que o modelo "
+       "escolhe, não obra contratada, então não compare com expansao_geracao (RALIE/ANEEL, obra declarada em "
+       "andamento) nem com resultado de leilão. 'RD' é resposta da demanda e 'Armazenamento' é bateria: entram como "
+       "oferta no modelo mas não são geração. Começa em 2026 porque a expansão do primeiro ano já é a contratada, que "
+       "está em epe_pde2035_capacidade_instalada_fonte. A coluna de total da planilha foi descartada e fecha exata com "
+       "a soma das 9 fontes em todos os 10 anos")
+
+tabela("epe_pde2035_expansao_termica",
+       pde_por_ano(3, "Figura 3-24", "A6:H40", "tipo_termica", "potencia_acumulada_mw", " (MW)"),
+       "Expansão indicativa ACUMULADA das usinas térmicas de 2026 a 2035, aberta por tipo (Gás Natural Flexível, Gás "
+       "Natural Inflexível, Retrofit Térmica, Retrofit Biocombustível, Biomassa, RSU e Carvão), em MW.",
+       fonte_pde(3, "Figura 3-24"),
+       PDE_PROJ + "acumulada, como epe_pde2035_expansao_indicativa. A nota da planilha é a definição oficial dos "
+       "retrofits: 'Retrofit Térmica inclui usinas a gás natural flexíveis, carvão mineral e conversão de usinas a "
+       "óleo combustível e diesel para biocombustível' — ou seja, retrofit é conversão de usina EXISTENTE, não usina "
+       "nova. 'Carvão' fica zerado em todo o decênio (é zero real, não dado faltante). A soma das colunas desta tabela "
+       "NÃO iguala UTE Flex + UTE Inflex + UTE Bio de epe_pde2035_expansao_indicativa, porque aqui os retrofits "
+       "aparecem separados")
+
+tabela("epe_pde2035_cmo_projetado_mes", f"""
+WITH bruto AS (SELECT * FROM {pde(3, 'Figura 3-28', 'A6:D40')} WHERE "Mês" IS NOT NULL)
+SELECT CAST(regexp_extract(serie, '\\d{{4}}') AS INTEGER) AS ano, list_position({MESES_PDE}, "Mês") AS mes,
+       'SE/CO' AS subsistema, TRY_CAST(valor AS DOUBLE) AS cmo_brl_mwh
+FROM (UNPIVOT bruto ON COLUMNS(* EXCLUDE ("Mês")) INTO NAME serie VALUE valor)
+WHERE valor IS NOT NULL ORDER BY ano, mes
+""", "Custo marginal de operação (CMO) médio projetado do submercado Sudeste/Centro-Oeste, mês a mês, nos três anos de "
+     "corte do plano (2026, 2030 e 2035), em R$/MWh de 2025.", fonte_pde(3, "Figura 3-28"),
+    PDE_PROJ + "só três anos de corte (2026, 2030 e 2035) e só o SE/CO: a planilha não traz os outros submercados nem "
+    "os anos intermediários. É a MÉDIA das 2.000 séries hidrológicas do modelo, não um CMO esperado de mercado — o "
+    "salto de dezembro de 2030 (R$ 42,34) para dezembro de 2035 (R$ 217,53) é resultado de premissa de escassez, não "
+    "previsão de preço. subsistema é literal derivado do título da figura, não lido de célula. Em R$ de 2025: não "
+    "compare direto com ons_cmo_mensal nem com ons_cmo_semihora, que estão em reais correntes")
+exigir_sem_nulo("epe_pde2035_cmo_projetado_mes", "mes")
+
+tabela("epe_pde2035_geracao_hidro_termica_mes", f"""
+SELECT DATE '1899-12-30' + TRY_CAST("Mês" AS INTEGER) AS mes,
+       TRY_CAST("Geração hidrelétrica média (MWmédio)" AS DOUBLE) AS geracao_hidraulica_mwmed,
+       TRY_CAST("Geração termelétrica média (MWmédio)" AS DOUBLE) AS geracao_termica_mwmed
+FROM {pde(3, 'Figura 3-29', 'A6:C200')} WHERE TRY_CAST("Mês" AS INTEGER) > 20000 ORDER BY mes
+""", "Geração hidrelétrica e termelétrica média projetada do SIN, mês a mês de 01/2026 a 12/2035 (120 meses), em MW "
+     "médio.", fonte_pde(3, "Figura 3-29"),
+    PDE_PROJ + "a célula de mês é uma data do Excel e com all_varchar volta como o serial cru em texto ('46023'): a "
+    "conversão é DATE '1899-12-30' + inteiro, e um CAST AS DATE ingênuo devolveria NULL em todas as linhas. O filtro "
+    "serial > 20000 é o que corta cabeçalho e rodapé. Só hidráulica e térmica: eólica e solar não estão nesta figura, "
+    "então as duas colunas NÃO somam a geração total do SIN. Complementa ons_geracao_fonte_mensal (realizado)")
+
+tabela("epe_pde2035_concessoes_vincendas", f"""
+SELECT CAST("Ano" AS INTEGER) AS ano, TRY_CAST("Potência Acumulada (MW)" AS DOUBLE) AS potencia_acumulada_mw,
+       CAST(TRY_CAST("Número de contratos acumulados" AS DOUBLE) AS INTEGER) AS contratos_acumulados
+FROM {pde(3, 'Figura 3-31', 'A6:C40')} WHERE {PDE_ANO} ORDER BY ano
+""", "Potência e número de contratos de concessão de GERAÇÃO que vencem no decênio, acumulados ano a ano de 2025 a "
+     "2035 (15.462,16 MW e 45 contratos no total).", fonte_pde(3, "Figura 3-31"),
+    PDE_PROJ + "as duas colunas são ACUMULADAS: 15.462,16 MW e 45 contratos em 2035 são o total do período, não do "
+    "ano. A base declarada no título é o SIGA da ANEEL em dez/2025, um retrato datado — a tabela usinas tem o SIGA "
+    "atualizado e pode divergir. A lista usina a usina não está na planilha (está no Anexo I-6 do relatório), então "
+    "não há como abrir por usina")
+
+# ---- capítulo 04: transmissão
+tabela("epe_pde2035_cargas_conexao_rede_basica", f"""
+SELECT CAST("Ano" AS INTEGER) AS ano, TRY_CAST("Data Center (GW)" AS DOUBLE) AS data_center_gw,
+       TRY_CAST("Hidrogênio e Amônia (GW)" AS DOUBLE) AS hidrogenio_amonia_gw,
+       TRY_CAST("Carga acumulada (GW)" AS DOUBLE) AS carga_acumulada_gw
+FROM {pde(4, 'Figura 4-3', 'A6:D40')} WHERE {PDE_ANO} ORDER BY ano
+""", "Potência dos projetos de data center e de hidrogênio/amônia com processo de conexão à Rede Básica aberto no MME, "
+     "por ano de entrada pretendida, de 2026 a 2038, em GW. data_center_gw e hidrogenio_amonia_gw são a adição do ano; "
+     "carga_acumulada_gw é o estoque.", fonte_pde(4, "Figura 4-3"),
+    PDE_PROJ + "é FILA de solicitação de acesso no MME (data-base outubro de 2025), não carga confirmada nem "
+    "contratada, e a única aba recomendada cuja fonte não é 'Elaboração EPE'. O título promete abertura por UF, mas "
+    "NÃO há coluna de UF na aba — não prometa corte estadual a partir daqui. Não reconstitua o acumulado somando as "
+    "duas primeiras colunas: em 2027 o acumulado (5,177) já é maior que a soma delas (2,775), porque inclui carga de "
+    "outras naturezas. Vai até 2038, três anos além do horizonte do plano")
+
+tabela("epe_pde2035_transmissao_investimento_cenario",
+       pde_por_ano(4, "Figura 4-19", "A6:D40", "cenario", "investimento_acumulado_brl_bilhoes", " (R$ bilhões)"),
+       "Investimento ACUMULADO em transmissão ano a ano de 2026 a 2035 nos três cenários de expansão da EPE "
+       "(Otimista, Referência e Pessimista), em R$ bilhões de 2025.", fonte_pde(4, "Figura 4-19"),
+       PDE_PROJ + "os cenários de TRANSMISSÃO têm nomes e significado diferentes dos de DEMANDA: aqui são "
+       "Otimista/Referência/Pessimista (antecipação ou atraso de obra) e no capítulo 2 são "
+       "Superior/Referência/Inferior (crescimento econômico) — NÃO faça JOIN pelo nome do cenário com "
+       "epe_pde2035_carga_energia_cenario. Acumulado: o valor de 2035 (Otimista 147,83; Referência 116,90; Pessimista "
+       "98,83) é o total do decênio, e o pessimista congela em 98,83 a partir de 2032. Os três números são "
+       "reproduzíveis somando investimento_brl de epe_pde2035_transmissao_obras com o corte do ano do cenário <= 2035")
+
+tabela("epe_pde2035_transmissao_expansao_fisica", f"""
+WITH lt AS (SELECT * FROM {pde(4, 'Figura 4-24', 'A6:G40')} WHERE {PDE_ANO}),
+     se AS (SELECT * FROM {pde(4, 'Figura 4-27', 'A6:G40')} WHERE {PDE_ANO})
+SELECT CAST(ano AS INTEGER) AS ano, 'LT' AS tipo_ativo, replace(nivel_tensao, ' (km)', '') AS nivel_tensao,
+       TRY_CAST(valor AS DOUBLE) AS extensao_acumulada_km, NULL::DOUBLE AS capacidade_acumulada_mva
+FROM (UNPIVOT (SELECT "Ano" AS ano, * EXCLUDE ("Ano") FROM lt) ON COLUMNS(* EXCLUDE (ano))
+      INTO NAME nivel_tensao VALUE valor)
+WHERE valor IS NOT NULL AND nivel_tensao <> 'Total (km)'
+UNION ALL
+SELECT CAST(ano AS INTEGER), 'SE', replace(nivel_tensao, ' (MVA)', ''), NULL::DOUBLE, TRY_CAST(valor AS DOUBLE)
+FROM (UNPIVOT (SELECT "Ano" AS ano, * EXCLUDE ("Ano") FROM se) ON COLUMNS(* EXCLUDE (ano))
+      INTO NAME nivel_tensao VALUE valor)
+WHERE valor IS NOT NULL AND nivel_tensao <> 'Total (MVA)'
+ORDER BY ano, tipo_ativo, nivel_tensao
+""", "Expansão física ACUMULADA da transmissão no cenário de referência, ano a ano de 2026 a 2035 e por nível de "
+     "tensão (230 a 800 kV): km de linha quando tipo_ativo = 'LT' (extensao_acumulada_km) e MVA de transformação "
+     "quando tipo_ativo = 'SE' (capacidade_acumulada_mva).", fonte_pde(4, "Figuras 4-24 e 4-27"),
+    PDE_PROJ + "duas colunas de valor, uma sempre NULL: linha de LT não tem MVA e linha de SE não tem km (km e MVA "
+    "não são a mesma grandeza, por isso não há coluna 'valor' genérica aqui). Acumulado nos dois casos e só cenário de "
+    "referência. Os totais de 2035 (28.780,87 km e 89.018,32 MVA) NÃO batem com a soma obra a obra de "
+    "epe_pde2035_transmissao_obras no mesmo recorte (28.307 km e 79.512 MVA): a inconsistência é da própria EPE e não "
+    "tem explicação nos arquivos")
+
+tabela("epe_pde2035_transmissao_investimento_recorte", f"""
+WITH outorga AS (SELECT * FROM {pde(4, 'Figura 4-21', 'A6:D20')} WHERE "Categoria" IS NOT NULL)
+-- INTO NAME rotulo, e não categoria: a coluna "Categoria" da própria aba (LT/SE) tem o mesmo nome ignorando a caixa,
+-- e o replace acabaria lendo LT/SE em vez do rótulo da série (Com Outorga, Sem Outorga, Total).
+SELECT "Categoria" AS tipo_ativo, 'outorga' AS recorte, replace(rotulo, ' (R$ bilhões)', '') AS categoria,
+       TRY_CAST(valor AS DOUBLE) AS investimento_brl_bilhoes
+FROM (UNPIVOT outorga ON COLUMNS(* EXCLUDE ("Categoria")) INTO NAME rotulo VALUE valor) WHERE valor IS NOT NULL
+UNION ALL SELECT 'LT', 'submercado', "Categoria", TRY_CAST("Investimento (R$ bilhões)" AS DOUBLE)
+  FROM {pde(4, 'Figura 4-22', 'A6:B20')} WHERE "Categoria" IS NOT NULL
+UNION ALL SELECT 'LT', 'nivel_tensao', "Categoria", TRY_CAST("Investimento (R$ bilhões)" AS DOUBLE)
+  FROM {pde(4, 'Figura 4-23', 'A6:B20')} WHERE "Categoria" IS NOT NULL
+UNION ALL SELECT 'SE', 'submercado', "Categoria", TRY_CAST("Investimento (R$ bilhões)" AS DOUBLE)
+  FROM {pde(4, 'Figura 4-25', 'A6:B20')} WHERE "Categoria" IS NOT NULL
+UNION ALL SELECT 'SE', 'nivel_tensao', "Categoria", TRY_CAST("Investimento (R$ bilhões)" AS DOUBLE)
+  FROM {pde(4, 'Figura 4-26', 'A6:B20')} WHERE "Categoria" IS NOT NULL
+ORDER BY tipo_ativo, recorte, categoria
+""", "Investimento em transmissão do cenário de referência (decênio 2026-2035) aberto por três recortes "
+     "independentes, na coluna recorte: 'outorga' (com e sem outorga), 'submercado' e 'nivel_tensao'; e por tipo de "
+     "ativo em tipo_ativo ('LT' linha de transmissão, 'SE' subestação). Em R$ bilhões de 2025.",
+    fonte_pde(4, "Figuras 4-21, 4-22, 4-23, 4-25 e 4-26"),
+    PDE_PROJ + "os três recortes se SOBREPÕEM: nunca some a tabela inteira, filtre recorte (e tipo_ativo). Dentro de "
+    "recorte = 'outorga' a categoria 'Total' é o total do tipo de ativo e convive com 'Com Outorga' + 'Sem Outorga', "
+    "que somam o mesmo valor (LT: 68,02 + 9,95 = 77,97; SE: 30,81 + 8,12 = 38,93). Os recortes de submercado usam "
+    "'Sudeste/Centro-Oeste' (sem espaços em volta da barra), grafia diferente da Figura 3-7 e do Anuário. Os totais "
+    "dos três recortes NÃO são idênticos, e a diferença é da EPE: em LT o de submercado soma 77,97 (igual ao 'Total' "
+    "de outorga) mas o de nível de tensão soma 76,82, R$ 1,15 bi a menos; em SE dá 38,94 contra 38,76. Reconcilia com "
+    "epe_pde2035_transmissao_obras somando investimento_brl com o corte do ano do cenário de referência <= 2035: LT "
+    "73,73 + SECC LT 4,24 = 77,97 e SE 38,93, exatos")
+
+tabela("epe_pde2035_transmissao_contratos_vincendos", f"""
+SELECT DATE '1899-12-30' + TRY_CAST("Mês" AS INTEGER) AS mes,
+       CAST(TRY_CAST("Quantidade de contratos" AS DOUBLE) AS INTEGER) AS contratos,
+       TRY_CAST("RAP Total (R$ milhões)" AS DOUBLE) AS rap_brl_milhoes
+FROM {pde(4, 'Figura 4-29', 'A6:C40')} WHERE TRY_CAST("Mês" AS INTEGER) > 20000 ORDER BY mes
+""", "Cronograma dos contratos de concessão de TRANSMISSÃO a vencer e a RAP (Receita Anual Permitida) correspondente, "
+     "de dez/2022 a dez/2035, em R$ milhões de 2025. É o cronograma que a EPE usa para planejar as reanálises.",
+    fonte_pde(4, "Figura 4-29"),
+    PDE_PROJ + "o eixo é ANUAL apesar de a coluna de origem se chamar 'Mês': todos os valores caem em dezembro. As "
+    "três primeiras linhas (2022, 2023 e 2024) são PASSADO, o que faz desta a única tabela do PDE que mistura "
+    "realizado com projeção. 2025 e 2026 têm zero contratos e RAP zero, e são linhas legítimas. Mesma armadilha de "
+    "serial de data do Excel de epe_pde2035_geracao_hidro_termica_mes. Complementa transmissao_contratos, que tem o "
+    "contrato a contrato real")
+
+# ---- capítulo 07: gás natural, só o recorte que alimenta termelétrica
+tabela("epe_pde2035_demanda_gas_natural", f"""
+WITH mi AS (SELECT 'malha integrada' AS abrangencia, * FROM {pde(7, 'Figura 7-5', 'A6:G40')} WHERE {PDE_ANO}),
+     br AS (SELECT 'Brasil' AS abrangencia, * FROM {pde(7, 'Figura 7-6', 'A6:G40')} WHERE {PDE_ANO}),
+     u AS (SELECT * FROM mi UNION ALL SELECT * FROM br)
+SELECT abrangencia, CAST("Ano" AS INTEGER) AS ano,
+       TRY_CAST("Demanda Industrial, Residencial, Comercial e de Transporte (milhão m³/d)" AS DOUBLE)
+         AS demanda_nao_termica_milhoes_m3_dia,
+       TRY_CAST("Demanda Termelétrica Máxima (milhão m³/d)" AS DOUBLE) AS demanda_termeletrica_maxima_milhoes_m3_dia,
+       TRY_CAST("Demanda de Refinarias e FAFENs (milhão m³/d)" AS DOUBLE) AS demanda_refino_milhoes_m3_dia,
+       TRY_CAST("Gás de Uso do Sistema (milhão m³/d)" AS DOUBLE) AS gas_uso_sistema_milhoes_m3_dia,
+       TRY_CAST("Demanda Total Média (milhão m³/d)" AS DOUBLE) AS demanda_total_media_milhoes_m3_dia,
+       TRY_CAST("Demanda Total Máxima (milhão m³/d)" AS DOUBLE) AS demanda_total_maxima_milhoes_m3_dia
+FROM u ORDER BY abrangencia, ano
+""", "Demanda projetada de gás natural de 2025 a 2035 em milhões de m³/dia, por componente (não térmica, termelétrica "
+     "máxima, refino e FAFENs, gás de uso do sistema) e com os dois totais da EPE (média e máxima), para duas "
+     "abrangências: 'Brasil' e 'malha integrada' de gasodutos. Entra no banco pela coluna termelétrica, que é o elo "
+     "entre a expansão das UTEs a gás e a infraestrutura de gás.", fonte_pde(7, "Figuras 7-5 e 7-6"),
+    PDE_PROJ + "a demanda termelétrica é MÁXIMA e as outras são MÉDIAS: não some as colunas (em 2025 a total média é "
+    "66 e a total máxima 119, nenhuma das duas é a soma das componentes). A diferença entre 'Brasil' e 'malha "
+    "integrada' é a demanda fora da malha de gasodutos (térmicas isoladas e usos locais): em 2025 a térmica máxima é "
+    "65 no Brasil e 22 na malha. Os números vêm INTEIROS, arredondados pela EPE — não use para diferença ano a ano de "
+    "precisão fina. Do capítulo de gás só este recorte entra no banco; oferta e preço de gás ficam fora")
+
+# ---- capítulo 09: eficiência energética e recursos energéticos distribuídos (RED)
+tabela("epe_pde2035_red_demanda_eletricidade", f"""
+SELECT CAST("Ano" AS INTEGER) AS ano, TRY_CAST("Consumo Potencial (TWh)" AS DOUBLE) AS consumo_potencial_twh,
+       TRY_CAST("Consumo menos EE (TWh)" AS DOUBLE) AS consumo_menos_ee_twh,
+       TRY_CAST("Consumo menos EE e AP (TWh)" AS DOUBLE) AS consumo_menos_ee_ap_twh,
+       TRY_CAST("Consumo menos EE, AP e MMGD (TWh)" AS DOUBLE) AS consumo_rede_twh
+FROM {pde(9, 'Figura 9-1', 'A6:E40')} WHERE {PDE_ANO} ORDER BY ano
+""", "A 'escada' dos recursos energéticos distribuídos (RED): quanto do consumo potencial de eletricidade é abatido "
+     "por eficiência elétrica (EE), autoprodução não injetada (AP) e MMGD antes de sobrar o consumo que chega à rede, "
+     "ano a ano de 2025 a 2035, em TWh. consumo_rede_twh é o último degrau.", fonte_pde(9, "Figura 9-1"),
+    PDE_PROJ + "as quatro colunas são estágios CUMULATIVOS de subtração, não componentes: o abatimento de MMGD em "
+    "2035 é consumo_menos_ee_ap_twh - consumo_rede_twh (818,29 - 712,18 = 106,11 TWh) e o abatimento total é 964,05 - "
+    "712,18 = 251,87 TWh; somar as quatro colunas não significa nada. As notas da planilha definem o escopo: (1) a "
+    "energia solar térmica de aquecimento já está no consumo final, conforme o BEN 2024; (2) EE = eficiência "
+    "elétrica; (3) AP = autoprodução não injetada na rede; (4) MMGD = micro e minigeração distribuída, injetada e não "
+    "injetada. consumo_rede_twh se compara CONCEITUALMENTE com a soma de epe_anuario_consumo_mensal, mas os "
+    "perímetros diferem em ~13 TWh em 2025 (autoprodução injetada e ajustes), não é erro")
+
+# A grafia do cenário aqui vem em minúscula ('Cenário inferior (GW)', 'Cenário de referência (GW)'); normalizada para
+# Inferior/Referência/Superior, igual a epe_pde2035_mmgd_resumo_cenario, para as duas tabelas de MMGD se juntarem.
+tabela("epe_pde2035_mmgd_capacidade_cenario", f"""
+WITH bruto AS (SELECT * FROM {pde(9, 'Figura 9-18', 'A6:D60')} WHERE {PDE_ANO}),
+longo AS (SELECT CAST(ano AS INTEGER) AS ano,
+                 replace(replace(replace(cenario, 'Cenário de ', ''), 'Cenário ', ''), ' (GW)', '') AS cenario,
+                 TRY_CAST(valor AS DOUBLE) AS potencia_acumulada_gw
+          FROM (UNPIVOT (SELECT "Ano" AS ano, * EXCLUDE ("Ano") FROM bruto) ON COLUMNS(* EXCLUDE (ano))
+                INTO NAME cenario VALUE valor)
+          WHERE valor IS NOT NULL)
+SELECT ano, upper(substr(cenario, 1, 1)) || substr(cenario, 2) AS cenario, potencia_acumulada_gw
+FROM longo ORDER BY ano, cenario
+""", "Capacidade instalada ACUMULADA de MMGD (micro e minigeração distribuída) por cenário de adoção (Inferior, "
+     "Referência e Superior), ano a ano de 2013 a 2035, em GW. O cenário de referência chega a 78,10 GW em 2035, "
+     "contra 61,35 do inferior e 97,80 do superior.", fonte_pde(9, "Figura 9-18"),
+    PDE_PROJ + "esta tabela MISTURA realizado e projetado sem coluna que os separe: de 2013 a 2024 os três cenários "
+    "têm valores IDÊNTICOS (é o histórico da ANEEL) e só divergem de 2025 em diante — o teste é "
+    "count(DISTINCT potencia_acumulada_gw) = 1 no ano. Citar 'a capacidade de MMGD em 2020 no cenário superior' é "
+    "citar histórico. Acumulado, em GW. Sobrepõe-se a gd_mmgd (ANEEL, unidade consumidora a unidade consumidora) no "
+    "trecho histórico; o valor desta tabela está na projeção")
+
+tabela("epe_pde2035_mmgd_uf_2035", f"""
+SELECT "UF" AS uf, TRY_CAST("Potência (GW)" AS DOUBLE) AS potencia_gw
+FROM {pde(9, 'Figura 9-19', 'A6:B60')} WHERE length("UF") = 2 ORDER BY potencia_gw DESC
+""", "Capacidade instalada de MMGD projetada para 2035 por UF, em GW, no cenário de referência. É a única abertura "
+     "geográfica de MMGD projetada em todo o PDE (SP 15,71 GW, MG 8,13, RJ 6,17).", fonte_pde(9, "Figura 9-19"),
+    PDE_PROJ + "um único ANO (2035) e um único CENÁRIO (referência): não é série, e o ano está no nome da tabela em "
+    "vez de numa coluna constante. A soma das 27 UFs é a capacidade de 2035 do cenário de referência de "
+    "epe_pde2035_mmgd_capacidade_cenario (78,10 GW). Complementa gd_mmgd, que tem a UF no realizado")
+
+tabela("epe_pde2035_mmgd_resumo_cenario", f"""
+SELECT "Cenário" AS cenario, TRY_CAST("Adotantes (2013-2035) (milhões)" AS DOUBLE) AS adotantes_milhoes,
+       TRY_CAST("Potência (2013-2035) (GW)" AS DOUBLE) AS potencia_gw,
+       TRY_CAST("Geração (2035) (GWméd)" AS DOUBLE) AS geracao_gwmed,
+       TRY_CAST("Investimentos (2025 a 2035) (R$ bilhões)" AS DOUBLE) AS investimento_brl_bilhoes
+FROM {pde(9, 'Tabela 9-3', 'A6:E20')} WHERE "Cenário" IS NOT NULL
+""", "Resumo dos três cenários de projeção da MMGD: número de adotantes em milhões, potência em GW, geração em GW "
+     "médio e investimento em R$ bilhões de 2025. É a tabela-resumo do capítulo de RED.", fonte_pde(9, "Tabela 9-3"),
+    PDE_PROJ + "cada coluna tem PERÍODO PRÓPRIO, declarado no cabeçalho de origem: adotantes e potência são "
+    "acumulados de 2013 a 2035, geração é só o ano 2035 e investimento é 2025-2035 — não trate a linha como um ano. "
+    "Os valores vêm com UMA casa decimal, arredondados pela EPE: potencia_gw do cenário de referência (78,1) é o "
+    "mesmo número que epe_pde2035_mmgd_capacidade_cenario traz com precisão cheia (78,09943)")
+
+tabela("epe_pde2035_mmgd_segmento",
+       pde_por_ano(9, "Figura 9-20", "A6:F40", "segmento", "potencia_acumulada_gw", " (GW)"),
+       "Capacidade instalada ACUMULADA de MMGD do cenário de referência por segmento de adotante (Comercial (AT), "
+       "Comercial (BT), Comercial Remoto (AT/BT), Residencial e Residencial Remoto), ano a ano de 2025 a 2035, em GW.",
+       fonte_pde(9, "Figura 9-20"),
+       PDE_PROJ + "o título da figura diz 'em 2035' mas a aba traz a série 2025-2035 inteira (o gráfico do relatório "
+       "é que mostra só 2035). O nível de tensão fica entre parênteses no rótulo do segmento, (AT), (BT) e (AT/BT), "
+       "porque só o sufixo ' (GW)' foi removido. 'Remoto' é autoconsumo remoto e geração compartilhada. A soma dos 5 "
+       "segmentos em 2035 (78,10 GW) fecha com o cenário de referência das outras duas tabelas de MMGD")
+
+tabela("epe_pde2035_autoproducao_nao_injetada",
+       pde_por_ano(9, "Figura 9-39", "A6:C20", "segmento", "energia_twh", " (TWh)"),
+       "Autoprodução de eletricidade de grande porte NÃO injetada na rede, em TWh, nos três anos de corte do plano "
+       "(2025, 2030 e 2035), por segmento: 'Grandes Consumidores' e 'Outros'.", fonte_pde(9, "Figura 9-39"),
+       PDE_PROJ + "as duas notas da planilha são a definição: (1) 'Grandes consumidores concentra os segmentos de "
+       "siderurgia, petroquímica e papel e celulose'; (2) 'Outros não incluem MMGD' — logo esta série e a de MMGD são "
+       "somáveis sem dupla contagem, e juntas explicam o degrau consumo_menos_ee_twh -> consumo_rede_twh de "
+       "epe_pde2035_red_demanda_eletricidade. Só três anos de corte, não série anual, e a série não é monótona: em "
+       "'Outros' 2035 (57,12 TWh) é MENOR que 2030 (61,87) — não extrapole")
+
+# ---- capítulo 10: emissões (nenhuma outra tabela do banco tem emissão de GEE)
+tabela("epe_pde2035_emissoes_setor",
+       pde_por_ano(10, "Figura 10-1", "A6:K20", "setor", "emissao_mtco2eq", " (MtCO2eq)", excluir="'Total'"),
+       "Emissões de gases de efeito estufa pela produção e uso de energia, por setor (Transportes, Industrial, Setor "
+       "elétrico, Setor Energético, Agropecuário, Residencial, Emissões Fugitivas, Comercial e Público), em MtCO2eq, "
+       "nos quatro anos de corte: 2005, 2025, 2030 e 2035.", fonte_pde(10, "Figura 10-1"),
+       PDE_PROJ + "2005 é o ano-base da NDC brasileira, não uma observação do plano: são 4 anos de CORTE, não uma "
+       "série. O 'Setor elétrico' aqui (26,674 em 2005; 40,771 em 2025; 58,550 em 2030; 62,472 em 2035) INCLUI "
+       "autoprodução e sistemas isolados, que aparecem separados em epe_pde2035_emissoes_eletricidade_recorte — as "
+       "duas tabelas não podem ser unidas na mesma coluna de setor. A unidade é MtCO2EQ (equivalente), não MtCO2. A "
+       "grafia é inconsistente na própria planilha ('Setor elétrico' em minúscula e 'Setor Energético' em maiúscula) e "
+       "foi preservada. A coluna de total foi descartada e fecha exata com a soma dos 9 setores nos 4 anos")
+
+tabela("epe_pde2035_emissoes_eletricidade_recorte",
+       pde_por_ano(10, "Figura 10-2", "A6:L20", "segmento", "emissao_mtco2eq", " (MtCO2eq)"),
+       "A mesma contabilidade de emissões de epe_pde2035_emissoes_setor, mas com o setor elétrico ABERTO em SIN, "
+       "Autoprodução e Sistemas Isolados, em MtCO2eq, nos anos 2025 e 2035. 11 segmentos.",
+       fonte_pde(10, "Figura 10-2"),
+       PDE_PROJ + "só 2025 e 2035. O título de origem promete 'variações percentuais no decênio', mas a variação NÃO "
+       "está na aba — calcule de 2025 para 2035 se precisar. SIN + Autoprodução + Sistemas Isolados = 'Setor "
+       "elétrico' de epe_pde2035_emissoes_setor (13,32792 + 25,243132 + 2,199497 = 40,770549 em 2025). A coluna se "
+       "chama segmento, e não setor, justamente para impedir um UNION descuidado com a outra tabela de emissões")
+
+# ---- capítulo 11: transição energética
+tabela("epe_pde2035_minerais_criticos",
+       pde_por_ano(11, "Figura 11-7", "A6:J20", "mineral", "massa_mil_t", " (mil t)"),
+       "Composição mineral da capacidade instalada de geração de eletricidade do Brasil em 2025 e 2035, em mil "
+       "toneladas, por mineral (Cobre, Silício, Zinco, Manganês, Níquel, Cromo, Grafite, Terras Raras e Outros): é a "
+       "demanda de minerais críticos embutida na expansão do parque.", fonte_pde(11, "Figura 11-7"),
+       PDE_PROJ + "só 2025 e 2035, e é ESTOQUE embutido no parque instalado, não consumo anual de mineral nem "
+       "produção mineral brasileira. 'Grafite' é 0,0 em 2025 e 17,61 mil t em 2035: o zero é real (não há bateria de "
+       "grafite no parque de 2025), não dado faltante. 'Terras Raras' e 'Outros' são agregados. O título da figura diz "
+       "kt e o cabeçalho diz 'mil t': é a mesma unidade, e o nome da coluna segue o cabeçalho")
+
+# ---- capítulo 12: consolidação dos resultados (as três únicas abas com cabeçalho de dois níveis e hierarquia)
+# Cabeçalho em L6+L7 e sem mescla: com header=true os nomes sairiam duplicados (2025 aparece em duas colunas). Lemos
+# com header=false a partir de L8, nomeando as colunas A..G, e a seção de cada fonte vem da linha em que só A está
+# preenchida. O trim em "A" é obrigatório: a linha de total vem como ' Total', com espaço à esquerda.
+tabela("epe_pde2035_geracao_eletricidade_fonte", f"""
+WITH bruto AS (SELECT row_number() OVER () AS i, * FROM {pde(12, 'Tabela 12-3', 'A8:G25', cabecalho='false')}),
+secao AS (SELECT *, last_value(CASE WHEN "A" IS NOT NULL AND "B" IS NULL THEN "A" END IGNORE NULLS)
+                      OVER (ORDER BY i) AS segmento FROM bruto),
+dados AS (SELECT i, CASE WHEN trim("A") = 'Total' THEN NULL ELSE segmento END AS segmento,
+                 trim("A") AS fonte,
+                 CASE WHEN trim("A") = 'Total' THEN 'total'
+                      WHEN trim("A") LIKE 'Subtotal%' THEN 'subtotal' ELSE 'item' END AS tipo_linha,
+                 "B" AS t2025, "C" AS p2025, "D" AS t2030, "E" AS p2030, "F" AS t2035, "G" AS p2035
+          FROM secao WHERE "A" IS NOT NULL AND "B" IS NOT NULL)
+SELECT segmento, fonte, tipo_linha, 2025 AS ano, TRY_CAST(t2025 AS DOUBLE) AS geracao_twh,
+       round(TRY_CAST(p2025 AS DOUBLE) * 100, 4) AS participacao_pct FROM dados
+UNION ALL SELECT segmento, fonte, tipo_linha, 2030, TRY_CAST(t2030 AS DOUBLE),
+       round(TRY_CAST(p2030 AS DOUBLE) * 100, 4) FROM dados
+UNION ALL SELECT segmento, fonte, tipo_linha, 2035, TRY_CAST(t2035 AS DOUBLE),
+       round(TRY_CAST(p2035 AS DOUBLE) * 100, 4) FROM dados
+ORDER BY ano, segmento NULLS LAST, tipo_linha, fonte
+""", "Geração total de eletricidade por fonte em 2025, 2030 e 2035, em TWh e em participação percentual, separando o "
+     "segmento 'Geração Centralizada' do segmento 'Autoprodução & Geração Distribuída'. tipo_linha diz o que a linha "
+     "é: 'item' (fonte), 'subtotal' (do segmento) ou 'total' (geral, 810,62 TWh em 2025 e 1.122,14 em 2035).",
+    fonte_pde(12, "Tabela 12-3"),
+    PDE_PROJ + "tipo_linha existe para você somar sem contar duas vezes: use WHERE tipo_linha = 'item' para agregar "
+    "(os 13 itens somam 810,623 TWh em 2025, 962,874 em 2030 e 1.122,135 em 2035, os mesmos valores das linhas de "
+    "total, e as participações somam 100%). A linha de total tem segmento NULL de propósito. As notas da planilha "
+    "definem o escopo: (1) 'Hidráulica inclui parcela importada de Itaipu'; (2) 'Biomassa inclui biodiesel'; (3) "
+    "'Outros incluem Óleo Combustível, Óleo Diesel, Gás de Processo, Sistemas Isolados, RSU'; a nota (4) do arquivo "
+    "fala de um rótulo 'Outras Renováveis' que NÃO existe nesta aba (foi reaproveitada de outra tabela do relatório) "
+    "e não deve ser interpretada como escopo de 'Outros'. Os rótulos de fonte NÃO são os de "
+    "epe_pde2035_capacidade_instalada_fonte (lá UHE, EOLICA, PCT; aqui Hidráulica, Eólica, Gás Natural): não faça "
+    "JOIN por nome de fonte sem tabela de correspondência. Só três anos de corte")
+
+# A hierarquia da Tabela 12-10 está na INDENTAÇÃO da coluna A, não em colunas separadas: 0 espaço = grupo, 7 =
+# subgrupo, >= 10 = item folha. A linha de TOTAL vem indentada com espaço inquebrável (NBSP, U+00A0), cai no ELSE e é
+# por isso que nivel = 3 marca o total geral.
+tabela("epe_pde2035_investimentos", f"""
+WITH bruto AS (SELECT row_number() OVER () AS i, * FROM {pde(12, 'Tabela 12-10', 'A7:C37', cabecalho='false')}
+               WHERE "A" IS NOT NULL AND "B" IS NOT NULL),
+niv AS (SELECT i, trim("A") AS item, "B", "C",
+               CASE WHEN length("A") - length(ltrim("A")) = 0 THEN 0
+                    WHEN length("A") - length(ltrim("A")) = 7 THEN 1
+                    WHEN length("A") - length(ltrim("A")) >= 10 THEN 2 ELSE 3 END AS nivel
+        FROM bruto),
+arv AS (SELECT *, last_value(CASE WHEN nivel = 0 THEN item END IGNORE NULLS) OVER (ORDER BY i) AS grupo,
+               last_value(CASE WHEN nivel = 1 THEN item END IGNORE NULLS) OVER (ORDER BY i) AS subgrupo
+        FROM niv)
+SELECT CASE WHEN nivel = 3 THEN NULL ELSE grupo END AS grupo,
+       CASE WHEN nivel = 2 THEN subgrupo END AS subgrupo, item, nivel,
+       TRY_CAST("B" AS DOUBLE) AS investimento_brl_bilhoes,
+       round(TRY_CAST("C" AS DOUBLE) * 100, 4) AS participacao_pct
+FROM arv ORDER BY i
+""", "Investimento previsto no decênio 2025-2035 em toda a cadeia de energia, em R$ bilhões de 2025 e em participação "
+     "percentual, numa árvore de três níveis: nivel = 0 são os três grandes grupos (Oferta de Energia Elétrica, "
+     "Petróleo e Gás Natural, Oferta de Biocombustíveis Líquidos), 1 são os 11 subgrupos (Geração Centralizada, "
+     "Geração Distribuída, Transmissão, Etanol, Refino...), 2 são os 16 itens folha e 3 é a linha de TOTAL geral "
+     "(R$ 3.529,889 bilhões). grupo e subgrupo trazem o pai de cada linha.",
+    fonte_pde(12, "Tabela 12-10"),
+    PDE_PROJ + "NUNCA some investimento_brl_bilhoes sem filtrar nivel: os níveis se contêm (os 3 de nivel = 0 e os 11 "
+    "de nivel = 1 somam, cada conjunto, 3.529,889, o valor da linha de nivel = 3; e os itens de nivel = 2 somam o "
+    "valor do seu subgrupo). Nem todo subgrupo é aberto em itens: só 5 dos 11 têm filhos, e é por isso que o nivel = 2 "
+    "soma apenas 770,136. Só cerca de "
+    "17% do total é setor elétrico: 'Oferta de Energia Elétrica' são R$ 596,246 bi (16,89%) contra R$ 2.818,416 bi "
+    "(79,79%) de petróleo e gás — quem citar 'R$ 3,5 trilhões de investimento do PDE' está citando quase tudo "
+    "petróleo. Os rótulos trazem o número da nota do relatório entre parênteses ('Geração Centralizada (1)'), "
+    "preservado. O item 'Transmissão (3)' vale R$ 116,905 bi, que é o CENÁRIO DE REFERÊNCIA de "
+    "epe_pde2035_transmissao_investimento_cenario (116,90) e não o otimista (147,83): é assim que os dois capítulos "
+    "se reconciliam")
+
+# O rótulo do indicador está na linha do MEIO de cada grupo de três (a coluna A vem vazia na primeira e na terceira),
+# daí o coalesce com lead e lag. Forward-fill aqui estaria errado: atribuiria 'População Residente' às linhas do PIB.
+# O range para em M de propósito: N:P são as três colunas de 'Variação média anual', derivadas e recalculáveis.
+tabela("epe_pde2035_indicadores", f"""
+WITH bruto AS (SELECT row_number() OVER () AS i, * FROM {pde(12, 'Tabela 12-1', 'A8:M20', cabecalho='false')}),
+cheio AS (SELECT i, coalesce("A", lead("A") OVER (ORDER BY i), lag("A") OVER (ORDER BY i)) AS indicador,
+                 "B" AS unidade, * EXCLUDE (i, "A", "B") FROM bruto),
+longo AS (UNPIVOT cheio ON COLUMNS(* EXCLUDE (i, indicador, unidade)) INTO NAME col VALUE valor)
+SELECT indicador, unidade, 2025 + (ascii(col) - ascii('C')) AS ano, TRY_CAST(valor AS DOUBLE) AS valor
+FROM longo WHERE valor IS NOT NULL ORDER BY i, ano
+""", "As 13 séries de indicadores de economia e energia do plano, ano a ano de 2025 a 2035: população residente, PIB "
+     "(total, número índice e per capita), oferta interna de energia, oferta interna de eletricidade e consumo final "
+     "energético, cada um destes três em valor absoluto, per capita e por unidade de PIB. São 5 nomes de indicador e "
+     "13 séries: a chave é o par indicador + unidade, e a unidade de cada série está na coluna unidade.",
+    fonte_pde(12, "Tabela 12-1"),
+    PDE_PROJ + "coluna valor GENÉRICA com 13 unidades diferentes: a chave é indicador + unidade, NUNCA indicador só "
+    "('PIB' aparece três vezes e 'Oferta interna de energia' também, com unidades diferentes) — qualquer consulta tem "
+    "de filtrar os dois. As unidades vêm "
+    "com o expoente em texto corrido porque o superscript do Excel se perde na leitura: '(106 hab)' é 10^6 "
+    "habitantes e '(109 R$)' é 10^9 R$. As três colunas de 'Variação média anual' da planilha foram descartadas "
+    "porque são derivadas e recalculáveis (conferido: o CAGR de população fecha na sexta casa) e virariam anos falsos "
+    "na coluna ano. 'Oferta interna de eletricidade (TWh)' é 810,62 em 2025 e 1.122,14 em 2035, os mesmos totais de "
+    "epe_pde2035_geracao_eletricidade_fonte")
+
+# ---------------------------------------------------------------- EPE: expansão da transmissão do PDE 2035, obra a obra
+# Única planilha do PDE com cabeçalho na linha 1. nullif nas colunas de texto porque empty_as_varchar devolve '' (e
+# não NULL) para célula vazia: 445 obras sem código DMSE e 664 sem UF de seccionamento viriam com string vazia.
+PDE_TRANSMISSAO = exigir(os.path.join(ANEEL, "pde2035_transmissao.xlsx"))
+tabela("epe_pde2035_transmissao_obras", f"""
+SELECT "Estudo" AS estudo, nullif("Tipo do Empreendimento", '') AS tipo_empreendimento,
+       nullif("Região Geoelétrica", '') AS regiao_geoeletrica, nullif("UF Origem", '') AS uf_origem,
+       nullif("UF Destino", '') AS uf_destino, nullif("UF Secc", '') AS uf_seccionamento,
+       nullif("Característica", '') AS caracteristica, "Nome do Empreendimento" AS empreendimento,
+       nullif("Itens de obra", '') AS itens_obra, nullif("Status", '') AS status,
+       try_strptime("Data de Necessidade", '%m/%Y')::DATE AS data_necessidade,
+       TRY_CAST("km Total" AS DOUBLE) AS extensao_km,
+       TRY_CAST("Potência Total (TF / ATF )" AS DOUBLE) AS capacidade_transformacao_mva,
+       nullif("Contratação", '') AS forma_contratacao, nullif("SIGET.codDMSE", '') AS codigo_dmse,
+       try_strptime("SIGET.datPrevista (19/08/2025)", '%m/%Y')::DATE AS data_prevista_siget,
+       TRY_CAST("Total Investimento ( 2025 ) R$/1000" AS DOUBLE) AS investimento_brl,
+       nullif(CAST(TRY_CAST("Data de Tendendência - Cenário Pessimista" AS DOUBLE) AS INTEGER), 2099) AS ano_pessimista,
+       nullif(CAST(TRY_CAST("Data de Tendendência - Cenário Referência" AS DOUBLE) AS INTEGER), 2099) AS ano_referencia,
+       nullif(CAST(TRY_CAST("Data de Tendendência - Cenário Otimista" AS DOUBLE) AS INTEGER), 2099) AS ano_otimista
+FROM read_xlsx('{PDE_TRANSMISSAO}', sheet='PDE 2035', header=true, all_varchar=true, empty_as_varchar=true)
+WHERE "Estudo" IS NOT NULL
+""", "A expansão da transmissão do PDE 2035 OBRA A OBRA: uma linha por empreendimento (linha de transmissão, "
+     "subestação ou seccionamento), com o estudo de planejamento que a originou, região geoelétrica, UF de origem e "
+     "destino, itens de obra, status, extensão em km, capacidade de transformação em MVA, investimento em reais de "
+     "2025, código DMSE e data prevista no SIGET, e o ANO DE ENTRADA em cada um dos três cenários (ano_pessimista, "
+     "ano_referencia, ano_otimista). É o que diz quais obras o planejador espera que entrem, quando e em que cenário.",
+    "EPE/MME, Plano Decenal de Expansão de Energia 2035, lista de expansão da transmissão (pde2035_transmissao.xlsx, "
+    "aba 'PDE 2035'); a data-base do extrato do SIGET, 19/08/2025, vem no nome da coluna de origem",
+    PDE_PROJ + "o nome da coluna de origem do investimento diz 'R$/1000', mas os valores estão em REAIS: somando "
+    "investimento_brl com o corte ano_otimista <= 2035 dá R$ 147,83 bilhões, exatamente o valor de 2035 do cenário "
+    "otimista de epe_pde2035_transmissao_investimento_cenario (e o mesmo vale para referência, 116,90, e pessimista, "
+    "98,83; e, por tipo de empreendimento no cenário de referência, LT 73,73 + SECC LT 4,24 = 77,97 e SE 38,93, os "
+    "mesmos valores de epe_pde2035_transmissao_investimento_recorte). O corte <= 2035 é OBRIGATÓRIO para reproduzir o "
+    "capítulo 4: sem ele LT + SECC LT sobe para R$ 91,35 bi, porque inclui obras de 2036 a 2038 que estão na planilha "
+    "mas fora do decênio. O 2099 da origem é "
+    "sentinela de 'a obra não entra neste cenário' e foi anulado (depois disso max(ano_referencia) = 2038 e "
+    "max(ano_pessimista) = 2030). As QUANTIDADES FÍSICAS NÃO reconciliam com o capítulo 4 e a diferença é grande: no "
+    "cenário de referência até 2035 a soma obra a obra dá 28.307 km contra 28.780,87 de "
+    "epe_pde2035_transmissao_expansao_fisica, e 79.512 MVA contra 89.018,32 (mais de 10% de diferença) — o dinheiro "
+    "fecha, a quantidade física não, e a inconsistência é da própria EPE. 2 linhas não são obras: estudo = "
+    "'Investimento Prospectivo 2032' e 'Investimento Prospectivo 2033' (R$ 3,99 bi e R$ 4,87 bi) são reserva de "
+    "orçamento, vêm sem empreendimento, tipo_empreendimento, regiao_geoeletrica nem caracteristica e só têm "
+    "ano_otimista (entram só no total do cenário otimista) — filtre-as em qualquer análise por obra. 4 obras têm "
+    "investimento zero (custo não estimado, não erro de leitura). regiao_geoeletrica é a da EPE, não a do IBGE (um "
+    "dos 5 valores é 'Centro-Oeste e Estados do Acre e Rondônia'): não junte com uf de outras tabelas assumindo "
+    "equivalência. uf_origem e uf_destino são NOMES de estado ('Piauí', 'Mato Grosso do Sul'), enquanto o resto do "
+    "banco usa sigla de 2 letras: um JOIN com usinas.uf ou gd_mmgd.uf exige tabela de conversão. data_necessidade tem "
+    "valores no PASSADO (a partir de 01/2018): é a data em que a obra passou a ser necessária, não a de entrada — a "
+    "data de entrada projetada é ano_referencia. A ponte com transmissao_empreendimentos e rap_transmissao_modulos é "
+    "codigo_dmse (que não existe nessas tabelas hoje) e, em segundo lugar, o nome do empreendimento por texto")
+
+# ---------------------------------------------------------------- Lei 12.431: portarias que autorizaram as debêntures
+# O .xls da ANBIMA é BIFF/OLE2 (Composite Document V2), não um .xlsx: o DuckDB não abre nem por read_xlsx ("Failed to
+# open zip for reading") nem por st_read ("Could not open GDAL dataset"). Por isso a leitura é com xlrd, a única
+# biblioteca que lê o .xls antigo. R0:R7 são título e cabeçalho de três níveis; o rodapé começa na linha 'Total'.
+PORTARIAS = exigir(os.path.join(RAW, "cvm", "deb_incentivadas.xls"))
+livro_portarias = xlrd.open_workbook(PORTARIAS)
+aba_portarias = livro_portarias.sheet_by_name("ICVM 400 e 476")  # falha alto se a ANBIMA renomear a aba
+
+
+def data_xls(v):
+    """Data do .xls: serial numérico do Excel. O corte em 20000 (qualquer data de 1954 em diante) descarta texto e o
+    zero da célula vazia."""
+    if not isinstance(v, float) or v <= 20000:
+        return None
+    return datetime.date(*xlrd.xldate_as_tuple(v, livro_portarias.datemode)[:3])
+
+
+portarias = []
+for i in range(8, aba_portarias.nrows):
+    v = aba_portarias.row_values(i)
+    if not isinstance(v[0], float) or not v[0]:  # a coluna nº numerada acaba onde acabam os dados
+        continue
+    portarias.append((int(v[0]), data_xls(v[1]), v[2] or None, v[3] or None, str(v[4]).strip() or None,
+                      str(v[5]).strip() or None, data_xls(v[6]), data_xls(v[7]), v[8] or None, v[9] or None,
+                      v[10] or None, v[11] or None, v[12] or None, data_xls(v[13]), v[14] or None, v[15] or None))
+con.execute("""CREATE TEMP TABLE portarias_12431 (ordem INTEGER, data_portaria DATE, numero_portaria VARCHAR,
+  ministerio VARCHAR, titular VARCHAR, holding_spe VARCHAR, data_emissao DATE, inicio_distribuicao DATE,
+  regime_distribuicao VARCHAR, codigo_ativo VARCHAR, serie_isenta VARCHAR, volume_total VARCHAR, volume_12431 VARCHAR,
+  data_vencimento DATE, remuneracao VARCHAR, taxa VARCHAR)""")
+con.executemany("INSERT INTO portarias_12431 VALUES (" + ",".join(["?"] * 16) + ")", portarias)
+# 19 das 81 linhas são série adicional da portaria da linha anterior e a planilha deixa portaria, ministério e titular
+# em branco como "idem". O bloco é count(data_portaria) OVER (ORDER BY ordem) e dentro dele o first_value replica os
+# quatro campos; serie_adicional marca quais linhas foram preenchidas.
+tabela("debentures_incentivadas_portarias", """
+WITH b AS (SELECT *, count(data_portaria) OVER (ORDER BY ordem) AS bloco FROM portarias_12431)
+SELECT ordem,
+       first_value(data_portaria) OVER w AS data_portaria,
+       CAST(TRY_CAST(first_value(numero_portaria) OVER w AS DOUBLE) AS INTEGER) AS numero_portaria,
+       first_value(ministerio) OVER w AS ministerio, first_value(titular) OVER w AS titular,
+       data_portaria IS NULL AS serie_adicional, holding_spe, data_emissao, inicio_distribuicao,
+       regime_distribuicao, trim(codigo_ativo) AS codigo_ativo,
+       CAST(TRY_CAST(serie_isenta AS DOUBLE) AS INTEGER) AS serie_isenta,
+       TRY_CAST(volume_total AS DOUBLE) AS volume_total_brl_milhoes,
+       TRY_CAST(volume_12431 AS DOUBLE) AS volume_12431_brl_milhoes, data_vencimento, remuneracao,
+       TRY_CAST(taxa AS DOUBLE) AS taxa_pct_aa
+FROM b WINDOW w AS (PARTITION BY bloco ORDER BY ordem) ORDER BY ordem
+""", "As portarias ministeriais que AUTORIZARAM debêntures incentivadas de infraestrutura (Lei 12.431), de 2012 a "
+     "2015: número e data da portaria, ministério, titular do projeto (a SPE), controladores em holding_spe, e, quando "
+     "a debênture foi de fato emitida, o código do ativo, a série beneficiada, o volume total e a parcela incentivada "
+     "(em R$ milhões), o regime de distribuição (ICVM 400 ou 476), o vencimento, o indexador e a taxa. É a camada de "
+     "autorização que falta em debentures_snd e debentures_incentivadas: quem autorizou, quando, e quanto do "
+     "autorizado virou emissão.",
+    "ANBIMA e ministérios, planilha de debêntures incentivadas da Lei 12.431, aba 'ICVM 400 e 476' "
+    "(cvm/deb_incentivadas.xls)",
+    "O ARQUIVO ESTÁ CONGELADO EM 2015: a própria planilha diz 'Atualizado em 17/07/2015.' — esta tabela é um retrato "
+    "histórico dos três primeiros anos da Lei 12.431, NÃO o estoque atual de debêntures incentivadas (para isso use "
+    "debentures_snd, com 10.008 linhas e a marca incentivada_lei_12431). Não compare o tamanho das duas e conclua que "
+    "o mercado encolheu. 19 das 81 linhas são SÉRIE ADICIONAL da portaria da linha anterior e vinham com data, "
+    "número, ministério e titular em branco (a planilha usa o branco como 'idem'): os quatro campos foram preenchidos "
+    "por bloco e serie_adicional = true marca essas linhas — sem o preenchimento um GROUP BY ministerio perderia um "
+    "quarto dos dados. Depois do preenchimento são 62 portarias distintas e 59 titulares. 26 das 81 linhas são "
+    "autorizações que NUNCA viraram emissão (sem codigo_ativo, sem data_emissao e sem volume, todas do MME, como as "
+    "dez 'Eólica Geribatu I' a 'X'): é informação, é o funil autorização -> emissão, não lixo. O arquivo NÃO TEM "
+    "CNPJ: a ponte com o resto do banco é codigo_ativo -> debentures_snd.codigo (55 de 55 casam, e os mesmos 55 casam "
+    "com debentures_incentivadas.codigo_cetip), de onde se obtém o CNPJ por JOIN; o CNPJ não foi materializado aqui "
+    "para não congelar dado de outra fonte. Ligação por NOME é fraca e não deve ser usada (dos 59 titulares distintos "
+    "só 6 casam com agentes_aneel.razao_social). Cuidado com quem é o emissor: a portaria autoriza o PROJETO (a SPE) e "
+    "a "
+    "debênture costuma ser emitida pela HOLDING — APAR16 tem titular 'Empresa Litorânea de Transmissão de Energia "
+    "S.A. - ELTE.' e emissora 'ALUPAR INVESTIMENTO S/A' no SND, então titular e debentures_snd.emissora podem ser "
+    "empresas diferentes e o CNPJ obtido é o da holding. Volumes em R$ MILHÕES (confirmado: volume_12431 * 1e6 é "
+    "igual a debentures_snd.volume_emitido_brl nos 55 casos). Das 81 linhas, 50 são do Ministério de Minas e Energia, "
+    "21 do Ministério dos Transportes, 9 da Secretaria de Aviação Civil e 1 da Secretaria de Portos; das 55 que viraram "
+    "emissão só 19 são de setor elétrico pela classificação de debentures_snd, e "
+    "ministerio = 'Ministério de Minas e Energia' não é garantia de setor elétrico, porque o MME também autorizou "
+    "projetos de gás. regime_distribuicao vem NULL em 37 linhas (as 26 sem emissão mais 11 emitidas sem o campo "
+    "preenchido pela ANBIMA), então não o use para separar autorizado de emitido — use codigo_ativo IS NULL. "
+    "taxa_pct_aa só significa algo junto com remuneracao: quando remuneracao = 'IPCA' é o spread real sobre o IPCA "
+    "(8,75% a.a. no LTMC12) e quando é 'Prefixado' é a taxa nominal (10,1% no FERR18); nas 27 linhas com remuneracao "
+    "NULL não houve emissão")
 
 # ---------------------------------------------------------------- catálogo das tabelas (lido pelo MCP)
 con.execute("CREATE TABLE catalogo (tabela VARCHAR, descricao VARCHAR, fonte VARCHAR, ressalvas VARCHAR, linhas BIGINT)")
 con.executemany("INSERT INTO catalogo VALUES (?, ?, ?, ?, ?)", CATALOGO)
 con.close()
 shutil.rmtree(trabalho)
-os.replace(tmp, destino)
+os.replace(tmp, banco)  # banco, não destino: destino pode ser um link simbólico, que o replace apagaria
 print("ok:", destino)

@@ -156,9 +156,11 @@ const anthropicModels = {
   'claude-sonnet-4': 200000,
   'claude-sonnet-4-5': 200000,
   'claude-sonnet-4-6': 1000000,
+  'claude-sonnet-5': 1000000,
   'claude-opus-4-6': 1000000,
   'claude-opus-4-7': 1000000,
   'claude-opus-4-8': 1000000,
+  'claude-opus-5': 1000000,
   'claude-fable-5': 1000000,
   'claude-mythos-5': 1000000,
 };
@@ -400,7 +402,12 @@ export const modelMaxOutputs = {
   system_default: 32000,
 };
 
-/** Outputs from https://docs.anthropic.com/en/docs/about-claude/models/all-models#model-names */
+/**
+ * Outputs from https://docs.anthropic.com/en/docs/about-claude/models/all-models#model-names
+ *
+ * Só vale para o endpoint anthropic: maxOutputTokensMap não tem a chave bedrock, então o Claude na AWS não passa por
+ * aqui — lá o limite de saída vem do maxOutputTokens do perfil (librechat.yaml), que o cliente manda no corpo do pedido.
+ */
 const anthropicMaxOutputs = {
   'claude-3-haiku': 4096,
   'claude-3-sonnet': 4096,
@@ -408,11 +415,13 @@ const anthropicMaxOutputs = {
   'claude-haiku-4-5': 64000,
   'claude-sonnet-4': 64000,
   'claude-sonnet-4-6': 64000,
+  'claude-sonnet-5': 128000,
   'claude-opus-4': 32000,
   'claude-opus-4-5': 64000,
   'claude-opus-4-6': 128000,
   'claude-opus-4-7': 128000,
   'claude-opus-4-8': 128000,
+  'claude-opus-5': 128000,
   'claude-fable-5': 128000,
   'claude-mythos-5': 128000,
   'claude-3.5-sonnet': 8192,

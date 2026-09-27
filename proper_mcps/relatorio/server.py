@@ -1,10 +1,11 @@
 """Servidor MCP "energynexus-relatorio": o relatório final em PDF, no modelo LaTeX do Energy Nexus.
 
 Ferramenta: gerar_relatorio. Recebe os campos da capa (título, subtítulo, período), o conteúdo em LaTeX (as seis
-seções do modelo) e as referências em BibTeX; confere a estrutura, as citações e a fonte de cada número; preenche
-modelo/main.tex e modelo/referencias.bib (o template oficial, alterado só nos campos e no conteúdo, como ele pede) e
-compila com o pdflatex do TinyTeX em .runtime/tinytex (instalar.sh). O PDF e o fonte LaTeX (.zip) vão para
-.runtime/relatorios, que o iniciar.sh liga em client/public/assets/relatorios: o navegador os abre em /relatorios/.
+seções do modelo) e as referências em BibTeX; confere a forma — a estrutura do modelo, as citações e a presença de
+fonte em cada número, nunca o valor em si contra a base; preenche modelo/main.tex e modelo/referencias.bib (o template
+oficial, alterado só nos campos e no conteúdo, como ele pede) e compila com o pdflatex do TinyTeX em .runtime/tinytex
+(instalar.sh). O PDF e o fonte LaTeX (.zip) vão para .runtime/relatorios, que o iniciar.sh liga em
+client/public/assets/relatorios: o navegador os abre em /relatorios/.
 As regras de redação (as instruções do template) estão no roteiro proper_skills/relatorio-energynexus/SKILL.md.
 """
 import os
@@ -17,9 +18,11 @@ import unicodedata
 import zipfile
 from datetime import datetime
 
+import duckdb
 from mcp.server.mcpserver import MCPServer
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # raiz do repositório
+CATALOGO_DB = os.path.join(RAIZ, "data", "energynexus.duckdb")  # só para conferir nomes de tabela citados no relatório
 
 
 MODELO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "modelo")
@@ -59,6 +62,16 @@ URL = re.compile(r"https?://\S+")
 # número "de verdade": com separador, percentual, múltiplo (3,9x) ou 2+ dígitos; anos (1900-2099) e datas não contam
 DATA = re.compile(r"\b\d{1,2}/\d{1,2}(/\d{2,4})?\b|\b\d{1,2}/(19|20)\d\d\b")
 NUMERO = re.compile(r"(?<![\w/])(\d+(?:[.,]\d+)*)(\s*%|x\b)?(?![0-9A-WYZa-wyzÀ-ÿ])")
+# fim de parágrafo: pontuação, fecho de ambiente ou de argumento, percentual escapado, fecho de citação
+FIM = re.compile(r"[.!?:;%)\]}»”\"']\s*$")
+# marca de corte no fim do parágrafo; no meio dele "[...]" é supressão dentro de uma citação literal, e vale
+CORTE = re.compile(r"(\.\.\.|…|\[truncad[^\]]*\]|\[cortad[^\]]*\])[\s»”\"')\]]*$", re.I)
+ARQUIVO = re.compile(r"\S+\.(?:pdf|docx?|xlsx?|csv|parquet|zip|tex|bib|duckdb)\b", re.I)
+NOME_TABELA = re.compile(r"\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\b")
+# a origem de um número também pode ser a ferramenta que o calculou, não só a tabela: estes nomes valem como fonte
+FERRAMENTAS = {"buscar_empresa", "indicadores_financeiros", "listar_tabelas", "descrever_tabela", "valores_distintos",
+               "consultar_sql", "buscar_documentos", "ler_pagina", "listar_documentos", "consultar_placar",
+               "placar_ranking", "radar_consistencia", "exposicao_carbono", "gerar_relatorio"}
 
 
 def _sem_comentarios(tex: str) -> str:
@@ -86,6 +99,54 @@ def _unidades(conteudo: str) -> list[str]:
     t = TABELA.sub("\n\n", conteudo)
     t = re.sub(r"\\(sub)*section\*?(\[[^\]]*\])?\{[^}]*\}", "\n\n", t)
     t = re.sub(r"\\(begin|end)\{(itemize|enumerate|description)\}|\\item\b", "\n\n", t)
+    return [" ".join(p.split()) for p in re.split(r"\n\s*\n", t) if p.strip()]
+
+
+def _tabelas_citadas(texto: str) -> list[str]:
+    """Nomes em snake_case que o texto apresenta como tabela da base. Saem antes: os argumentos de \\cite, \\label e
+    \\ref (as chaves BibTeX também são snake_case), links e nomes de arquivo. No LaTeX o nome vem escapado
+    (indicadores\\_financeiros), então o \\_ volta a ser _ antes da busca."""
+    t = CITE.sub(" ", texto or "")
+    t = re.sub(r"\\(label|ref|eqref|pageref|autoref|url|href)\{[^}]*\}", " ", t)
+    t = ARQUIVO.sub(" ", URL.sub(" ", t)).replace("\\_", "_")
+    return list(dict.fromkeys(NOME_TABELA.findall(t)))
+
+
+def _catalogo() -> set[str] | None:
+    """Tabelas da base, em minúsculas, ou None quando o banco não está ao lado do servidor — aí a conferência dos
+    nomes fica registrada como aviso, em vez de sumir sem dizer nada."""
+    if not os.path.exists(CATALOGO_DB):
+        return None
+    con = duckdb.connect(CATALOGO_DB, read_only=True)
+    try:
+        return {t.lower() for (t,) in con.execute("SELECT tabela FROM catalogo").fetchall()}
+    finally:
+        con.close()
+
+
+def _conferir_tabelas(citados: dict[str, list[str]]) -> list[str]:
+    """Avisos para nome de tabela que não está no catálogo. A auditoria passou 'tabela_que_nao_existe, conta 9.99' e o
+    relatório saiu com cara de auditado. Aviso, não erro: nome de indicador ou de arquivo pode cair aqui por engano."""
+    if not any(citados.values()):
+        return []
+    try:
+        catalogo = _catalogo()
+        impedimento = f"o banco {os.path.basename(CATALOGO_DB)} não está ao lado do servidor"
+    except duckdb.Error as e:  # banco em uso por quem o reconstrói, ou de outra versão
+        catalogo, impedimento = None, f"o catálogo não abriu ({e})"
+    if catalogo is None:
+        return [f"não confiro os nomes de tabela citados: {impedimento}"]
+    conhecidos = catalogo | FERRAMENTAS
+    return [f"{onde}: '{n}' não é uma tabela nem uma ferramenta da base (confira em listar_tabelas); se o número vem "
+            f"de documento ou link, cite o documento e a página" for onde, nomes in citados.items() for n in nomes
+            if n.lower() not in conhecidos]
+
+
+def _paragrafos(conteudo: str) -> list[str]:
+    """Parágrafos de texto corrido: sem tabelas, listas e títulos, onde faltar pontuação no fim é estilo, não corte."""
+    t = TABELA.sub("\n\n", conteudo)
+    t = re.sub(r"\\begin\{(itemize|enumerate|description)\}.*?\\end\{\1\}", "\n\n", t, flags=re.S)
+    t = re.sub(r"\\(sub)*section\*?(\[[^\]]*\])?\{[^}]*\}", "\n\n", t)
     return [" ".join(p.split()) for p in re.split(r"\n\s*\n", t) if p.strip()]
 
 
@@ -185,6 +246,21 @@ def _conferir(titulo, periodo, conteudo, referencias) -> tuple[list[str], list[s
         nums = _numeros(u)
         if nums and not CITE.search(u):
             erros.append(f"o trecho \"{u[:90]}\" tem número ({', '.join(nums[:3])}) sem \\cite")
+
+    # dois relatórios da auditoria foram gravados cortados no meio da frase (a resposta do modelo estourou o limite de
+    # saída) e ninguém percebeu. Todo parágrafo de texto corrido acaba em pontuação ou no fecho de um ambiente, então
+    # acabar no meio da frase é erro; item de lista e título ficam fora, esses acabam sem ponto por estilo
+    for p in _paragrafos(texto):
+        if CORTE.search(p):
+            erros.append(f"o trecho \"...{p[-60:]}\" termina com marca de corte; reenvie o texto completo")
+        elif not FIM.search(p):
+            erros.append(f"o trecho \"...{p[-60:]}\" termina no meio da frase, sem pontuação nem fecho de ambiente: "
+                         f"parece truncado (a resposta estourou o limite de saída); reenvie o texto completo")
+
+    avisos += _conferir_tabelas({"o conteúdo": _tabelas_citadas(texto),
+                                 # sem o "@misc{chave," do começo: a chave BibTeX também é snake_case
+                                 **{f"referência {chave}": _tabelas_citadas(re.sub(r"^@\w+\s*\{[^,]*,", " ", bruto))
+                                    for _, chave, _, bruto in entradas}})
     return erros, avisos, chaves, citadas
 
 
@@ -289,7 +365,8 @@ def gerar_relatorio(titulo: str, subtitulo: str, periodo: str, conteudo: str, re
     referencias: entradas BibTeX (@misc, @techreport, @article ou @book), uma por fonte citada, com author, title,
       year, url quando houver e note ("Acesso em: DD/MM/AAAA."). A entrada energynexus_db (base interna) já existe.
     Recusa, sem gerar, se faltar ou sobrar seção, se um trecho com número não citar fonte, se uma chave citada não
-    existir nas referências ou se o LaTeX não compilar; a resposta diz o que corrigir.
+    existir nas referências, se o texto parecer truncado ou se o LaTeX não compilar; a resposta diz o que corrigir.
+    A conferência é de forma (estrutura e citação): os valores não são reconferidos contra a base.
     """
     titulo, subtitulo, periodo = str(titulo or ""), str(subtitulo or ""), str(periodo or "")
     conteudo = str(conteudo or "").replace("\r\n", "\n").strip("\n")  # as linhas dos erros são as deste texto
@@ -322,6 +399,8 @@ def gerar_relatorio(titulo: str, subtitulo: str, periodo: str, conteudo: str, re
         f"Relatório gerado: {paginas} páginas, {len(citadas)} referências.",
         f"PDF: {pdf}",
         f"Fonte LaTeX (main.tex, referencias.bib e imagens): {publicar(os.path.join(PASTA, nome + '.zip'))}",
+        "Conferência de forma: todo trecho com número cita \\cite e toda tabela tem linha de fonte. Os valores NÃO "
+        "foram reconferidos na base — não diga ao usuário que os números foram conferidos automaticamente.",
         *(["Avisos: " + "; ".join(avisos)] if avisos else []),
         "",
         "Na resposta ao usuário, resuma os principais achados em 2 a 4 frases e termine com o bloco abaixo, copiado",

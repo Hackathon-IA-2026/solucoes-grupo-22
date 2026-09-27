@@ -19,6 +19,24 @@ describe('getModelMaxTokens partial-override fallback', () => {
   });
 });
 
+describe('Claude 5 family on bedrock and anthropic', () => {
+  // Os perfis do EnergyNexus rodam `us.anthropic.claude-sonnet-5`/`claude-opus-5`; sem entrada em `anthropicModels`
+  // eles caem no prefixo genérico `claude-` (100 mil) e o histórico é podado no meio da conversa.
+  it.each([
+    ['us.anthropic.claude-sonnet-5', 1000000],
+    ['us.anthropic.claude-opus-5', 1000000],
+  ])('resolves the 1M context of %s on bedrock', (model, context) => {
+    expect(getModelMaxTokens(model, EModelEndpoint.bedrock)).toBe(context);
+  });
+
+  it.each([
+    ['claude-sonnet-5', 128000],
+    ['claude-opus-5', 128000],
+  ])('resolves the 128k max output of %s on anthropic', (model, output) => {
+    expect(getModelMaxOutputTokens(model, EModelEndpoint.anthropic)).toBe(output);
+  });
+});
+
 describe('getModelMaxOutputTokens partial-override fallback', () => {
   const partialOverride: EndpointTokenConfig = {
     'custom-model': { prompt: 1, completion: 2, context: 32000, output: 4096 },

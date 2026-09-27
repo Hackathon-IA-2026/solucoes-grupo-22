@@ -35,8 +35,8 @@ Sem link público: o chat roda nos servidores do IMPA e é aberto por túnel SSH
 | `client/src/style.css` | o tema do EnergyNexus |
 | `client/public/assets/` (logo e ícones), `client/index.html`, `client/vite.config.ts` | a logo e o nome do EnergyNexus |
 | `client/src/utils/artifacts.ts`, `client/src/components/Artifacts/ArtifactTabs.tsx`, `DownloadArtifact.tsx` e `Artifacts.tsx` | o LibreChat mostra o relatório em PDF (em tela cheia, com o botão de reduzir para o painel ao lado do chat) e baixa o arquivo |
-| `client/src/components/Coppezip/BotaoRelatorio.tsx` (ligado em `client/src/components/Chat/Input/ChatForm.tsx`) | o botão "Gerar relatório em PDF" ao lado do campo de mensagem, nos perfis com a ferramenta `gerar_relatorio` |
-| abas Painel, Busca e Grafo | `client/src/components/Coppezip/`, `client/src/components/Nav/CoppezipNavButtons.tsx`, as rotas `/painel`, `/busca` e `/grafo` em `client/src/routes/index.tsx`, e `api/server/routes/painel.js` e `busca.js` (registradas em `api/server/index.js` e `routes/index.js`) |
+| `client/src/components/EnergyNexus/BotaoRelatorio.tsx` (ligado em `client/src/components/Chat/Input/ChatForm.tsx`) | o botão "Gerar relatório em PDF" ao lado do campo de mensagem, nos perfis com a ferramenta `gerar_relatorio` |
+| abas Painel, Busca e Grafo | `client/src/components/EnergyNexus/`, `client/src/components/Nav/EnergyNexusNavButtons.tsx`, as rotas `/painel`, `/busca` e `/grafo` em `client/src/routes/index.tsx`, e `api/server/routes/painel.js` e `busca.js` (registradas em `api/server/index.js` e `routes/index.js`) |
 | aba Timeline | `client/src/components/Timeline/`: evolução de cada empresa (eventos por ano, impacto, indicadores e fontes), trajetórias estratégicas e gráficos; registrada em `client/src/routes/index.tsx`, `client/src/hooks/Nav/useSideNavLinks.ts` e na chave `com_ui_timeline` das traduções |
 
 O resto (`api/`, `client/`, `packages/`, `config/`...) é o LibreChat. Mudou algo em `client/`? Recompile com
@@ -112,8 +112,8 @@ Os dados não vão para o git. Coloque em `data/`:
 
 | Caminho | Como obter |
 |---|---|
-| `data/raw/`, `data/parquet/` | `python data/baixar.py` (fontes oficiais) e o Drive do projeto (`CoppeZIP-dados-brutos`) |
-| `data/coppezip.duckdb` | `.runtime/venv/bin/python data/construir.py`, depois `data/documentar.py` |
+| `data/raw/`, `data/parquet/` | `python data/baixar.py` (fontes oficiais) e o Drive do projeto (`EnergyNexus-dados-brutos`) |
+| `data/energynexus.duckdb` | `.runtime/venv/bin/python data/construir.py`, depois `data/documentar.py` |
 | `data/modelos/multilingual-e5-large/` | o modelo `intfloat/multilingual-e5-large` do Hugging Face, copiado sem links simbólicos |
 | `data/docs_titan.duckdb` | `.runtime/venv/bin/python data/indexar_docs_titan.py`, com as credenciais da AWS em `~/.aws/credentials` (o índice em uso; `data/indexar_docs.py` monta a versão com o e5 local em `data/docs.duckdb`, que o chat não usa). PDFs em `data/raw/sustentabilidade/<empresa>/<ano>/` e `data/raw/financeiro/<empresa>/pdfs/<ano>/`, organizados por `data/organizar.py` e descritos em `data/documentos.csv` |
 | `data/painel.json` | `.runtime/venv/bin/python data/exportar_painel.py`, depois do `construir.py` |
@@ -136,7 +136,7 @@ Ao lado do chat (ícones na barra lateral), só para usuários logados:
 - **Busca** (`/busca`): responde "em que página está isso?" nos PDFs indexados, com o trecho, a imagem da página e o
   PDF. Usa o mesmo índice e modelo do `energynexus-docs` (`data/docs_titan.duckdb`, Titan pelo Bedrock); o `iniciar.sh` sobe
   `proper_mcps/docs/busca.py` em `127.0.0.1:BUSCA_PORTA` e o LibreChat repassa `/api/busca`.
-- **Grafo** (`/grafo`, `?empresa=<CNPJ só com dígitos>`): grafo de conhecimento de uma empresa, trazido do CoppeZIP
+- **Grafo** (`/grafo`, `?empresa=<CNPJ só com dígitos>`): grafo de conhecimento de uma empresa, trazido do EnergyNexus
   (Chainlit). Empresa → categoria (cada base do painel com dados dela, e os documentos por área) → indicadores (as
   medidas do painel, por período, com a mesma regra de agregação) e referências (a base, ou o PDF, agrupados por tipo).
   A empresa é o CNPJ, que liga as bases do `painel.json` entre si e aos documentos de `/api/busca/resumo`; não há
@@ -150,7 +150,7 @@ Ao lado do chat (ícones na barra lateral), só para usuários logados:
 .runtime/venv/bin/python -m pytest proper_mcps data -q   # ferramentas (relatório: TinyTeX) e linha do tempo
 eval/usuario.sh                                       # uma vez: usuário de teste no LibreChat
 python3 eval/chat.py "Qual foi a receita líquida da Taesa em 2025?"
-python3 eval/regressao.py                             # perguntas de resposta conhecida; --perfil energynexus-analista-claude para o Claude
+python3 eval/regressao.py                             # 34 perguntas; --perfil energynexus-analista-claude para o Claude
 node eval/e2e/telas.js                                # abre as telas do placar no navegador e confere fonte e recálculo
 ```
 

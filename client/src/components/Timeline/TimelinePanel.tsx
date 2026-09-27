@@ -1,4 +1,4 @@
-/* eslint-disable i18next/no-literal-string -- aba do CoppeZIP: textos em português, como os dados que ela mostra */
+/* eslint-disable i18next/no-literal-string -- aba do EnergyNexus: textos em português, como os dados que ela mostra */
 import { useParams } from 'react-router-dom';
 import EmpresaList from './EmpresaList';
 
