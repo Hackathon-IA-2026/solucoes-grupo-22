@@ -1,26 +1,24 @@
 """Indexa os PDFs de relatórios como o indexar_docs.py, mas com embeddings do Amazon Titan (Bedrock) em vez do e5 local.
 
-Uso: python data/indexar_docs_titan.py [--threads N] [--tudo] [--limite N] [--publicar-a-cada N]
+Uso: python data/indexar_docs_titan.py [--threads N] [--tudo] [--limite N] [--publicar-a-cada N] [--temas]
 Entrada: a mesma do indexar_docs.py (data/documentos.csv e os PDFs de data/raw/financeiro e data/raw/sustentabilidade).
 Credenciais: cadeia padrão da AWS (~/.aws/credentials), região BEDROCK_AWS_DEFAULT_REGION do .env.
 Saída: data/docs_titan.duckdb com as mesmas tabelas do docs.duckdb (documentos, paginas, trechos com embedding FLOAT[1024]
-do amazon.titan-embed-text-v2:0, normalizado, e blocos, os parágrafos da aba Timeline). Na busca, a pergunta passa pelo
-mesmo modelo, sem o prefixo "query: " do e5.
+do amazon.titan-embed-text-v2:0, normalizado, e blocos, os parágrafos da aba Timeline), mais temas, o vetor da consulta
+de cada tema da aba Timeline. Na busca, a pergunta passa pelo mesmo modelo, sem o prefixo "query: " do e5.
 
 Feito para máquina pequena e credencial temporária: cada PDF é gravado assim que termina em data/docs_titan.duckdb.trabalho
 (nada fica acumulado na memória), e a próxima execução continua de onde parou; PDF que mudou de tamanho ou saiu do CSV é
-refeito ou removido. A cada N PDFs e no fim, uma cópia do trabalho com o índice de palavras substitui a saída de forma
-atômica e a linha do tempo (data/linha_do_tempo.py) é refeita, então a busca e a aba Timeline funcionam durante a
-indexação com o que já está pronto. Um trabalho de antes da tabela blocos ganha os parágrafos dos PDFs já indexados na
-execução seguinte, lidos dos próprios PDFs, sem chamar o Bedrock.
+refeito ou removido. A cada N PDFs e no fim, uma cópia do trabalho com o índice de palavras e os vetores dos temas
+substitui a saída de forma atômica, então a busca e a aba Timeline funcionam durante a indexação com o que já está
+pronto. Um trabalho de antes da tabela blocos ganha os parágrafos dos PDFs já indexados na execução seguinte, lidos dos
+próprios PDFs, sem chamar o Bedrock. --temas só refaz os vetores dos temas no índice publicado.
 """
 import argparse
 import csv
 import json
 import os
 import shutil
-import subprocess
-import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -31,6 +29,7 @@ import pyarrow as pa
 from botocore.config import Config
 
 from indexar_docs import AQUI, AREAS, PDFS, RAIZ, blocos_de, trechos
+from linha_do_tempo import TEMAS
 
 SAIDA = os.path.join(RAIZ, "data", "docs_titan.duckdb")
 TRABALHO = SAIDA + ".trabalho"
@@ -109,8 +108,19 @@ def remover(con, arquivo: str):
         con.execute(f"DELETE FROM {tabela} WHERE arquivo = ?", [arquivo])
 
 
-def publicar(con):
-    """Copia o trabalho, monta o índice de palavras na cópia e troca a saída; devolve a conexão reaberta."""
+def gravar_temas(pub, bedrock):
+    """Vetor da consulta de cada tema da aba Timeline (data/linha_do_tempo.py), no mesmo modelo dos trechos.
+
+    São sete chamadas por publicação: a busca por sentido da linha do tempo compara esses vetores com os dos trechos,
+    então eles precisam viajar junto com o índice publicado."""
+    pub.execute(f"CREATE OR REPLACE TABLE temas (tema VARCHAR, consulta VARCHAR, embedding FLOAT[{DIMENSOES}])")
+    pub.executemany("INSERT INTO temas VALUES (?, ?, ?::FLOAT[%d])" % DIMENSOES,
+                    [(tema, consulta, embed(bedrock, consulta)) for tema, (_, consulta, _) in TEMAS.items()])
+
+
+def publicar(con, bedrock):
+    """Copia o trabalho, monta o índice de palavras e os vetores dos temas na cópia e troca a saída; devolve a conexão
+    reaberta."""
     con.execute("CHECKPOINT")
     con.close()
     tmp = SAIDA + ".tmp"
@@ -121,14 +131,12 @@ def publicar(con):
     for tabela in ("trechos", "blocos"):
         pub.execute(f"""PRAGMA create_fts_index('{tabela}', 'id', 'texto', stemmer = 'portuguese', stopwords = 'none',
                         ignore = '(\\.|[^a-z0-9])+', strip_accents = 1, lower = 1)""")
+    gravar_temas(pub, bedrock)
     documentos, trechos_, paragrafos = pub.execute("""SELECT (SELECT count(*) FROM documentos),
         (SELECT count(*) FROM trechos), (SELECT count(*) FROM blocos)""").fetchone()
     pub.close()
     os.replace(tmp, SAIDA)
     print(f"publicado: {documentos} PDFs, {trechos_} trechos, {paragrafos} parágrafos em {SAIDA}", flush=True)
-    # a aba Timeline acompanha o índice publicado, como a busca
-    if subprocess.run([sys.executable, os.path.join(AQUI, "linha_do_tempo.py")]).returncode:
-        print("aviso: a linha do tempo não foi refeita (erro acima); a indexação continua", flush=True)
     con = duckdb.connect(TRABALHO)
     con.execute("LOAD fts")
     return con
@@ -140,7 +148,19 @@ def main():
     ap.add_argument("--tudo", action="store_true", help="recomeça do zero")
     ap.add_argument("--limite", type=int, help="indexa só os N primeiros PDFs do documentos.csv (teste)")
     ap.add_argument("--publicar-a-cada", type=int, default=200, help="PDFs novos entre uma publicação e outra")
+    ap.add_argument("--temas", action="store_true",
+                    help="só refaz a tabela temas no índice já publicado (sete chamadas ao Bedrock, nada é reindexado)")
     a = ap.parse_args()
+
+    if a.temas:  # mesma troca atômica da publicação: a busca continua no ar com o índice antigo até o fim
+        tmp = SAIDA + ".tmp"
+        shutil.copy(SAIDA, tmp)
+        pub = duckdb.connect(tmp)
+        gravar_temas(pub, cliente(1))
+        temas = pub.execute("SELECT count(*) FROM temas").fetchone()[0]
+        pub.close()
+        os.replace(tmp, SAIDA)
+        return print(f"{temas} temas vetorizados em {SAIDA}")
 
     with open(os.path.join(AQUI, "documentos.csv"), newline="") as f:
         docs = list(csv.DictReader(f, delimiter=";"))
@@ -207,8 +227,8 @@ def main():
             print(f"[{n}/{len(pendentes)}] {d['arquivo']}: {d['paginas']} páginas, {len(pedacos)} trechos "
                   f"({novos / (time.time() - inicio):.0f} trechos/s)", flush=True)
             if desde >= a.publicar_a_cada:
-                con, desde = publicar(con), 0
-    publicar(con).close()
+                con, desde = publicar(con, bedrock), 0
+    publicar(con, bedrock).close()
     print(f"ok em {time.time() - inicio:.0f} s")
 
 

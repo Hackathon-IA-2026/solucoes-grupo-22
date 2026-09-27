@@ -4,9 +4,12 @@ Serviço HTTP em 127.0.0.1 sobre o mesmo índice do server.py. Reaproveita os em
 é a do seu trecho mais parecido com a pergunta (Amazon Titan pelo Bedrock), fundida por posição (RRF) com a busca de
 palavras (BM25), como em buscar_documentos. Páginas sem texto extraível (só imagem) ficam de fora, como no índice.
 
+Também monta a linha do tempo da aba Timeline na hora (data/linha_do_tempo.py, sobre este índice e o coppezip.duckdb).
+
 Uso: python busca.py --porta N  (o iniciar.sh sobe com BUSCA_PORTA do .env). Índice data/docs_titan.duckdb, PDFs em
 data/raw/<area>/<empresa>/... (caminho na coluna arquivo), os mesmos do indexar_docs_titan.py.
-Rotas (GET): /resumo, /buscar?q=&empresa=&ano=&k=, /pagina?arquivo=&pagina=, /imagem?arquivo=&pagina=, /pdf?arquivo=
+Rotas (GET): /resumo, /buscar?q=&empresa=&ano=&k=, /pagina?arquivo=&pagina=, /imagem?arquivo=&pagina=, /pdf?arquivo=,
+/timeline_empresas, /timeline?cnpj=&de=&ate=
 empresa e ano podem se repetir; sem nenhum, a busca vale para todos os documentos.
 """
 import argparse
@@ -18,9 +21,13 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+import duckdb
 import pymupdf as fitz
 
 from server import CANDIDATOS, DB, RAIZ, _con, _embed
+
+sys.path.insert(0, os.path.join(RAIZ, "data"))  # a linha do tempo é montada aqui, na hora, pela biblioteca de data/
+import linha_do_tempo as lt  # noqa: E402
 
 PDFS = os.path.join(RAIZ, "data", "raw")
 MAX_RESULTADOS = 50
@@ -178,7 +185,43 @@ def pdf(p: dict) -> tuple[str, str]:
     return "application/pdf", _caminho(_um(p, "arquivo"))
 
 
-ROTAS = {"/resumo": resumo, "/buscar": buscar, "/pagina": pagina, "/imagem": imagem, "/pdf": pdf}
+def _bases():
+    """As duas bases da aba Timeline, abertas só para leitura (uma conexão por pedido)."""
+    if not os.path.exists(lt.BANCO):
+        raise Erro(503, f"a base {lt.BANCO} não existe; rode data/construir.py")
+    return _conectar(), duckdb.connect(lt.BANCO, read_only=True)
+
+
+def timeline_empresas(_: dict) -> dict:
+    """Seletor da aba Timeline: as empresas da base, o que cada uma tem e o período que se pode pedir."""
+    docs, con = _bases()
+    try:
+        return lt.selecao(con, docs)
+    finally:
+        con.close()
+        docs.close()
+
+
+def timeline(p: dict) -> dict:
+    """Linha do tempo de uma empresa no período pedido, montada agora: nada fica pré-gerado em disco."""
+    cnpj, de, ate = _um(p, "cnpj").strip(), _inteiro(p, "de"), _inteiro(p, "ate")
+    if ate < de:
+        raise Erro(400, "o ano final é antes do inicial")
+    if ate - de + 1 > lt.MAX_ANOS:
+        raise Erro(400, f"o período pedido tem {ate - de + 1} anos; o máximo é {lt.MAX_ANOS}")
+    docs, con = _bases()
+    try:
+        empresa = lt.empresa_de(con, cnpj)
+        if not empresa:
+            raise Erro(404, f"o CNPJ '{cnpj}' não está na base")
+        return lt.linha_do_tempo(con, docs, empresa, de, ate)
+    finally:
+        con.close()
+        docs.close()
+
+
+ROTAS = {"/resumo": resumo, "/buscar": buscar, "/pagina": pagina, "/imagem": imagem, "/pdf": pdf,
+         "/timeline": timeline, "/timeline_empresas": timeline_empresas}
 
 
 class Tratador(BaseHTTPRequestHandler):

@@ -1,10 +1,11 @@
 /* eslint-disable i18next/no-literal-string -- aba do CoppeZIP: textos em português, como os dados que ela mostra */
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Spinner, useMediaQuery } from '@librechat/client';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
-import type { Ano } from './data';
-import { useLinhaDoTempo } from './data';
+import { mensagemDeErro } from '../Coppezip/api';
+import type { Ano, LinhaDoTempo } from './data';
+import { useLinhaDoTempo, useSelecao } from './data';
 import Trajectories from './Trajectories';
 import EmpresaList from './EmpresaList';
 import LineChart from './LineChart';
@@ -14,7 +15,11 @@ import { cn } from '~/utils';
 
 const DESTAQUES = '__destaques__';
 
-/** Página da aba Timeline: /timeline (escolher a empresa) e /timeline/:empresaId (a linha do tempo). */
+/**
+ * Página da aba Timeline: /timeline (escolher a empresa) e /timeline/:empresaId (escolher o período e gerar).
+ * A linha do tempo é montada pelo serviço da Busca no clique em "Gerar linha do tempo"; o período fica na URL
+ * (?de=&ate=), então a página pode ser recarregada ou compartilhada.
+ */
 export default function TimelineView() {
   const { empresaId } = useParams();
   return (
@@ -38,7 +43,8 @@ function Escolha() {
           <h1 className="text-xl font-semibold text-text-primary">Timeline</h1>
           <p className="text-sm text-text-secondary">
             Evolução histórica das empresas do setor elétrico: sustentabilidade, transição
-            energética, investimentos e mudanças estratégicas, com a fonte de cada item.
+            energética, investimentos e mudanças estratégicas, com a fonte de cada item. Escolha a
+            empresa e o período.
           </p>
         </div>
       </div>
@@ -49,28 +55,174 @@ function Escolha() {
 
 function Empresa({ id }: { id: string }) {
   const navigate = useNavigate();
-  const { data, isLoading, isError } = useLinhaDoTempo(id);
+  const [params, setParams] = useSearchParams();
+  const selecao = useSelecao();
+  const empresa = selecao.data?.empresas.find((e) => e.id === id);
+  const limites = selecao.data?.limites;
+
+  const de = Number(params.get('de')) || undefined;
+  const ate = Number(params.get('ate')) || undefined;
+  const { data, isLoading, isError, error } = useLinhaDoTempo(id, de, ate);
+
+  // o formulário começa no período sugerido da empresa (ou no que já está na URL)
+  const [inicio, setInicio] = useState<number | undefined>(de);
+  const [fim, setFim] = useState<number | undefined>(ate);
+  useEffect(() => {
+    if (empresa) {
+      setInicio((v) => v ?? empresa.periodo[0]);
+      setFim((v) => v ?? empresa.periodo[1]);
+    }
+  }, [empresa]);
+
+  const anos = useMemo(
+    () =>
+      limites
+        ? Array.from({ length: limites[1] - limites[0] + 1 }, (_, i) => limites[0] + i)
+        : ([] as number[]),
+    [limites],
+  );
+
+  const nome = data?.empresa.nome ?? empresa?.nome;
+  const gerar = () => {
+    if (inicio && fim) {
+      setParams({ de: String(inicio), ate: String(fim) });
+    }
+  };
+
+  if (selecao.isLoading) {
+    return (
+      <div className="flex justify-center py-24">
+        <Spinner className="text-text-secondary" aria-label="Carregando" />
+      </div>
+    );
+  }
+  if (!empresa) {
+    return (
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-text-secondary">
+          {selecao.isError
+            ? `O serviço da Busca não respondeu: ${mensagemDeErro(selecao.error)}`
+            : 'Esta empresa não está na base.'}
+        </p>
+        <EmpresaList inputId="timeline-pagina-busca" />
+      </div>
+    );
+  }
+
+  const seletor = (
+    rotulo: string,
+    valor: number | undefined,
+    mudar: (v: number) => void,
+    opcoes: number[],
+  ) => (
+    <label className="flex flex-col gap-1 text-xs text-text-secondary">
+      {rotulo}
+      <select
+        value={valor ?? ''}
+        onChange={(e) => mudar(Number(e.target.value))}
+        className="rounded-lg border border-border-light bg-surface-primary px-2 py-1.5 text-sm text-text-primary"
+      >
+        {opcoes.map((a) => (
+          <option key={a} value={a}>
+            {a}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+
+  return (
+    <>
+      <header className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-text-secondary">Timeline</p>
+            <h1 className="text-2xl font-semibold text-text-primary">{nome}</h1>
+            <p className="text-sm text-text-secondary">
+              CNPJ {empresa.cnpj}
+              {empresa.apelidos && ` · ${empresa.apelidos}`} · {empresa.relatorios} relatório
+              {empresa.relatorios === 1 ? '' : 's'} indexado
+              {empresa.relatorios === 1 ? '' : 's'}
+              {empresa.dfp && ` · DFP ${empresa.dfp[0]}–${empresa.dfp[1]}`}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/timeline')}
+            className="rounded-lg border border-border-light px-3 py-1.5 text-sm text-text-primary hover:bg-surface-hover"
+          >
+            Trocar empresa
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border-light bg-surface-primary p-3">
+          {seletor('Ano inicial', inicio, (v) => setInicio(v), anos)}
+          {seletor(
+            'Ano final',
+            fim,
+            (v) => setFim(v),
+            anos.filter((a) => !inicio || a >= inicio),
+          )}
+          <button
+            type="button"
+            onClick={gerar}
+            disabled={!inicio || !fim || fim < inicio || isLoading}
+            className="rounded-lg bg-text-primary px-3 py-1.5 text-sm text-presentation disabled:opacity-50"
+          >
+            {isLoading ? 'Gerando…' : 'Gerar linha do tempo'}
+          </button>
+          <p className="basis-full text-xs text-text-secondary">
+            A linha do tempo é montada na hora, a partir das tabelas do período e dos relatórios da
+            empresa publicados nele: com muitos relatórios leva alguns segundos.
+            {data && ` Gerada em ${new Date(`${data.gerado_em}T12:00:00`).toLocaleDateString('pt-BR')}.`}
+          </p>
+        </div>
+      </header>
+
+      {isLoading && (
+        <div className="flex flex-col items-center gap-2 py-16">
+          <Spinner className="text-text-secondary" aria-label="Gerando" />
+          <p className="text-sm text-text-secondary">
+            Montando {de}–{ate}: eventos das tabelas e busca nos relatórios…
+          </p>
+        </div>
+      )}
+      {isError && (
+        <p className="text-sm text-text-secondary">
+          Não foi possível gerar a linha do tempo: {mensagemDeErro(error)}
+        </p>
+      )}
+      {!isLoading && !isError && !data && (
+        <p className="text-sm text-text-secondary">
+          Escolha o período e clique em <strong>Gerar linha do tempo</strong>.
+        </p>
+      )}
+      {data && <Conteudo key={`${de}-${ate}`} data={data} />}
+    </>
+  );
+}
+
+/** As seções da linha do tempo gerada: eventos por ano, trajetórias, indicadores e as notas de leitura. */
+function Conteudo({ data }: { data: LinhaDoTempo }) {
   const [filtro, setFiltro] = useState<string | null>(null);
   const [abertos, setAbertos] = useState<Set<number>>(new Set());
 
-  // abre o ano mais recente com trecho de relatório (senão com destaque, senão o último) ao trocar de empresa
+  // abre o ano mais recente com trecho de relatório (senão com destaque, senão o último)
   useEffect(() => {
-    if (data) {
-      const recentes = [...data.anos].reverse();
-      const alvo =
-        recentes.find((a) => a.eventos.some((e) => e.tipo === 'relatorio')) ??
-        recentes.find((a) => a.destaque) ??
-        recentes[0];
-      setAbertos(new Set(alvo ? [alvo.ano] : []));
-      setFiltro(null);
-    }
+    const recentes = [...data.anos].reverse();
+    const alvo =
+      recentes.find((a) => a.eventos.some((e) => e.tipo === 'relatorio')) ??
+      recentes.find((a) => a.destaque) ??
+      recentes[0];
+    setAbertos(new Set(alvo ? [alvo.ano] : []));
+    setFiltro(null);
   }, [data]);
 
   // numeração das evidências na página inteira, na ordem dos anos (a mesma com ou sem filtro)
   const primeiraFonte = useMemo(() => {
     const n: Record<number, number> = {};
     let total = 1;
-    for (const a of data?.anos ?? []) {
+    for (const a of data.anos) {
       n[a.ano] = total;
       total += a.eventos.length;
     }
@@ -78,8 +230,8 @@ function Empresa({ id }: { id: string }) {
   }, [data]);
 
   const anos = useMemo<Ano[]>(() => {
-    if (!data || !filtro) {
-      return data?.anos ?? [];
+    if (!filtro) {
+      return data.anos;
     }
     return data.anos
       .map((a) => ({
@@ -91,23 +243,7 @@ function Empresa({ id }: { id: string }) {
       .filter((a) => a.eventos.length > 0);
   }, [data, filtro]);
 
-  if (isLoading) {
-    return (
-      <div className="flex justify-center py-24">
-        <Spinner className="text-text-secondary" aria-label="Carregando" />
-      </div>
-    );
-  }
-  if (isError || !data) {
-    return (
-      <div className="flex flex-col gap-4">
-        <p className="text-sm text-text-secondary">Não há linha do tempo para esta empresa.</p>
-        <EmpresaList inputId="timeline-pagina-busca" />
-      </div>
-    );
-  }
-
-  const { empresa, temas } = data;
+  const { temas } = data;
   const presentes = Object.keys(temas).filter((t) => data.anos.some((a) => a.temas.includes(t)));
   const chip = (valor: string | null, rotulo: string) => (
     <button
@@ -126,29 +262,17 @@ function Empresa({ id }: { id: string }) {
     </button>
   );
 
+  if (!data.anos.length) {
+    return (
+      <p className="text-sm text-text-secondary">
+        A base não tem nada desta empresa entre {data.periodo[0]} e {data.periodo[1]}: tente um
+        período maior.
+      </p>
+    );
+  }
+
   return (
     <>
-      <header className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <p className="text-xs uppercase tracking-wide text-text-secondary">Timeline</p>
-            <h1 className="text-2xl font-semibold text-text-primary">{empresa.nome}</h1>
-            <p className="text-sm text-text-secondary">
-              CNPJ {empresa.cnpj}
-              {empresa.apelidos && ` · ${empresa.apelidos}`} · {data.periodo[0]}–{data.periodo[1]} ·
-              gerada em {new Date(`${data.gerado_em}T12:00:00`).toLocaleDateString('pt-BR')}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => navigate('/timeline')}
-            className="rounded-lg border border-border-light px-3 py-1.5 text-sm text-text-primary hover:bg-surface-hover"
-          >
-            Trocar empresa
-          </button>
-        </div>
-      </header>
-
       <section className="flex flex-col gap-3" aria-labelledby="linha-do-tempo">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 id="linha-do-tempo" className="text-lg font-semibold text-text-primary">
@@ -209,8 +333,8 @@ function Empresa({ id }: { id: string }) {
           </h2>
           <p className="text-sm text-text-secondary">
             Sequências nos dados: anúncio, contratação ou financiamento, investimento e resultado.
-            Cada seta diz o que liga um passo ao seguinte (o mesmo ativo, o mesmo contrato, o nome
-            do projeto ou só a ordem no tempo). Uma sequência não prova que um passo causou o outro.
+            Cada seta diz o que liga um passo ao seguinte (o mesmo ativo, o mesmo contrato, o nome do
+            projeto ou só a ordem no tempo). Uma sequência não prova que um passo causou o outro.
           </p>
         </div>
         <Trajectories trajetorias={data.trajetorias} temas={temas} />
@@ -234,7 +358,7 @@ function Empresa({ id }: { id: string }) {
           </div>
         ) : (
           <p className="text-sm text-text-secondary">
-            A base não tem indicadores anuais desta empresa.
+            A base não tem indicadores anuais desta empresa no período.
           </p>
         )}
       </section>

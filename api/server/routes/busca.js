@@ -7,7 +7,7 @@ const router = express.Router();
 router.use(requireJwtAuth);
 
 // Proxy para proper_mcps/docs/busca.py, que o iniciar.sh sobe em 127.0.0.1:BUSCA_PORTA (.env).
-const ROTAS = new Set(['resumo', 'buscar', 'pagina', 'imagem', 'pdf']);
+const ROTAS = new Set(['resumo', 'buscar', 'pagina', 'imagem', 'pdf', 'timeline', 'timeline_empresas']);
 
 router.get('/:rota', async (req, res) => {
   const base = `http://127.0.0.1:${process.env.BUSCA_PORTA}`;

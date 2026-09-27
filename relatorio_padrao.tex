@@ -1,0 +1,616 @@
+%% =====================================================================
+%%  ENERGY NEXUS — TEMPLATE DE RELATÓRIO GERADO POR IA
+%% =====================================================================
+%%  INSTRUÇÕES GERAIS PARA A IA
+%%
+%%  Este documento é um relatório de inteligência competitiva do setor
+%%  elétrico gerado a partir das informações disponíveis na base do
+%%  Energy Nexus. O objetivo é transformar informações públicas de
+%%  empresas em uma análise estruturada, comparável, temporalmente
+%%  contextualizada e rastreável.
+%%
+%%  1. ESTRUTURA DO PROJETO
+%%
+%%     Não crie outros arquivos .tex.
+%%
+%%       main.tex          -> todo o conteúdo textual do relatório
+%%       referencias.bib   -> todas as fontes utilizadas
+%%       imagens/          -> logos e figuras geradas
+%%
+%%     Edite SOMENTE:
+%%       (a) os campos do bloco "DADOS DO RELATÓRIO";
+%%       (b) o conteúdo entre "INÍCIO DO CONTEÚDO" e
+%%           "FIM DO CONTEÚDO".
+%%
+%%     Não altere o preâmbulo, a capa, os comandos de formatação,
+%%     a identidade visual ou a estrutura de referências.
+%%
+%%  2. OBJETIVO DO RELATÓRIO
+%%
+%%     O relatório deve responder à pergunta ou demanda que originou
+%%     a análise e transformar os dados disponíveis em informação útil
+%%     para inteligência competitiva.
+%%
+%%     Sempre que pertinente, a análise deve considerar:
+%%
+%%       - evolução histórica das empresas;
+%%       - investimentos e alocação de recursos;
+%%       - desempenho econômico e operacional;
+%%       - sustentabilidade e indicadores socioambientais;
+%%       - transição energética e descarbonização;
+%%       - inovação e novas estratégias;
+%%       - diferenças entre empresas;
+%%       - mudanças relevantes nos indicadores ao longo do tempo;
+%%       - possíveis relações entre estratégias, investimentos e
+%%         resultados observados.
+%%
+%%     Não force todos esses temas em todos os relatórios. Utilize
+%%     somente aqueles relevantes para a pergunta analisada e para os
+%%     dados disponíveis.
+%%
+%%  3. IDIOMA E ESTILO
+%%
+%%     - Português do Brasil.
+%%     - Linguagem técnica, objetiva e clara.
+%%     - Evite linguagem promocional, opinativa ou excessivamente
+%%       especulativa.
+%%     - Priorize informações quantitativas e comparações objetivas.
+%%     - Explique conceitos técnicos quando forem necessários para
+%%       compreender a análise.
+%%     - Não repita informações sem acrescentar contexto ou interpretação.
+%%     - Prefira parágrafos curtos e bem estruturados.
+%%
+%%     Unidades:
+%%       MW, MWmed, MWh, GWh, TWh, R$/MWh, R$, %, tCO2e etc.
+%%
+%%     Utilize a unidade originalmente apresentada pela fonte quando
+%%     sua conversão puder alterar a interpretação do dado.
+%%
+%%     Separador decimal: vírgula.
+%%     Datas: DD/MM/AAAA.
+%%
+%%  4. RASTREABILIDADE DAS INFORMAÇÕES — OBRIGATÓRIO
+%%
+%%     A rastreabilidade é um requisito central do Energy Nexus.
+%%
+%%     Toda informação factual relevante deve possuir uma fonte.
+%%     Isso inclui:
+%%
+%%       - valores numéricos;
+%%       - indicadores;
+%%       - séries históricas;
+%%       - datas de eventos;
+%%       - investimentos;
+%%       - metas;
+%%       - resultados financeiros;
+%%       - informações operacionais;
+%%       - informações socioambientais;
+%%       - estratégias e compromissos anunciados pelas empresas;
+%%       - afirmações sobre ações ou resultados de uma empresa.
+%%
+%%     Utilize \cite{chave} imediatamente após a informação factual
+%%     correspondente.
+%%
+%%     Exemplo:
+%%
+%%       A empresa anunciou investimentos de R\$ 2,4 bilhões em
+%%       projetos de geração renovável em 2024 \cite{fonte}.
+%%
+%%     Toda chave utilizada em \cite{} DEVE existir em referencias.bib.
+%%
+%%     Utilize SOMENTE fontes disponíveis na base de dados do
+%%     Energy Nexus ou recuperadas pelo sistema e efetivamente
+%%     disponibilizadas para o relatório.
+%%
+%%     NUNCA invente:
+%%       - referências;
+%%       - autores;
+%%       - títulos;
+%%       - URLs;
+%%       - documentos;
+%%       - páginas;
+%%       - valores;
+%%       - indicadores;
+%%       - eventos.
+%%
+%%     Sempre que possível, utilize a fonte mais específica disponível
+%%     para cada informação. Evite utilizar uma referência genérica
+%%     para uma grande quantidade de informações quando fontes
+%%     específicas estiverem disponíveis.
+%%
+%%     Se a informação vier de uma consulta estruturada à base interna,
+%%     utilize a referência correspondente à fonte original do dado,
+%%     quando disponível.
+%%
+%%     A referência "energynexus_db" deve ser utilizada somente quando
+%%     a origem específica do dado não estiver disponível e a informação
+%%     puder ser atribuída de forma segura à base interna.
+%%
+%%     Tabelas e figuras devem possuir uma indicação de fonte:
+%%
+%%       \fonte{\cite{chave}}
+%%
+%%     ou, quando forem produzidas a partir de múltiplas fontes:
+%%
+%%       \fonte{Elaborado pelo Energy Nexus a partir de
+%%       \cite{fonte1, fonte2}.}
+%%
+%%  5. DISTINÇÃO ENTRE DADOS E ANÁLISE DA IA
+%%
+%%     Diferencie claramente:
+%%
+%%       A. FATO
+%%          Informação diretamente apresentada por uma fonte.
+%%
+%%       B. COMPARAÇÃO
+%%          Relação quantitativa ou qualitativa estabelecida entre
+%%          informações provenientes das fontes.
+%%
+%%       C. INFERÊNCIA / ANÁLISE
+%%          Interpretação produzida pela IA a partir dos dados.
+%%
+%%       D. RECOMENDAÇÃO
+%%          Sugestão derivada da análise realizada.
+%%
+%%     Fatos devem possuir citações.
+%%
+%%     Comparações devem citar as fontes dos dados utilizados.
+%%
+%%     Inferências e interpretações devem deixar claro que são análises
+%%     do Energy Nexus ou da IA e devem citar as evidências que as
+%%     sustentam.
+%%
+%%     Exemplos:
+%%
+%%       "A empresa aumentou seus investimentos em 32% entre 2023 e
+%%       2024 \cite{fonte2023,fonte2024}."
+%%
+%%       "Esse aumento coincide temporalmente com a estratégia anunciada
+%%       pela companhia em 2023 \cite{fonte_estrategia,fonte2024}."
+%%
+%%       "Os dados sugerem uma possível relação entre a estratégia
+%%       anunciada e o aumento dos investimentos."
+%%
+%%     NÃO apresente correlação temporal como causalidade sem evidência
+%%     explícita da fonte.
+%%
+%%     Evite afirmações como:
+%%
+%%       "A estratégia causou o aumento do retorno."
+%%
+%%     quando a base somente permitir observar:
+%%
+%%       "Após o anúncio da estratégia, observou-se aumento do
+%%       investimento e posterior evolução do indicador."
+%%
+%%  6. ANÁLISE COMPARATIVA
+%%
+%%     Quando o relatório envolver mais de uma empresa, compare-as
+%%     utilizando critérios e períodos equivalentes sempre que possível.
+%%
+%%     Antes de comparar indicadores, verifique:
+%%
+%%       - unidade de medida;
+%%       - período de referência;
+%%       - definição do indicador;
+%%       - escopo da informação;
+%%       - metodologia utilizada pela empresa;
+%%       - possíveis diferenças de nomenclatura.
+%%
+%%     Não trate indicadores com definições diferentes como se fossem
+%%     necessariamente equivalentes.
+%%
+%%     Quando houver diferenças metodológicas entre empresas, informe
+%%     essa limitação explicitamente.
+%%
+%%     A ausência de um indicador em uma empresa não deve ser
+%%     interpretada como valor zero.
+%%
+%%  7. EVOLUÇÃO TEMPORAL E TRAJETÓRIA ESTRATÉGICA
+%%
+%%     Quando houver dados de múltiplos anos, procure identificar:
+%%
+%%       - mudanças relevantes nos indicadores;
+%%       - novos investimentos;
+%%       - mudanças de estratégia;
+%%       - novas metas;
+%%       - iniciativas de sustentabilidade;
+%%       - mudanças na matriz ou no portfólio;
+%%       - evolução de emissões;
+%%       - expansão ou redução de atividades;
+%%       - eventos que possam contextualizar mudanças posteriores.
+%%
+%%     Quando os dados permitirem, estruture a análise como:
+%%
+%%       estratégia/evento
+%%             ->
+%%       investimento ou ação
+%%             ->
+%%       mudança observada
+%%             ->
+%%       indicador/resultados posteriores
+%%
+%%     Essa estrutura representa uma trajetória temporal observada,
+%%     e NÃO deve ser apresentada automaticamente como relação causal.
+%%
+%%     Caso exista evidência documental explícita de causalidade,
+%%     essa relação pode ser descrita e deve ser devidamente citada.
+%%
+%%  8. SUSTENTABILIDADE E TRANSIÇÃO ENERGÉTICA
+%%
+%%     Quando relevantes para a pergunta analisada, dê atenção especial
+%%     a:
+%%
+%%       - emissões e descarbonização;
+%%       - energia renovável;
+%%       - eficiência energética;
+%%       - investimentos ambientais;
+%%       - metas climáticas;
+%%       - transição energética;
+%%       - inovação;
+%%       - indicadores socioambientais;
+%%       - compromissos e resultados relacionados à sustentabilidade.
+%%
+%%     Diferencie sempre entre:
+%%
+%%       - meta anunciada;
+%%       - iniciativa em andamento;
+%%       - investimento realizado;
+%%       - resultado observado.
+%%
+%%     O anúncio de uma meta não deve ser apresentado como resultado
+%%     já alcançado.
+%%
+%%  9. AUSÊNCIA DE DADOS
+%%
+%%     Se uma informação necessária para a análise não estiver disponível
+%%     na base consultada, escreva:
+%%
+%%       "dado não disponível na base consultada"
+%%
+%%     Não estime, complete, extrapole ou invente valores para preencher
+%%     lacunas, salvo quando uma estimativa for explicitamente solicitada.
+%%
+%%     Caso uma estimativa seja solicitada e possa ser calculada com os
+%%     dados disponíveis, descreva claramente o método utilizado e
+%%     identifique o resultado como estimativa do Energy Nexus.
+%%
+%%  10. TABELAS E FIGURAS
+%%
+%%     Utilize tabelas e figuras somente quando contribuírem para a
+%%     compreensão da análise.
+%%
+%%     Toda tabela ou figura deve:
+%%
+%%       - possuir título descritivo;
+%%       - possuir \label{};
+%%       - possuir fonte;
+%%       - utilizar somente dados disponíveis;
+%%       - indicar unidades;
+%%       - possuir legenda compreensível sem depender excessivamente
+%%         do texto.
+%%
+%%     Evite gráficos ou tabelas que apenas repitam informações já
+%%     apresentadas no texto.
+%%
+%%     Quando uma figura for gerada pela IA a partir de dados da base,
+%%     indique:
+%%
+%%       "Elaborado pelo Energy Nexus a partir de \cite{...}."
+%%
+%%  11. ESTRUTURA DO RELATÓRIO
+%%
+%%     Mantenha as 6 seções abaixo, nesta ordem:
+%%
+%%       1. Sumário Executivo
+%%       2. Introdução
+%%       3. Dados e Metodologia
+%%       4. Resultados
+%%       5. Discussão e Pontos de Atenção
+%%       6. Conclusões e Recomendações
+%%
+%%     Não crie novas \section{}.
+%%
+%%     Dentro dessas seções, utilize \subsection{} e
+%%     \subsubsection{} quando necessário.
+%%
+%%     A estrutura deve ser adaptada à pergunta analisada. Não crie
+%%     subseções para temas que não sejam relevantes.
+%%
+%%  12. CONTEÚDO DE CADA SEÇÃO
+%%
+%%     SUMÁRIO EXECUTIVO
+%%       Apresente de forma independente:
+%%       - pergunta analisada;
+%%       - empresas/período considerados;
+%%       - principais achados;
+%%       - indicadores mais relevantes;
+%%       - principais diferenças ou tendências;
+%%       - conclusão central.
+%%
+%%     INTRODUÇÃO
+%%       Explique:
+%%       - o contexto da análise;
+%%       - a pergunta ou demanda que originou o relatório;
+%%       - empresas analisadas;
+%%       - período;
+%%       - escopo;
+%%       - relevância para inteligência competitiva.
+%%
+%%     DADOS E METODOLOGIA
+%%       Informe:
+%%       - fontes utilizadas;
+%%       - documentos consultados;
+%%       - período dos dados;
+%%       - indicadores analisados;
+%%       - filtros e agregações;
+%%       - métodos de comparação;
+%%       - cálculos realizados;
+%%       - limitações dos dados.
+%%
+%%     RESULTADOS
+%%       Apresente os resultados de forma organizada por tema.
+%%       Priorize:
+%%       - evolução temporal;
+%%       - comparação entre empresas;
+%%       - investimentos;
+%%       - desempenho;
+%%       - sustentabilidade;
+%%       - estratégias;
+%%       - indicadores relevantes para a pergunta.
+%%
+%%     DISCUSSÃO E PONTOS DE ATENÇÃO
+%%       Interprete os resultados, destacando:
+%%       - tendências;
+%%       - diferenças entre empresas;
+%%       - possíveis trajetórias estratégicas;
+%%       - mudanças relevantes;
+%%       - limitações;
+%%       - incertezas;
+%%       - diferenças metodológicas entre fontes.
+%%
+%%       Diferencie claramente observações baseadas nos dados de
+%%       interpretações produzidas pela IA.
+%%
+%%     CONCLUSÕES E RECOMENDAÇÕES
+%%       Retome os principais achados e, quando solicitado ou pertinente,
+%%       apresente recomendações baseadas exclusivamente nas evidências
+%%       analisadas.
+%%
+%%       Não introduza novos dados ou fatos que não tenham sido
+%%       apresentados anteriormente no relatório.
+%%
+%%  13. RÓTULOS E REFERÊNCIAS CRUZADAS
+%%
+%%       seções   -> \label{sec:nome}
+%%       figuras  -> \label{fig:nome}
+%%       tabelas  -> \label{tab:nome}
+%%       equações -> \label{eq:nome}
+%%
+%%     Utilize \ref{} para referências internas.
+%%
+%%  14. FORMATAÇÃO LATEX
+%%
+%%     Escape corretamente caracteres especiais:
+%%
+%%       %  -> \%
+%%       &  -> \&
+%%       $  -> \$
+%%       _  -> \_
+%%       #  -> \#
+%%
+%%     Para valores monetários:
+%%
+%%       R$ -> R\$
+%%
+%%     Não altere comandos, ambientes ou pacotes do template.
+%%
+%%  15. CONSISTÊNCIA FINAL
+%%
+%%     Antes de finalizar o documento, verifique:
+%%
+%%       [ ] Todas as afirmações factuais possuem fonte.
+%%       [ ] Todas as chaves \cite{} existem em referencias.bib.
+%%       [ ] Nenhuma fonte foi inventada.
+%%       [ ] Nenhum valor foi inventado ou inferido sem identificação.
+%%       [ ] Empresas e períodos estão corretamente identificados.
+%%       [ ] Unidades estão consistentes.
+%%       [ ] Comparações utilizam indicadores conceitualmente compatíveis.
+%%       [ ] Inferências da IA estão claramente identificadas.
+%%       [ ] Metas não foram apresentadas como resultados.
+%%       [ ] Relações temporais não foram apresentadas automaticamente
+%%           como relações causais.
+%%       [ ] Tabelas e figuras possuem fonte.
+%%       [ ] Referências cruzadas estão corretas.
+%%       [ ] O documento compila corretamente.
+%%
+%% =====================================================================
+%% =====================================================================
+
+\documentclass[11pt,a4paper]{article}
+
+%%%%%%%%%%%%%%%%%%%%%%%% PACOTES (não alterar) %%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[brazil]{babel}
+\usepackage[a4paper,top=25mm,bottom=25mm,left=30mm,right=20mm,headheight=18pt]{geometry}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\usepackage{verbatim}
+\usepackage{parskip}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}   % deve ser o último pacote
+
+\graphicspath{{imagens/}}
+
+%%%%%%%%%%%%%%%%%%%%%%%% IDENTIDADE VISUAL (não alterar) %%%%%%%%%%%%%%
+\definecolor{nexusroxo}{HTML}{4B0FA8}
+\definecolor{nexuslilas}{HTML}{7C3AED}
+\definecolor{nexusclaro}{HTML}{F3EEFF}
+
+\captionsetup{font=small,labelfont={bf,color=nexusroxo}}
+
+% Linha de fonte padronizada para tabelas e figuras
+\newcommand{\fonte}[1]{\par\vspace{2pt}{\footnotesize\textbf{Fonte:} #1}\par}
+
+% Data no formato "DD de mês de AAAA"
+\newcommand{\dataextenso}{\number\day~de \ifcase\month\or janeiro\or fevereiro\or
+  março\or abril\or maio\or junho\or julho\or agosto\or setembro\or outubro\or
+  novembro\or dezembro\fi~de \number\year}
+
+% Cabeçalho e rodapé
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\includegraphics[height=12pt]{zip_logo.png}\hspace{4pt}\textcolor{nexusroxo}{\small\textbf{Energy Nexus}}}
+\fancyhead[R]{\small\textcolor{gray}{Relatório gerado por inteligência artificial}}
+\fancyfoot[C]{\small Página \thepage\ de \pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\small Página \thepage\ de \pageref{LastPage}}\renewcommand{\headrulewidth}{0pt}}
+
+% Referências numeradas entre colchetes: [1], [2-4]
+\bibliographystyle{unsrtnat}
+
+%% =====================================================================
+%%  DADOS DO RELATÓRIO — a IA deve preencher estes campos
+%% =====================================================================
+%%  \datarelatorio: por padrão usa a data da compilação. Para fixar uma
+%%  data, substitua por texto no formato "26 de setembro de 2026".
+\newcommand{\titulorelatorio}{Título do Relatório}
+\newcommand{\subtitulorelatorio}{Subtítulo ou tema da análise}
+\newcommand{\periodoanalise}{DD/MM/AAAA a DD/MM/AAAA}
+\newcommand{\datarelatorio}{\dataextenso}
+
+\hypersetup{pdftitle={\titulorelatorio}, pdfauthor={Energy Nexus (IA)}}
+
+\begin{document}
+
+%%%%%%%%%%%%%%%%%%%%%%%% CAPA (não alterar) %%%%%%%%%%%%%%%%%%%%%%%%%%%
+\hypersetup{pageanchor=false}
+\begin{titlepage}
+  \centering
+  \vspace*{10mm}
+  \includegraphics[width=0.40\textwidth]{zip_logo.png}\par
+  \vspace{2mm}
+  {\Huge\bfseries\color{nexusroxo} Energy Nexus\par}
+  \vspace{1mm}
+  {\large\bfseries\color{nexusroxo} O ponto de conexão da inteligência sobre o setor energético.\par}
+  \vspace{2mm}
+  {\color{nexuslilas}\rule{0.6\textwidth}{1.2pt}\par}
+  \vspace{10mm}
+  {\LARGE\bfseries \titulorelatorio\par}
+  \vspace{4mm}
+  {\large \subtitulorelatorio\par}
+  \vspace{8mm}
+  {\large \textbf{Período analisado:} \periodoanalise\par}
+  \vspace{2mm}
+  {\large \textbf{Data de emissão:} \datarelatorio\par}
+  \vfill
+  \fcolorbox{nexuslilas}{nexusclaro}{%
+    \begin{minipage}{0.9\textwidth}
+      \small\vspace{4pt}
+      \textbf{Sobre este relatório.} Este documento foi produzido
+      automaticamente pela inteligência artificial do Energy Nexus, com base
+      em informações do setor elétrico contidas em uma base de dados. Todas
+      as informações apresentadas estão acompanhadas de suas respectivas
+      fontes, listadas na seção de Referências, de modo a garantir a
+      rastreabilidade dos dados.
+      \vspace{4pt}
+    \end{minipage}}
+\end{titlepage}
+\hypersetup{pageanchor=true}
+
+\tableofcontents
+\clearpage
+
+%% =====================================================================
+%%  INÍCIO DO CONTEÚDO
+%% =====================================================================
+%%  ESTRUTURA PADRÃO: mantenha as 6 seções abaixo, nesta ordem e com
+%%  estes títulos. Substitua os comentários pelo texto do relatório.
+%%  - Dentro delas use apenas \subsection{} e \subsubsection{};
+%%    não crie novas \section{} além das 6 padronizadas.
+%%  - Parágrafos curtos (3 a 6 frases). Listas apenas para enumerar
+%%    itens objetivos (recomendações, premissas, riscos).
+%%  - Remova os exemplos de tabela e figura se não forem utilizados.
+%% =====================================================================
+
+\section{Sumário Executivo}\label{sec:sumario}
+% 1 a 3 parágrafos, até ~300 palavras. Principais achados, números-chave
+% (com \cite{}) e a conclusão central. Deve ser compreensível sozinho.
+
+\section{Introdução}\label{sec:introducao}
+% Objetivo do relatório, pergunta/demanda que o originou, escopo
+% (região, subsistema, agentes, fontes de geração) e período analisado.
+
+\section{Dados e Metodologia}\label{sec:metodologia}
+% Descreva quais conjuntos de dados da base foram consultados (citando
+% cada um), o período de extração, filtros aplicados, tratamentos
+% (agregações, médias, interpolações) e fórmulas utilizadas.
+% Liste premissas e limitações conhecidas dos dados.
+
+\section{Resultados}\label{sec:resultados}
+% Uma \subsection{} por tema analisado (ex.: Geração, Carga, Preços,
+% Intercâmbio, Hidrologia). Apresente os dados com tabelas/figuras e
+% descreva o que eles mostram, sempre com \cite{}.
+
+\subsection{Tema da análise}\label{sec:tema1}
+% Texto de exemplo do padrão de citação:
+% "A capacidade instalada total atingiu X GW em AAAA \cite{chave_da_fonte}."
+
+% --- MODELO DE TABELA (copiar este bloco para novas tabelas) ---
+\begin{comment}
+\begin{table}[H]
+  \centering
+  \caption{Título descritivo da tabela}\label{tab:exemplo}
+  \begin{tabular}{lrr}
+    \toprule
+    \textbf{Item} & \textbf{Valor (unid.)} & \textbf{Variação (\%)} \\
+    \midrule
+    Linha 1 & 0,0 & 0,0 \\
+    Linha 2 & 0,0 & 0,0 \\
+    \bottomrule
+  \end{tabular}
+  \fonte{\cite{energynexus_db}}
+\end{table}
+\end{comment}
+
+% --- MODELO DE FIGURA (salve a imagem em imagens/ e informe o nome) ---
+% \begin{figure}[H]
+%   \centering
+%   \includegraphics[width=0.85\textwidth]{nome_da_figura.png}
+%   \caption{Título descritivo da figura}\label{fig:exemplo}
+%   \fonte{Elaborado pelo Energy Nexus a partir de \cite{chave_da_fonte}.}
+% \end{figure}
+
+\section{Discussão e Pontos de Atenção}\label{sec:discussao}
+% Interprete os resultados: tendências, comparações com períodos
+% anteriores, riscos e incertezas. Deixe claro o que é dado (com \cite)
+% e o que é análise/inferência da IA.
+
+\section{Conclusões e Recomendações}\label{sec:conclusoes}
+% Síntese dos achados e recomendações objetivas em lista (itemize).
+% Não introduza dados novos nesta seção.
+
+%% =====================================================================
+%%  FIM DO CONTEÚDO
+%% =====================================================================
+
+\newpage
+%%%%%%%%%%%%%%%%%%%%%%%% REFERÊNCIAS (não alterar) %%%%%%%%%%%%%%%%%%%%%
+%  Só aparecem as entradas efetivamente citadas com \cite{} no texto.
+\bibliography{referencias}
+
+%%%%%%%%%%%%%%%%%%%%%%%% APÊNDICE (opcional) %%%%%%%%%%%%%%%%%%%%%%%%%%
+%  Use apenas para tabelas extensas de dados brutos. Se não houver,
+%  mantenha as linhas abaixo comentadas.
+% \appendix
+% \section{Dados Complementares}\label{sec:apendice}
+
+\end{document}
