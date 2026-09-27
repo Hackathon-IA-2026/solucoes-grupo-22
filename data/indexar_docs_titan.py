@@ -231,6 +231,14 @@ def main():
                     "WHERE arquivo = ?", [(d["arquivo"].split("/")[0], d["empresa"], d["cnpj"] or None, int(d["ano"]),
                                           d["tipo"], d["titulo"], d["url"] or None, d["arquivo"]) for d in docs])
     pendentes = [d for d in docs if feitos.get(d["arquivo"]) != d["bytes"]]
+    if local:  # antes de gastar Bedrock: o índice local cobre todo pendente? (PDF repetido em dois caminhos entra nele
+        fora = [d["arquivo"] for d in pendentes  # uma vez só, e a linha do CSV da cópia não tem de onde vir o texto)
+                if not local.execute("SELECT count(*) FROM documentos WHERE arquivo = ? AND bytes = ?",
+                                     [d["arquivo"], d["bytes"]]).fetchone()[0]]
+        if fora:
+            raise SystemExit(f"{len(fora)} PDFs do documentos.csv não estão em {os.path.relpath(LOCAL, RAIZ)} com o "
+                             "mesmo tamanho (cópia do mesmo PDF noutro caminho? refaça o índice local):\n  "
+                             + "\n  ".join(fora))
     fonte = f"trechos de {os.path.relpath(LOCAL, RAIZ)}" if local else "PDFs de data/raw"
     print(f"{len(docs)} PDFs: {len(docs) - len(pendentes)} já indexados, {len(pendentes)} a indexar "
           f"({MODELO}, texto dos {fonte})", flush=True)

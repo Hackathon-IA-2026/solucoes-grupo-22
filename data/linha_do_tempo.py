@@ -135,8 +135,8 @@ def paginas_por_tema(docs, arquivos):
 
     Duas buscas, dentro de cada relatório:
     - palavras: BM25 na consulta do tema sobre os parágrafos do relatório (tabela blocos);
-    - sentido: cosseno entre o vetor da consulta do tema (tabela temas, gravada pelo indexar_docs_titan.py) e os
-      vetores dos trechos da página (tabela trechos, Amazon Titan) - acha a página que fala do tema com outras
+    - sentido: cosseno entre o vetor da consulta do tema (tabela temas) e os vetores dos trechos da página (tabela
+      trechos), os dois do e5 local que o indexar_dados_local.py grava - acha a página que fala do tema com outras
       palavras, que é o que a lista de sinônimos da consulta não alcança.
     Cada busca entra com as suas POR_RELATORIO primeiras páginas: a lista é a união, não uma reordenação, porque
     eval/recuperacao.py mostra que no nosso corpus as palavras acertam mais que o sentido - então o sentido acrescenta
@@ -148,7 +148,7 @@ def paginas_por_tema(docs, arquivos):
     if not arquivos:
         return {}
     if not docs.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = 'temas'").fetchone()[0]:
-        raise RuntimeError(f"{DOCS} não tem a tabela temas: rode data/indexar_docs_titan.py --temas")
+        raise RuntimeError(f"{DOCS} não tem a tabela temas: rode data/indexar_dados_local.py --temas")
     pontos, escolhidas = {}, {}
 
     def marcar(chave, pagina, posicao):

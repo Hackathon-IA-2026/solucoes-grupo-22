@@ -351,8 +351,19 @@ def embutir(pedacos: list, info: dict, faltam: np.ndarray, vetores: np.ndarray, 
     print(f"embeddings em {time.time() - inicio:.0f} s")
 
 
+def codificar_temas(lote: int, gpu: int) -> list[tuple]:
+    """(tema, consulta, vetor) de cada tema da aba Timeline, com o prefixo de pergunta do e5 — o outro lado do par.
+
+    A busca por sentido da linha do tempo (data/linha_do_tempo.py) compara esses vetores com os dos trechos deste mesmo
+    índice, então eles têm de ser gravados junto com ele, e só valem para os vetores deste modelo."""
+    codificador = Codificador(min(lote, len(TEMAS)), gpu)
+    consultas = [(tema, consulta) for tema, (_, consulta, _) in TEMAS.items()]
+    vetores = codificador.codificar([PREFIXO_PERGUNTA + c for _, c in consultas])
+    return [(tema, consulta, vetores[i].tolist()) for i, (tema, consulta) in enumerate(consultas)]
+
+
 def gravar(banco: str, docs: list[dict], paginas: list, pedacos: list, vetores: np.ndarray, blocos: list,
-           reaproveitados: int):
+           temas: list[tuple], reaproveitados: int):
     """Grava num banco temporário no disco do destino e só então troca o antigo (nada de índice meio pronto no ar)."""
     pasta = tempfile.mkdtemp(prefix="docs_", dir=os.path.dirname(banco))  # mesmo disco: o os.replace é atômico
     tmp = os.path.join(pasta, "docs.duckdb")
@@ -379,12 +390,15 @@ def gravar(banco: str, docs: list[dict], paginas: list, pedacos: list, vetores: 
     paragrafos = pa.table({"id": pa.array(range(len(blocos)), pa.int64()), "arquivo": [b[0] for b in blocos],
                            "pagina": pa.array([b[1] for b in blocos], pa.int32()), "texto": [b[2] for b in blocos]})
     con.execute("CREATE TABLE blocos AS SELECT * FROM paragrafos")
+    con.execute(f"CREATE TABLE temas (tema VARCHAR, consulta VARCHAR, embedding FLOAT[{DIMENSOES}])")
+    con.executemany(f"INSERT INTO temas VALUES (?, ?, ?::FLOAT[{DIMENSOES}])", temas)
     con.execute("CREATE TABLE meta (chave VARCHAR PRIMARY KEY, valor VARCHAR)")
     con.executemany("INSERT INTO meta VALUES (?, ?)", [
         ("modelo", MODELO), ("embedding", ASSINATURA), ("dimensoes", str(DIMENSOES)), ("prefixo_trecho", PREFIXO),
         ("prefixo_pergunta", PREFIXO_PERGUNTA), ("gerado_em", time.strftime("%Y-%m-%dT%H:%M:%S")),
         ("documentos", str(len(docs))), ("paginas", str(len(paginas))), ("trechos", str(len(pedacos))),
-        ("blocos", str(len(blocos))), ("vetores_reaproveitados", str(reaproveitados))])
+        ("blocos", str(len(blocos))), ("temas", str(len(temas))),
+        ("vetores_reaproveitados", str(reaproveitados))])
     print("índice de palavras (BM25)...", flush=True)
     con.execute("INSTALL fts; LOAD fts")
     # índice de palavras em português, sem acento e mantendo números (escopo 1, 2025, tCO2e)
@@ -408,18 +422,15 @@ def gravar_temas(banco: str, lote: int, gpu: int):
     tmp = os.path.join(pasta, "docs.duckdb")
     print(f"copiando {os.path.getsize(banco) / 2**20:.0f} MiB para gravar os temas...", flush=True)
     shutil.copy(banco, tmp)
-    codificador = Codificador(min(lote, len(TEMAS)), gpu)
-    consultas = [(tema, consulta) for tema, (_, consulta, _) in TEMAS.items()]
-    vetores = codificador.codificar([PREFIXO_PERGUNTA + c for _, c in consultas])
+    temas = codificar_temas(lote, gpu)
     con = duckdb.connect(tmp)
     con.execute(f"CREATE OR REPLACE TABLE temas (tema VARCHAR, consulta VARCHAR, embedding FLOAT[{DIMENSOES}])")
-    con.executemany(f"INSERT INTO temas VALUES (?, ?, ?::FLOAT[{DIMENSOES}])",
-                    [(tema, consulta, vetores[i].tolist()) for i, (tema, consulta) in enumerate(consultas)])
+    con.executemany(f"INSERT INTO temas VALUES (?, ?, ?::FLOAT[{DIMENSOES}])", temas)
     con.execute("CHECKPOINT")
     con.close()
     os.replace(tmp, banco)
     shutil.rmtree(pasta)
-    print(f"{len(consultas)} temas vetorizados em {banco}")
+    print(f"{len(temas)} temas vetorizados em {banco}")
 
 
 def main():
@@ -458,7 +469,8 @@ def main():
     if len(faltam):
         embutir(pedacos, info, faltam, vetores, a.lote, a.gpu)
 
-    gravar(banco, docs, paginas, pedacos, vetores, blocos, int(prontos.sum()))
+    # os temas saem na mesma rodada: índice publicado sem eles deixa a aba Timeline sem a busca por sentido
+    gravar(banco, docs, paginas, pedacos, vetores, blocos, codificar_temas(a.lote, a.gpu), int(prontos.sum()))
     print(f"ok: {banco} ({os.path.getsize(banco) / 2**20:.0f} MiB) em {time.time() - inicio:.0f} s")
     for aviso in avisos:
         print("aviso:", aviso)
