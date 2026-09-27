@@ -22,6 +22,7 @@ import {
   useAssistantsMapContext,
 } from '~/Providers';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
+import BotaoRelatorio from '~/components/EnergyNexus/BotaoRelatorio';
 import { cn, getModelSpec, removeFocusRings } from '~/utils';
 import { useGetStartupConfig } from '~/data-provider';
 import { mainTextareaId, BadgeItem } from '~/common';
@@ -117,6 +118,9 @@ const ChatForm = memo(function ChatForm({
     () => conversation?.conversationId ?? Constants.NEW_CONVO,
     [conversation?.conversationId],
   );
+  const temMensagens = Array.isArray(conversation?.messages) && conversation.messages.length >= 1;
+  /* EnergyNexus: o botão do relatório só aparece nos perfis que têm a ferramenta gerar_relatorio ligada. */
+  const temRelatorio = modelSpec?.mcpServers?.includes('energynexus-relatorio') === true;
   /**
    * The quote feature merges excerpts server-side in `BaseClient.sendMessage`,
    * which the Assistants endpoints bypass — so hide the UI there rather than
@@ -375,6 +379,12 @@ const ChatForm = memo(function ChatForm({
                   setFilesLoading={setFilesLoading}
                 />
               </div>
+              {temRelatorio && (
+                <BotaoRelatorio
+                  temMensagens={temMensagens}
+                  desabilitado={isSubmitting || disableInputs || isNotAppendable}
+                />
+              )}
               <BadgeRow
                 showEphemeralBadges={
                   !!endpoint &&
@@ -386,9 +396,7 @@ const ChatForm = memo(function ChatForm({
                 conversationId={conversationId}
                 specName={conversation?.spec}
                 onChange={setBadges}
-                isInChat={
-                  Array.isArray(conversation?.messages) && conversation.messages.length >= 1
-                }
+                isInChat={temMensagens}
               />
               <div className="mx-auto flex" />
               <TokenUsage index={index} conversation={conversation} isSubmitting={isSubmitting} />

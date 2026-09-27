@@ -216,16 +216,20 @@ modelSpecs:
         promptPrefix: *prompt
     # Modelos avulsos do Bedrock que o mapa do LibreChat 0.8.7 não conhece (daria 32 mil, ou 100 mil nos Claude 5).
     # O endpoint bedrock não aceita tokenConfig, então a janela certa (model cards da AWS) vai num perfil por modelo.
+    # Nos Claude vai também o maxOutputTokens: sem ele o Bedrock corta a resposta em 4096 tokens (e uma chamada de
+    # ferramenta cortada volta como "tool input did not match expected schema", com o agente repetindo o pedido).
     - name: "claude-sonnet-5"
       label: "Claude Sonnet 5"
       group: "Bedrock"
       iconURL: "bedrock"
-      preset: {endpoint: "bedrock", model: "us.anthropic.claude-sonnet-5", maxContextTokens: 1000000}
+      preset: {endpoint: "bedrock", model: "us.anthropic.claude-sonnet-5", maxContextTokens: 1000000,
+               maxOutputTokens: 32000}
     - name: "claude-opus-5"
       label: "Claude Opus 5"
       group: "Bedrock"
       iconURL: "bedrock"
-      preset: {endpoint: "bedrock", model: "us.anthropic.claude-opus-5", maxContextTokens: 1000000}
+      preset: {endpoint: "bedrock", model: "us.anthropic.claude-opus-5", maxContextTokens: 1000000,
+               maxOutputTokens: 32000}
     - name: "gpt-5-4"
       label: "GPT 5.4"
       group: "Bedrock"
