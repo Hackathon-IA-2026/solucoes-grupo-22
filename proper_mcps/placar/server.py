@@ -374,9 +374,11 @@ def exposicao_carbono(preco_por_t: float = 100.0, escopos: list[str] | None = No
         emissoes = _emissoes(con, None, None)
         por_empresa: dict = {}
         for e in emissoes:
-            por_empresa.setdefault((e["cnpj"] or e["empresa"], e["empresa"]), {}).setdefault(e["ano"], []).append(e)
+            # por nome, não por CNPJ: edições de anos diferentes da mesma empresa podem trazer CNPJ diferente, e o
+            # ranking mostra o nome (o CNPJ sai da edição escolhida, para casar com o financeiro daquele ano)
+            por_empresa.setdefault(e["empresa"], {}).setdefault(e["ano"], []).append(e)
         itens = []
-        for (_, nome), anos in por_empresa.items():
+        for nome, anos in por_empresa.items():
             # uma linha por empresa: a edição mais recente que traz os escopos pedidos e, se nenhuma traz todos, a
             # mais recente que traz algum (com o aviso de escopo faltando)
             escolhida = None
