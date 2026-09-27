@@ -161,7 +161,10 @@ GRUPOS = {
         "instrucao": (
             "Extraia metas climáticas: net zero/neutralidade (tipo \"net_zero\"), redução absoluta de emissões "
             "(\"reducao_absoluta\") ou de intensidade (\"reducao_intensidade\"). ano_alvo é o ano da meta; "
-            "escopo_coberto quais escopos; valor_alvo o percentual/valor quando houver; base_ano o ano-base. []"
+            "escopo_coberto quais escopos; valor_alvo o percentual/valor quando houver; base_ano o ano-base. "
+            "valor_alvo só com percentual/valor escrito na página: meta de net zero sem percentual escrito fica com "
+            "valor_alvo nulo (não escreva 100 — o que prova a meta é o ano no trecho). O trecho é a frase da página "
+            "que enuncia a meta. []"
             " se a página não trouxer meta climática com número ou ano."
         ),
     },

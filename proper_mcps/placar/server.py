@@ -88,9 +88,20 @@ def _emissoes(con, empresa, ano) -> list[dict]:
         FROM esg_emissoes e WHERE {cond} {ano_cond} AND e.confianca > 0
         QUALIFY row_number() OVER (PARTITION BY e.cnpj, e.ano_relatorio, e.escopo
                                    ORDER BY e.tco2e DESC NULLS LAST) = 1
-        ORDER BY e.empresa, e.ano_relatorio, e.escopo""", params).fetchall()
+        ORDER BY e.empresa, e.ano_relatorio DESC, e.escopo""", params).fetchall()
     cols = ("empresa", "cnpj", "ano", "escopo", "tco2e", "intensidade", "unidade_intensidade", "arquivo", "pagina")
     return [dict(zip(cols, r)) for r in linhas]
+
+
+def _ultima_edicao(itens: list[dict], campo_ano: str = "ano") -> list[dict]:
+    """Uma edição por empresa: a mais recente. A base indexa o arquivo inteiro (de 2011 em diante), então um ranking
+    por empresa-e-ano listaria a mesma empresa uma vez por relatório — a comparação entre empresas usa a divulgação
+    vigente de cada uma. Quem pede um ano específico não passa por aqui."""
+    maior: dict = {}
+    for i in itens:
+        chave = i.get("cnpj") or i["empresa"]
+        maior[chave] = max(maior.get(chave, 0), i[campo_ano] or 0)
+    return [i for i in itens if (i[campo_ano] or 0) == maior[i.get("cnpj") or i["empresa"]]]
 
 
 def _por_escopo(linhas: list[dict]) -> dict:
@@ -219,9 +230,17 @@ def placar_ranking(metrica: str = "score_divulgacao", ano: int | None = None, li
     else:
         return {"erro": f"métrica '{metrica}' desconhecida",
                 "metricas": ["score_divulgacao", "intensidade_receita", "escopo1_2", "pct_renovavel"]}
+    if ano is None:
+        itens = _ultima_edicao(itens)        # sem ano pedido, a edição mais recente de cada empresa
     itens = sorted(itens, key=lambda x: (x["valor"] is None, -(x["valor"] or 0) if ordem else (x["valor"] or 0)))
-    return {"metrica": metrica, "ranking": itens[:limite],
-            "nota": "só empresas com relatório indexado e (para métricas híbridas) CNPJ que casa com a CVM"}
+    vistas, uma_por_empresa = set(), []      # o relatório repete o mesmo número em várias páginas: fica uma linha
+    for i in itens:
+        if i["empresa"] not in vistas:
+            vistas.add(i["empresa"])
+            uma_por_empresa.append(i)
+    return {"metrica": metrica, "ranking": uma_por_empresa[:limite],
+            "nota": "só empresas com relatório indexado e (para métricas híbridas) CNPJ que casa com a CVM; uma linha "
+                    "por empresa" + (", da edição mais recente que traz a métrica" if ano is None else "")}
 
 
 def _cap_por_fonte(con, cnpj: str) -> dict | None:
@@ -256,8 +275,12 @@ def radar_consistencia(empresa: str | None = None) -> dict:
     alertas = []
     try:
         placar = _coletar(con, empresa, None)
-        emissoes, metas, renovavel, frameworks = (placar["emissoes"], placar["metas"], placar["renovavel"],
-                                                   placar["frameworks"])
+        emissoes = placar["emissoes"]
+        # o radar fala da divulgação vigente: cada regra olha a edição mais recente da empresa (a base tem o arquivo
+        # de 2011 em diante, e sem isso o mesmo alerta se repetia uma vez por relatório)
+        metas = _ultima_edicao(placar["metas"], "ano_relatorio")
+        renovavel = _ultima_edicao(placar["renovavel"], "ano_relatorio")
+        frameworks = _ultima_edicao(placar["frameworks"], "ano_relatorio")
         # (1) % renovável × SIGA. Só compara base igual: o SIGA traz CAPACIDADE instalada, então um "% da geração"
         # declarado não entra no confronto (vira ressalva), para não comparar coisas diferentes.
         nao_comparaveis = []
@@ -349,15 +372,28 @@ def exposicao_carbono(preco_por_t: float = 100.0, escopos: list[str] | None = No
     con = _con()
     try:
         emissoes = _emissoes(con, None, None)
-        por = {}
+        por_empresa: dict = {}
         for e in emissoes:
-            por.setdefault((e["cnpj"], e["ano"], e["empresa"]), []).append(e)
+            por_empresa.setdefault((e["cnpj"] or e["empresa"], e["empresa"]), {}).setdefault(e["ano"], []).append(e)
         itens = []
-        for (cnpj, ano, nome), linhas in por.items():
+        for (_, nome), anos in por_empresa.items():
+            # uma linha por empresa: a edição mais recente que traz os escopos pedidos e, se nenhuma traz todos, a
+            # mais recente que traz algum (com o aviso de escopo faltando)
+            escolhida = None
+            for ano in sorted(anos, reverse=True):
+                do_ano = _por_escopo(anos[ano])
+                tem = [k for k in escopos if k in do_ano]
+                if len(tem) == len(escopos):
+                    escolhida = ano
+                    break
+                if tem and escolhida is None:
+                    escolhida = ano
+            if escolhida is None:
+                continue
+            ano, linhas = escolhida, anos[escolhida]
+            cnpj = linhas[0]["cnpj"]
             do_ano = _por_escopo(linhas)
             usadas = [do_ano[k] for k in escopos if k in do_ano]
-            if not usadas:
-                continue
             tco2e = sum(e["tco2e"] or 0 for e in usadas)
             fin = _fin_ano(con, cnpj, ano)
             exposicao = tco2e * preco_por_t

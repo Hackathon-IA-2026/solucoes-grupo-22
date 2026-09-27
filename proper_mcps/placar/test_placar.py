@@ -19,21 +19,22 @@ pytestmark = pytest.mark.skipif(not os.path.exists(s.PLACAR),
                                 reason="data/placar.duckdb ainda não foi extraído (rode data/extrair_placar.py)")
 
 
-def emissao(empresa, escopo):
-    r = s.consultar_placar(empresa)["emissoes"]
+def emissao(empresa, escopo, ano=None):
+    r = s.consultar_placar(empresa, ano)["emissoes"]
     return next((e for e in r if e["escopo"] == escopo), None)
 
 
-@pytest.mark.parametrize("empresa, escopo, esperado", [
-    ("Cemig", "1", 42860.81),
-    ("Cemig", "2", 376174.25),
-    ("Cemig", "3", 5911209.35),
-    ("Auren", "1", 12597.6),
-    ("Auren", "3", 1607.1),
-    ("ISA", "3", 2774.19),
+# o gabarito §3.2 veio das edições de 2024, e a base indexa de 2011 em diante: o ano entra na consulta
+@pytest.mark.parametrize("empresa, ano, escopo, esperado", [
+    ("Cemig", 2024, "1", 42860.81),
+    ("Cemig", 2024, "2", 376174.25),
+    ("Cemig", 2024, "3", 5911209.35),
+    ("Auren", 2024, "1", 12597.6),
+    ("Auren", 2024, "3", 1607.1),
+    ("ISA", 2024, "3", 2774.19),
 ])
-def test_emissoes_batem_com_o_gabarito(empresa, escopo, esperado):
-    e = emissao(empresa, escopo)
+def test_emissoes_batem_com_o_gabarito(empresa, ano, escopo, esperado):
+    e = emissao(empresa, escopo, ano)
     assert e is not None, f"não extraiu escopo {escopo} de {empresa}"
     assert e["tco2e"] == pytest.approx(esperado, rel=0.02)
     assert e["arquivo"] and e["pagina"], "todo valor precisa de arquivo e página"
@@ -44,8 +45,33 @@ def test_metricas_hibridas_e_score_da_isa():
     h = next(h for h in r["metricas_hibridas"] if "ISA" in h["empresa"])
     assert h["tco2e_por_milhao_receita"] > 0            # casou com o financeiro da CVM
     assert "kpis_financeiros" in h["fonte_financeiro"]
+    # o RAS 2024 traz os três escopos e asseguração externa (PwC), mas nenhuma meta climática: a ISA anunciou o Net
+    # Zero em 2025 ("Em 2025, anunciamos oficialmente nosso compromisso de longo prazo", RA 2025 p.90). O score de
+    # 2024 é 45 (três escopos) + 5 (GRI) + 20 (asseguração) = 70, e a meta aparece na edição de 2025.
     isa = next(x for x in r["score_divulgacao"] if x["ano"] == 2024)
-    assert isa["score"] >= 80 and set(isa["componentes"]["escopos"]) == {"1", "2", "3"}
+    assert set(isa["componentes"]["escopos"]) == {"1", "2", "3"}
+    assert isa["componentes"]["asseguracao_externa"] and not isa["componentes"]["tem_meta"]
+    assert isa["score"] == 70
+    de_2025 = next(x for x in r["score_divulgacao"] if x["ano"] == 2025)
+    assert de_2025["componentes"]["tem_meta"], "o Net Zero anunciado em 2025 tem de entrar na edição de 2025"
+
+
+def test_consultar_placar_comeca_pela_edicao_mais_recente():
+    """A base indexa de 2011 em diante: quem consulta sem ano tem de ver o relatório mais novo primeiro."""
+    linhas = s.consultar_placar("Cemig")["emissoes"]
+    anos = [x["ano"] for x in linhas]
+    assert anos == sorted(anos, reverse=True) and linhas[0]["ano"] == max(anos)
+
+
+def test_comparacao_entre_empresas_usa_uma_edicao_por_empresa():
+    """Ranking e exposição comparam empresas, não relatórios: uma linha por empresa, da edição mais recente."""
+    for metrica in ("score_divulgacao", "intensidade_receita", "escopo1_2", "pct_renovavel"):
+        nomes = [x["empresa"] for x in s.placar_ranking(metrica)["ranking"]]
+        assert len(nomes) == len(set(nomes)), f"{metrica} repetiu empresa"
+    nomes = [x["empresa"] for x in s.exposicao_carbono(100.0)["ranking"]]
+    assert len(nomes) == len(set(nomes)), "exposição repetiu empresa"
+    chaves = [(a["regra"], a["empresa"]) for a in s.radar_consistencia()["alertas"]]
+    assert len(chaves) == len(set(chaves)), "o radar repetiu o mesmo alerta em várias edições"
 
 
 def test_ranking_score_ordenado_e_com_nota():
@@ -115,7 +141,7 @@ def test_tela_radar_mostra_severidade_com_rotulo():
 
 def test_escopo_2_nao_conta_duas_vezes():
     """Relatório que traz escopo 2 por localização e por mercado não pode somar os dois no 1+2."""
-    r = s.consultar_placar("Cemig")
+    r = s.consultar_placar("Cemig", 2024)
     e = {x["escopo"]: x["tco2e"] for x in r["emissoes"]}
     h = next(h for h in r["metricas_hibridas"] if h["escopo1_2_tco2e"])
     esperado = (e.get("1") or 0) + (e.get("2_mercado") or e.get("2") or 0)
