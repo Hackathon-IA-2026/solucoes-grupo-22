@@ -9,6 +9,16 @@ Uso:
   python data/extrair_placar.py --grupo emissoes     # só um grupo
   python data/extrair_placar.py --empresa ISA --grupo emissoes
   python data/extrair_placar.py --limite-paginas 4 --seco   # não grava, só imprime
+
+Os cinco grupos em paralelo: o DuckDB só aceita um escritor por arquivo e cada grupo escreve uma tabela só, então
+cada processo grava o seu banco e o --juntar copia as cinco tabelas para o data/placar.duckdb (medido: 45 min em
+paralelo contra ~4 h em série, nos 2.470 documentos):
+
+  for g in emissoes metas renovavel capex frameworks; do
+    PYTHONUNBUFFERED=1 python data/extrair_placar.py --grupo $g --saida .runtime/placar_grupos/$g.duckdb \\
+      > .runtime/placar_grupos/$g.log 2>&1 &
+  done; wait
+  python data/extrair_placar.py --juntar .runtime/placar_grupos
 """
 import argparse
 import json
@@ -353,9 +363,37 @@ def revalidar():
     print(f"ok: {PLACAR}")
 
 
+def juntar(pasta: str):
+    """Copia para o PLACAR a tabela de cada grupo extraído em paralelo (um banco por grupo dentro de `pasta`).
+
+    Cada grupo é dono da sua tabela, então a cópia substitui a tabela inteira: rodar de novo dá o mesmo resultado.
+    Um banco de grupo que não existe é erro, e não um grupo silenciosamente vazio no placar.
+    """
+    faltando = [g for g in GRUPOS if not os.path.exists(os.path.join(pasta, f"{g}.duckdb"))]
+    if faltando:
+        raise SystemExit(f"falta o banco de {', '.join(faltando)} em {pasta}: rode o --grupo de cada um antes")
+    con = duckdb.connect(PLACAR)
+    for t, ddl in DDL.items():
+        con.execute(f"CREATE TABLE IF NOT EXISTS {t} ({ddl})")
+    for grupo, g in GRUPOS.items():
+        tabela, banco = g["tabela"], os.path.join(pasta, f"{grupo}.duckdb")
+        con.execute(f"ATTACH '{banco}' AS origem (READ_ONLY)")
+        cols = ", ".join(c.split()[0] for c in DDL[tabela].split(", "))
+        con.execute(f"DELETE FROM {tabela}")
+        con.execute(f"INSERT INTO {tabela} ({cols}) SELECT {cols} FROM origem.{tabela}")
+        n, ok = con.execute(f"SELECT count(*), count_if(confianca > 0) FROM {tabela}").fetchone()
+        con.execute("DETACH origem")
+        print(f"  {tabela}: {n} linhas, {ok} com fonte confirmada")
+    con.close()
+    print(f"ok: {PLACAR}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--revalidar", action="store_true", help="recomputa a confiança sem LLM e sai")
+    ap.add_argument("--juntar", metavar="PASTA",
+                    help="junta no placar os bancos <grupo>.duckdb de PASTA (a extração em paralelo) e sai")
+    ap.add_argument("--saida", help=f"banco a gravar (padrão: {os.path.relpath(PLACAR, RAIZ)})")
     ap.add_argument("--grupo", choices=list(GRUPOS), help="limita a um grupo (padrão: todos)")
     ap.add_argument("--empresa", help="filtra por nome de empresa (substring)")
     ap.add_argument("--limite-paginas", type=int, default=4, help="páginas candidatas por documento e grupo")
@@ -365,6 +403,9 @@ def main():
     a = ap.parse_args()
     if a.revalidar:
         revalidar()
+        return
+    if a.juntar:
+        juntar(a.juntar)
         return
 
     docs_con = duckdb.connect(DOCS, read_only=True)
@@ -377,7 +418,10 @@ def main():
         f"SELECT arquivo, empresa, cnpj, ano, tipo FROM documentos {onde} ORDER BY empresa, ano", params).fetchall()]
 
     grupos = [a.grupo] if a.grupo else list(GRUPOS)
-    saida = None if a.seco else duckdb.connect(PLACAR)
+    banco = a.saida or PLACAR
+    if not a.seco:
+        os.makedirs(os.path.dirname(os.path.abspath(banco)), exist_ok=True)
+    saida = None if a.seco else duckdb.connect(banco)
     if saida:
         for t, ddl in DDL.items():
             saida.execute(f"CREATE TABLE IF NOT EXISTS {t} ({ddl})")
@@ -396,7 +440,7 @@ def main():
         print(f"  -> {total} valores com fonte confirmada no grupo {grupo}")
     if saida:
         saida.close()
-        print(f"\nok: {PLACAR}")
+        print(f"\nok: {banco}")
 
 
 if __name__ == "__main__":

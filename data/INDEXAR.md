@@ -159,6 +159,16 @@ Mais os índices BM25 `fts_main_trechos` e `fts_main_blocos` (stemmer português
   dois índices convivem, e o `docs_titan.duckdb` continua sendo o do chat. O BM25 e a tabela `blocos`, que não
   dependem de embedding, funcionam nos dois.
 
+## Passar os mesmos documentos para o índice do chat
+
+O `docs_titan.duckdb` é refeito pelo `data/indexar_docs_titan.py --do-indice-local`: o `--do-indice-local` toma o texto
+por página e os trechos já prontos deste índice em vez de abrir os PDFs de novo, e só o embedding vai ao Bedrock. É o
+que mantém os dois índices com o mesmo acervo sem repetir a extração (a parte caríssima: 75.906 páginas).
+
+```bash
+.runtime/venv/bin/python data/indexar_docs_titan.py --do-indice-local
+```
+
 ## Depois de indexar
 
 ```bash

@@ -11,7 +11,7 @@
 |---|---|
 | GUI Chainlit `app.py`, seletores na caixa de mensagem | **LibreChat** (não se altera o cliente — regra do `CLAUDE.md`). Telas viram **artefatos HTML/PDF** servidos em `/relatorios/`. Modo Descritiva/Conclusiva vira **preset/perfil** no `librechat.yaml`. |
 | LLM Qwen via Ollama :11435 (GPU 19 GiB) | **vLLM `EnergyNexus` (`qwen3.8-27b`)** em `VLLM_BASE_URL` **ou** **Bedrock** `us.anthropic.claude-sonnet-5`. Sem GPU local, sem carregar modelo novo — a restrição de GPU do prompt não se aplica. |
-| SQLite `armazenamento/coppezip.sqlite` | **DuckDB** `data/energynexus.duckdb` (52 tabelas, `catalogo`). |
+| SQLite `armazenamento/coppezip.sqlite` | **DuckDB** `data/energynexus.duckdb` (105 tabelas descritas no `catalogo`). |
 | Chroma + BM25 | **`data/docs.duckdb`** (BM25 do DuckDB + embeddings `multilingual-e5-large`), já montado. |
 | `coppezip/`, `coppezip/mcp_web` | `proper_mcps/{dados,docs,relatorio}` + servidores novos. |
 | `research/FINDINGS-claude-sonnet-5.md §3.2` | existe em **`researches/FINDINGS-claude-sonnet-5.md §3.2`** — usado como gabarito. |
