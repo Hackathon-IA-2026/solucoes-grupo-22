@@ -1,0 +1,62 @@
+# Pilha do chat EnergyNexus na instância da AWS. Equivale ao que o iniciar.sh sobe na máquina do laboratório, com uma
+# diferença: aqui o MongoDB e o Meilisearch são contêineres oficiais (falam por TCP, então podem morar fora) e o Caddy
+# entra na frente para dar HTTPS com certificado de verdade.
+#
+# O .env e o Caddyfile são gerados na partida da instância (infra/partida_ec2.sh), não vêm do git: dentro deles há os
+# segredos vindos do SSM Parameter Store e o IP público do dia.
+services:
+  chat:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    image: energynexus-chat
+    env_file: /opt/energynexus/.env
+    volumes:
+      # Bancos que os MCP locais leem (placar) e que as abas Painel, Busca e Timeline usam. Ficam fora da imagem:
+      # são ~3 GB e mudam sem o código mudar. Quem os baixa do S3 é o partida_ec2.sh.
+      - /opt/energynexus/dados:/app/data
+      # Estado gravável: os PDF e as telas HTML que o gerar_relatorio e o placar produzem, e o JSON da Timeline. O
+      # LibreChat os serve em /relatorios/ e /linha_do_tempo/ pelos symlinks que o entrada.sh cria.
+      - /opt/energynexus/estado/relatorios:/app/.runtime/relatorios
+      - /opt/energynexus/estado/linha_do_tempo:/app/.runtime/linha_do_tempo
+    depends_on: [mongo, meili]
+    restart: unless-stopped
+
+  mongo:
+    # A imagem oficial acompanha os corretivos do 8.0.x; o instalar.sh fixa 8.0.20 porque lá o binário é baixado à mão.
+    image: mongo:8.0
+    command: ["--bind_ip_all"]
+    volumes:
+      - mongo:/data/db
+    restart: unless-stopped
+
+  meili:
+    image: getmeili/meilisearch:v1.35.1
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?falta MEILI_MASTER_KEY no ambiente do compose}
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_ENV: production
+    volumes:
+      - meili:/meili_data
+    restart: unless-stopped
+
+  # HTTPS sem CloudFront (a conta do workshop nega cloudfront:*) e sem ACM/ALB: o Caddy pede um certificado Let's
+  # Encrypt para o hostname <ip-com-tracos>.nip.io, que resolve para o IP público da própria instância. A porta 80 fica
+  # aberta porque é por ela que passa o desafio HTTP-01 do ACME — e ela também atende, para quem chegar pelo IP cru.
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /opt/energynexus/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-dados:/data
+      - caddy-config:/config
+    depends_on: [chat]
+    restart: unless-stopped
+
+volumes:
+  mongo:
+  meili:
+  caddy-dados:
+  caddy-config:
