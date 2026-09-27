@@ -34,7 +34,8 @@ Sem link público: o chat roda nos servidores do IMPA e é aberto por túnel SSH
 | `eval/` | cliente do chat (`chat.py`), regressão com perguntas de resposta conhecida (`regressao.py`) e o E2E das telas (`e2e/telas.js`) |
 | `client/src/style.css` | o tema do EnergyNexus |
 | `client/public/assets/` (logo e ícones), `client/index.html`, `client/vite.config.ts` | a logo e o nome do EnergyNexus |
-| `client/src/utils/artifacts.ts`, `client/src/components/Artifacts/ArtifactTabs.tsx` e `DownloadArtifact.tsx` | o painel lateral do LibreChat mostra o relatório em PDF e baixa o arquivo |
+| `client/src/utils/artifacts.ts`, `client/src/components/Artifacts/ArtifactTabs.tsx`, `DownloadArtifact.tsx` e `Artifacts.tsx` | o LibreChat mostra o relatório em PDF (em tela cheia, com o botão de reduzir para o painel ao lado do chat) e baixa o arquivo |
+| `client/src/components/Coppezip/BotaoRelatorio.tsx` (ligado em `client/src/components/Chat/Input/ChatForm.tsx`) | o botão "Gerar relatório em PDF" ao lado do campo de mensagem, nos perfis com a ferramenta `gerar_relatorio` |
 | abas Painel, Busca e Grafo | `client/src/components/Coppezip/`, `client/src/components/Nav/CoppezipNavButtons.tsx`, as rotas `/painel`, `/busca` e `/grafo` em `client/src/routes/index.tsx`, e `api/server/routes/painel.js` e `busca.js` (registradas em `api/server/index.js` e `routes/index.js`) |
 | aba Timeline | `client/src/components/Timeline/`: evolução de cada empresa (eventos por ano, impacto, indicadores e fontes), trajetórias estratégicas e gráficos; registrada em `client/src/routes/index.tsx`, `client/src/hooks/Nav/useSideNavLinks.ts` e na chave `com_ui_timeline` das traduções |
 

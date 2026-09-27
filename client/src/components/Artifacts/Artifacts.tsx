@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import copy from 'copy-to-clipboard';
 import * as Tabs from '@radix-ui/react-tabs';
-import { Code, Play, RefreshCw, X } from 'lucide-react';
+import { Code, Maximize2, Minimize2, Play, RefreshCw, X } from 'lucide-react';
 import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import { Button, Spinner, useMediaQuery, Radio } from '@librechat/client';
 import type { SandpackPreviewRef } from '@codesandbox/sandpack-react';
@@ -11,7 +11,7 @@ import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
 import ArtifactVersion from './ArtifactVersion';
 import ArtifactTabs from './ArtifactTabs';
-import { isCodeOnlyArtifact, isPreviewOnlyArtifact } from '~/utils/artifacts';
+import { isCodeOnlyArtifact, isPreviewOnlyArtifact, PDF_ARTIFACT_TYPE } from '~/utils/artifacts';
 import { displayFilename } from '~/components/Chat/Messages/Content/Parts/attachmentTypes';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -34,6 +34,7 @@ export default function Artifacts() {
   const [isDragging, setIsDragging] = useState(false);
   const [blurAmount, setBlurAmount] = useState(0);
   const [isCopied, setIsCopied] = useState(false);
+  const [ampliado, setAmpliado] = useState(false);
   const dragStartY = useRef(0);
   const dragStartHeight = useRef(90);
   const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
@@ -92,6 +93,13 @@ export default function Artifacts() {
     orderedArtifactIds,
     setCurrentArtifactId,
   } = useArtifacts();
+
+  /* EnergyNexus: o relatório em PDF é para ler, não para espiar num painel estreito — abre ocupando a tela toda,
+   * e o botão do cabeçalho alterna entre a tela cheia e o painel ao lado do chat (no celular ele já toma a tela). */
+  const ampliavel = !isMobile && currentArtifact?.type === PDF_ARTIFACT_TYPE;
+  useEffect(() => {
+    setAmpliado(ampliavel);
+  }, [ampliavel, currentArtifact?.id]);
 
   /* Office artifacts have no source view, and source-code artifacts have
    * no useful rendered preview. Filter each down to the only meaningful
@@ -240,7 +248,8 @@ export default function Artifacts() {
                   isDragging ? '' : 'transition-all duration-300',
                 )
               : cn(
-                  'h-full shadow-2xl',
+                  'shadow-2xl',
+                  ampliado ? 'fixed inset-0 z-[100]' : 'h-full',
                   isVisible && !isClosing
                     ? 'duration-350 translate-x-0 opacity-100 transition-all'
                     : 'translate-x-5 opacity-0 transition-all duration-300',
@@ -327,6 +336,17 @@ export default function Artifacts() {
                     }
                   }}
                 />
+              )}
+              {ampliavel && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-9 w-9"
+                  onClick={() => setAmpliado((antes) => !antes)}
+                  aria-label={ampliado ? 'Mostrar ao lado do chat' : 'Ampliar para a tela toda'}
+                >
+                  {ampliado ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                </Button>
               )}
               <CopyButton isCopied={isCopied} iconOnly onClick={handleCopyArtifact} />
               <DownloadArtifact artifact={currentArtifact} />

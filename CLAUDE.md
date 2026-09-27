@@ -77,6 +77,7 @@ Mudou o banco (`data/construir.py` ou `data/indexar_docs.py`)? Rode os testes da
 | nova tela (HTML) | seção "telas" de `proper_mcps/placar/server.py`; confira com `node eval/e2e/telas.js` |
 | regra de resposta | `promptPrefix` do perfil `energynexus-analista` no `librechat.yaml` |
 | formato do relatório final | regras de redação em `proper_skills/relatorio-energynexus/SKILL.md`; conferência e compilação em `proper_mcps/relatorio/server.py` (teste em `test_relatorio.py`) |
+| botão "Gerar relatório em PDF" e leitura do PDF | `client/src/components/Coppezip/BotaoRelatorio.tsx` (aparece nos perfis com `energynexus-relatorio`; ligado em `client/src/components/Chat/Input/ChatForm.tsx`) e o estado `ampliado` de `client/src/components/Artifacts/Artifacts.tsx` (PDF em tela cheia) |
 | novo caso de regressão | `CASOS` em `eval/regressao.py`, com o valor conferido na fonte |
 | nova tabela na aba Painel | `CONJUNTOS` em `data/exportar_painel.py` |
 | aba Busca | `proper_mcps/docs/busca.py` (serviço) e `client/src/components/Coppezip/BuscaView.tsx` (tela) |
