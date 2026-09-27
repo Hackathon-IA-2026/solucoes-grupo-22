@@ -189,12 +189,14 @@ def catalogo(avisos: list[str]) -> list[dict]:
     for esperado in DICIONARIOS:
         if esperado not in em_disco:
             raise SystemExit(f"falta o dicionário de dados {esperado} em data/raw")
-    # pdfs_esg/txt é a extração de alguns PDFs de pdfs_esg: o índice lê o PDF, que tem página para citar
+    # pdfs_esg/txt é a extração de alguns PDFs do despejo: o índice lê o PDF, que tem página para citar (o mesmo PDF
+    # pode já ter ido para a pasta organizada, então vale o de igual nome em qualquer lugar de data/raw)
     pasta_txt = os.path.join(PDFS, "pdfs_esg", "txt")
+    pdf_por_nome = {os.path.basename(a): a for a in disco}
     for txt in sorted(os.listdir(pasta_txt)) if os.path.isdir(pasta_txt) else []:
-        par = f"pdfs_esg/{txt[:-4]}.pdf"
-        if not txt.endswith(".txt") or par not in em_disco:
-            raise SystemExit(f"pdfs_esg/txt/{txt} não é a extração de um PDF de pdfs_esg: sem página para citar")
+        par = pdf_por_nome.get(f"{txt[:-4]}.pdf") if txt.endswith(".txt") else None
+        if not par:
+            raise SystemExit(f"pdfs_esg/txt/{txt} não é a extração de um PDF de data/raw: sem página para citar")
         avisos.append(f"pdfs_esg/txt/{txt} é a extração de {par}, já indexado pelo PDF")
 
     meta = do_csv(disco, avisos)
@@ -334,8 +336,8 @@ def contexto(pedaco: tuple, info: dict) -> str:
     return f"{PREFIXO}{d['empresa']} {d['ano']}, {d['titulo']}. {pedaco[2]}"
 
 
-def embutir(pedacos: list, info: dict, faltam: np.ndarray, vetores: np.ndarray, lote: int, gpu: int):
-    codificador = Codificador(lote, gpu)
+def embutir(codificador: "Codificador", pedacos: list, info: dict, faltam: np.ndarray, vetores: np.ndarray,
+            lote: int, gpu: int):
     # do trecho mais curto ao mais longo: lote parecido no tamanho gasta menos padding
     ordem = sorted(faltam.tolist(), key=lambda i: len(pedacos[i][2]))
     inicio, ultimo = time.time(), 0
@@ -351,12 +353,11 @@ def embutir(pedacos: list, info: dict, faltam: np.ndarray, vetores: np.ndarray, 
     print(f"embeddings em {time.time() - inicio:.0f} s")
 
 
-def codificar_temas(lote: int, gpu: int) -> list[tuple]:
+def codificar_temas(codificador: "Codificador") -> list[tuple]:
     """(tema, consulta, vetor) de cada tema da aba Timeline, com o prefixo de pergunta do e5 — o outro lado do par.
 
     A busca por sentido da linha do tempo (data/linha_do_tempo.py) compara esses vetores com os dos trechos deste mesmo
     índice, então eles têm de ser gravados junto com ele, e só valem para os vetores deste modelo."""
-    codificador = Codificador(min(lote, len(TEMAS)), gpu)
     consultas = [(tema, consulta) for tema, (_, consulta, _) in TEMAS.items()]
     vetores = codificador.codificar([PREFIXO_PERGUNTA + c for _, c in consultas])
     return [(tema, consulta, vetores[i].tolist()) for i, (tema, consulta) in enumerate(consultas)]
@@ -422,7 +423,7 @@ def gravar_temas(banco: str, lote: int, gpu: int):
     tmp = os.path.join(pasta, "docs.duckdb")
     print(f"copiando {os.path.getsize(banco) / 2**20:.0f} MiB para gravar os temas...", flush=True)
     shutil.copy(banco, tmp)
-    temas = codificar_temas(lote, gpu)
+    temas = codificar_temas(Codificador(min(lote, len(TEMAS)), gpu))
     con = duckdb.connect(tmp)
     con.execute(f"CREATE OR REPLACE TABLE temas (tema VARCHAR, consulta VARCHAR, embedding FLOAT[{DIMENSOES}])")
     con.executemany(f"INSERT INTO temas VALUES (?, ?, ?::FLOAT[{DIMENSOES}])", temas)
@@ -466,11 +467,14 @@ def main():
     prontos = np.zeros(len(pedacos), dtype=bool) if a.tudo else reaproveitar(banco, pedacos, vetores)
     faltam = np.flatnonzero(~prontos)
     print(f"{int(prontos.sum())} vetores reaproveitados, {len(faltam)} a calcular ({MODELO} na GPU)", flush=True)
+    # um codificador por rodada, para os trechos que faltam e para as consultas dos temas: dois carregamentos brigariam
+    # pela memória da placa, e o segundo encontraria ocupado o que o primeiro ainda não devolveu
+    codificador = Codificador(a.lote, a.gpu)
     if len(faltam):
-        embutir(pedacos, info, faltam, vetores, a.lote, a.gpu)
+        embutir(codificador, pedacos, info, faltam, vetores, a.lote, a.gpu)
 
     # os temas saem na mesma rodada: índice publicado sem eles deixa a aba Timeline sem a busca por sentido
-    gravar(banco, docs, paginas, pedacos, vetores, blocos, codificar_temas(a.lote, a.gpu), int(prontos.sum()))
+    gravar(banco, docs, paginas, pedacos, vetores, blocos, codificar_temas(codificador), int(prontos.sum()))
     print(f"ok: {banco} ({os.path.getsize(banco) / 2**20:.0f} MiB) em {time.time() - inicio:.0f} s")
     for aviso in avisos:
         print("aviso:", aviso)
