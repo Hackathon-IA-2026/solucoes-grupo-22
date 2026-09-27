@@ -312,6 +312,7 @@ mcpServers:
       ENERGYNEXUS_AGENTCORE_REGIAO: "${ENERGYNEXUS_AGENTCORE_REGIAO}"
       ENERGYNEXUS_ARN_DADOS: "${ENERGYNEXUS_ARN_DADOS}"
       ENERGYNEXUS_ARN_DOCS: "${ENERGYNEXUS_ARN_DOCS}"
+      MCP_INIT_TIMEOUT_MS: "${MCP_INIT_TIMEOUT_MS}"  # é o prazo do boot: a ponte responde por si um pouco antes dele
       PYTHONUNBUFFERED: "1"
     requiresOAuth: false  # sem isto a sondagem do boot bate sem token, vê o 403 do runtime e pede login por usuário
     serverInstructions: true

@@ -22,12 +22,14 @@ initialize: é repassado ao runtime, porque é dele que vêm as instruções do 
 true` do librechat.yaml injeta no prompt. Mas é repassado com prazo: o boot do LibreChat corta a inicialização de
 cada servidor em MCP_INIT_TIMEOUT_MS (30 s por padrão, packages/api/src/mcp/registry/MCPServersInitializer.ts:10 e
 :212-213; o initTimeout do YAML é ignorado nesse ponto) e, estourando, o servidor vira um stub sem ferramentas que só
-é retentado 5 min depois. Medido nesta conta: cada pedido ao AgentCore custa ~5 s, e chegou a 14 s na versão do docs
-que baixava o modelo de embeddings do S3 — o boot (initialize + dois tools/list em paralelo) cabe nos 30 s, mas sem
-folga. Então, se o runtime não responder o initialize em ESPERA_INIT_S, a ponte responde ela mesma (capacidade de
-ferramentas, sem as instruções, gritando no stderr) e deixa o pedido correndo: ele aquece o runtime para o tools/list
-seguinte. Com MCP_INIT_TIMEOUT_MS folgado no .env o caminho normal é o LibreChat receber o initialize de verdade,
-com instruções.
+é retentado 5 min depois. Então, se o runtime não responder o initialize em tempo, a ponte responde ela mesma
+(capacidade de ferramentas, sem as instruções, gritando no stderr) e deixa o pedido correndo: ele aquece o runtime
+para o tools/list seguinte.
+
+Esse prazo é o do próprio LibreChat menos MARGEM_INIT_S, e não um número escolhido aqui: com uma constante de 25 s a
+ponte cortava o initialize muito antes do corte de verdade e os dois servidores subiam sem instrução nenhuma no
+prompt (medido: com o runtime frio o initialize volta entre 25 s e 45 s, e o banco do docs tem 1,9 GB para baixar do
+S3 na primeira sessão). MCP_INIT_TIMEOUT_MS chega pelo env: do servidor no librechat.yaml; sem ela a ponte não sobe.
 """
 import json
 import os
@@ -39,10 +41,10 @@ import urllib.parse
 import urllib.request
 import uuid
 
-SERVIDORES = {"dados": "ENERGYNEXUS_ARN_DADOS", "docs": "ENERGYNEXUS_ARN_DOCS", "relatorio": "ENERGYNEXUS_ARN_RELATORIO"}
+SERVIDORES = {"dados": "ENERGYNEXUS_ARN_DADOS", "docs": "ENERGYNEXUS_ARN_DOCS"}  # o relatorio e o placar são locais
 MARGEM_TOKEN_S = 600      # renova o token 10 min antes de expirar (o Cognito devolve ExpiresIn=86400)
 VIDA_SESSAO_S = 25200     # 7 h: troca o id de sessão antes do maxLifetime de 8 h do runtime
-ESPERA_INIT_S = 25        # prazo do initialize, abaixo dos 30 s do MCP_INIT_TIMEOUT_MS padrão do LibreChat
+MARGEM_INIT_S = 15        # quanto a ponte responde antes do corte do LibreChat, para a resposta chegar a tempo
 TIMEOUT_HTTP_S = 240      # abaixo do timeout de ferramenta do librechat.yaml, para o erro vir da ponte
 PROTOCOLO = "2025-06-18"  # versão usada quando o cliente não manda protocolVersion no initialize
 
@@ -60,6 +62,18 @@ def _var(nome: str) -> str:
         raise SystemExit(f"[ponte] falta a variável de ambiente {nome}: o processo filho do stdio só herda HOME, "
                          f"LOGNAME, PATH, SHELL, TERM e USER, então declare-a em env: do servidor no librechat.yaml")
     return valor
+
+
+def _espera_init() -> float:
+    """Prazo do initialize: o do boot do LibreChat menos MARGEM_INIT_S, para a ponte responder antes do corte dele."""
+    bruto = _var("MCP_INIT_TIMEOUT_MS")
+    if not bruto.isdigit():
+        raise SystemExit(f"[ponte] MCP_INIT_TIMEOUT_MS tem de ser um número de milissegundos, e veio {bruto!r}")
+    segundos = int(bruto) / 1000 - MARGEM_INIT_S
+    if segundos < 5:
+        raise SystemExit(f"[ponte] MCP_INIT_TIMEOUT_MS={bruto} não deixa nem 5 s de prazo depois da margem de "
+                         f"{MARGEM_INIT_S} s: cada pedido ao AgentCore custa 5 s e mais no runtime frio")
+    return segundos
 
 
 def _post(url: str, corpo: bytes, cabecalhos: dict, tempo: float) -> tuple[int, str, str]:
@@ -240,8 +254,8 @@ def _atender_initialize(mensagem: dict):
     if fim.wait(ESPERA_INIT_S):
         return
     if assumir():
-        _log(f"o runtime não respondeu o initialize em {ESPERA_INIT_S}s: respondendo pela ponte (sem as instruções do "
-             f"servidor) para o boot do LibreChat não estourar; o pedido continua e aquece o runtime")
+        _log(f"o runtime não respondeu o initialize em {ESPERA_INIT_S:.0f}s: respondendo pela ponte (sem as instruções "
+             f"do servidor) para o boot do LibreChat não estourar; o pedido continua e aquece o runtime")
         _enviar(_initialize_local(mensagem))
 
 
@@ -280,6 +294,7 @@ NOME = sys.argv[1]
 TOKEN = Token(_var("ENERGYNEXUS_COGNITO_REGIAO"), _var("ENERGYNEXUS_COGNITO_CLIENTE"),
               _var("ENERGYNEXUS_COGNITO_USUARIO"), _var("ENERGYNEXUS_COGNITO_SENHA"))
 RUNTIME = Runtime(_var(SERVIDORES[NOME]), _var("ENERGYNEXUS_AGENTCORE_REGIAO"), TOKEN)
+ESPERA_INIT_S = _espera_init()
 
 if __name__ == "__main__":
     main()
