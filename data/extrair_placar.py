@@ -149,7 +149,9 @@ GRUPOS = {
             "a unidade disser explicitamente 'mil tCO2e', 'kt' ou '10³'; trate 'tCO2e', 'mtCO2e' e 'toneladas' como "
             "toneladas (NÃO multiplique). Se o mesmo escopo aparecer com valores muito diferentes, prefira o que "
             "estiver em texto com a palavra 'toneladas' e unidade clara. Se houver intensidade (tCO2e/MWh...), "
-            "preencha intensidade e unidade_intensidade. Não some escopos; não invente. Sem emissões na página, []."
+            "preencha intensidade e unidade_intensidade. O valor conta em prosa, não só em tabela: \"as emissões de "
+            "Escopo 1 atingiram 5,8 milhões de tCO2e\" é um item (escopo \"1\", tco2e 5800000), com a frase inteira no "
+            "trecho. Não some escopos; não invente. Sem emissões na página, []."
         ),
     },
     "metas": {
