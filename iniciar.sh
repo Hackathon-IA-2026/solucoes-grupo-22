@@ -15,12 +15,14 @@ aberta "$MONGO_PORTA" || mongod --dbpath "$R/mongo" --bind_ip 127.0.0.1 --port "
 aberta "$MEILI_PORTA" || nohup bash -c 'echo $$ > "$0"; exec setsid meilisearch "$@"' "$R/run/meili.pid" \
   --db-path "$R/meili" --http-addr "127.0.0.1:$MEILI_PORTA" --master-key "$MEILI_MASTER_KEY" --no-analytics \
   --env production > "$R/logs/meili.log" 2>&1 < /dev/null &
-# aba Busca: serviço HTTP sobre data/docs_titan.duckdb que a rota /api/busca do LibreChat repassa
+# abas Busca e Timeline: serviço HTTP sobre data/docs_titan.duckdb, data/docs.duckdb e data/energynexus.duckdb que a
+# rota /api/busca do LibreChat repassa (é ele que monta a linha do tempo do período pedido na tela)
 aberta "$BUSCA_PORTA" || nohup bash -c 'echo $$ > "$0"; exec setsid "$@"' "$R/run/busca.pid" \
   "$R/venv/bin/python" proper_mcps/docs/busca.py --porta "$BUSCA_PORTA" > "$R/logs/busca.log" 2>&1 < /dev/null &
 # relatórios do gerar_relatorio: o LibreChat serve client/public/assets na raiz do site (/relatorios/...)
 ln -sfn "$R/relatorios" client/public/assets/relatorios
-# aba Timeline: linha do tempo de cada empresa a partir dos bancos de data/, servida em /linha_do_tempo/
+# a aba Timeline do site estático lê JSON prontos (no aplicativo é o serviço da Busca que monta): publica-os e liga a
+# pasta em client/public/assets, que o LibreChat serve em /linha_do_tempo/
 "$ENERGYNEXUS_PYTHON" data/linha_do_tempo.py || echo "aviso: a aba Timeline ficou sem dados novos (erro acima)"
 ln -sfn "$R/linha_do_tempo" client/public/assets/linha_do_tempo
 aberta "$PORT" || nohup bash -c 'echo $$ > "$0"; exec setsid npm run backend' "$R/run/librechat.pid" \

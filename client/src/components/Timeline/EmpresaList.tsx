@@ -1,20 +1,20 @@
 /* eslint-disable i18next/no-literal-string -- aba do EnergyNexus: textos em português, como os dados que ela mostra */
 import { useMemo, useState } from 'react';
-import { Building2, Leaf } from 'lucide-react';
+import { Building2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { FilterInput, Skeleton } from '@librechat/client';
 import type { Empresa } from './data';
-import { useEmpresas, textoDeBusca, semAcento } from './data';
+import { useSelecao, textoDeBusca, semAcento } from './data';
 import { cn } from '~/utils';
 
 /**
- * Empresas da base com linha do tempo, com busca por nome, apelido, ticker ou CNPJ. As que têm relatórios indexados
- * (eventos de sustentabilidade com página citável) vêm primeiro.
+ * Empresas da base, com busca por nome, apelido, ticker ou CNPJ. As que têm relatórios indexados (de onde saem os
+ * eventos de sustentabilidade com página citável) vêm primeiro. Escolher uma abre a tela do período.
  */
 export default function EmpresaList({ ativa, inputId }: { ativa?: string; inputId: string }) {
   const navigate = useNavigate();
   const [busca, setBusca] = useState('');
-  const { data, isLoading, isError } = useEmpresas();
+  const { data, isLoading, isError } = useSelecao();
 
   const [comRelatorio, demais] = useMemo(() => {
     const termos = semAcento(busca).split(/\s+/).filter(Boolean);
@@ -38,8 +38,8 @@ export default function EmpresaList({ ativa, inputId }: { ativa?: string; inputI
   if (isError) {
     return (
       <p className="px-3 py-4 text-sm text-text-secondary">
-        A linha do tempo ainda não foi gerada. Rode <code>data/linha_do_tempo.py</code> (o
-        iniciar.sh faz isso ao subir o chat).
+        O serviço da Busca não respondeu (<code>proper_mcps/docs/busca.py</code>, que o iniciar.sh
+        sobe): sem ele a aba Timeline não tem de onde montar a linha do tempo.
       </p>
     );
   }
@@ -65,19 +65,16 @@ export default function EmpresaList({ ativa, inputId }: { ativa?: string; inputI
             <span className="flex min-w-0 flex-1 flex-col">
               <span className={cn('truncate', e.id === ativa && 'font-semibold')}>{e.nome}</span>
               <span className="truncate text-xs text-text-secondary">
-                {e.anos[0]}–{e.anos[1]} · {e.eventos} evento{e.eventos === 1 ? '' : 's'}
-                {e.apelidos ? ` · ${e.apelidos}` : ''}
+                {[
+                  e.relatorios > 0 && `${e.relatorios} relatório${e.relatorios === 1 ? '' : 's'}`,
+                  e.dfp && `DFP ${e.dfp[0]}–${e.dfp[1]}`,
+                  e.usinas > 0 && `${e.usinas} usina${e.usinas === 1 ? '' : 's'}`,
+                  e.apelidos,
+                ]
+                  .filter(Boolean)
+                  .join(' · ') || 'sem dados anuais na base'}
               </span>
             </span>
-            {e.destaques > 0 && (
-              <span
-                className="flex shrink-0 items-center gap-0.5 text-xs text-text-secondary"
-                title={`${e.destaques} eventos de sustentabilidade, transição, inovação ou metas`}
-              >
-                <Leaf className="size-3 text-green-600 dark:text-green-500" aria-hidden="true" />
-                {e.destaques}
-              </span>
-            )}
           </button>
         ))}
       </div>
@@ -91,7 +88,7 @@ export default function EmpresaList({ ativa, inputId }: { ativa?: string; inputI
         value={busca}
         onChange={(e) => setBusca(e.target.value)}
       />
-      {secao('Com relatórios de sustentabilidade', comRelatorio)}
+      {secao('Com relatórios indexados', comRelatorio)}
       {secao('Demais empresas da base', demais)}
       {comRelatorio.length + demais.length === 0 && (
         <p className="px-3 py-4 text-center text-xs text-text-secondary">

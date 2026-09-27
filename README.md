@@ -27,9 +27,9 @@ Sem link público: o chat roda nos servidores do IMPA e é aberto por túnel SSH
 | `.env.example` | modelo do `.env` (nome do app, portas, segredos, endereço do vLLM, região do Bedrock) |
 | `instalar.sh`, `iniciar.sh`, `parar.sh` | instalar uma vez, subir e parar o chat |
 | `vllm.sh` | sobe o modelo próprio numa máquina com GPU |
-| `proper_mcps/` | ferramentas MCP: `dados` (banco DuckDB), `docs` (busca nos relatórios em PDF; `busca.py` atende a aba Busca), `relatorio` (relatório final em PDF, com o modelo LaTeX em `relatorio/modelo/`), `placar` (Placar da Transição, radar de consistência, exposição a carbono e as telas em HTML) |
-| `proper_skills/` | roteiros do analista: relatório final (`relatorio-energynexus`), benchmark de distribuidoras, ficha de crédito, investimento na transição, avaliação climática e o modo conclusivo |
-| `data/` | coleta (`baixar.py`), montagem do banco (`construir.py`), índice dos PDFs (`indexar_docs_titan.py`, em uso; `indexar_docs.py` é a versão com o e5 local), extração do placar ESG (`extrair_placar.py`, `conferir_placar.py`), dados da aba Painel (`exportar_painel.py`), dados da aba Timeline (`linha_do_tempo.py`) e documentação das tabelas (`DADOS.md`); os dados em si ficam aqui, fora do git |
+| `proper_mcps/` | ferramentas MCP: `dados` (banco DuckDB), `docs` (busca nos relatórios em PDF; `busca.py` atende as abas Busca e Timeline), `relatorio` (relatório final em PDF, com o modelo LaTeX em `relatorio/modelo/`), `placar` (Placar da Transição, radar de consistência, exposição a carbono e as telas em HTML) |
+| `proper_skills/` | roteiros do analista: relatório final (`relatorio-energynexus`), benchmark de distribuidoras, benchmark socioambiental, ficha de crédito, investimento na transição, avaliação climática e o modo conclusivo |
+| `data/` | coleta (`baixar.py`), montagem do banco (`construir.py`), índice dos PDFs (`indexar_docs_titan.py`, em uso; `indexar_dados_local.py` monta o índice com o e5 na GPU), extração do placar ESG (`extrair_placar.py`, `conferir_placar.py`), dados da aba Painel (`exportar_painel.py`), dados da aba Timeline (`linha_do_tempo.py`) e documentação das tabelas (`DADOS.md`); os dados em si ficam aqui, fora do git |
 | `researches/` | pesquisa de fontes de dados e dicionário de dados |
 | `eval/` | cliente do chat (`chat.py`), regressão com perguntas de resposta conhecida (`regressao.py`) e o E2E das telas (`e2e/telas.js`) |
 | `client/src/style.css` | o tema do EnergyNexus |
@@ -120,9 +120,13 @@ Os dados não vão para o git. Coloque em `data/`:
 | `data/placar.duckdb` | `.runtime/venv/bin/python data/extrair_placar.py` (lê as páginas de `data/docs.duckdb` e extrai pelo Bedrock; confira com `data/conferir_placar.py`) |
 
 Os bancos prontos também estão no Drive, em `bancos/`; o banco guarda o nome antigo (`coppezip.duckdb`), o mesmo do
-Drive. A aba Timeline lê os parágrafos dos relatórios da tabela `blocos`
-do `docs.duckdb`: um índice feito antes dela precisa ser refeito com `data/indexar_docs.py` (os embeddings são
-reaproveitados). O `iniciar.sh` monta a linha do tempo de cada empresa (`data/linha_do_tempo.py`) a cada início.
+Drive. A aba Timeline lê os parágrafos dos relatórios da tabela `blocos` do `docs.duckdb`, que o
+`data/indexar_dados_local.py` grava junto com os trechos: um índice feito antes dela precisa ser refeito (os embeddings
+são reaproveitados). No chat, a linha do tempo é montada na hora, para a empresa e o período escolhidos na tela, pelo
+serviço da Busca (`data/linha_do_tempo.py` como biblioteca), então a aba acompanha a indexação sem reiniciar nada;
+relatório sem link público abre a cópia local do PDF, pela rota da aba Busca. No site estático não há serviço da Busca:
+o `iniciar.sh` roda o `data/linha_do_tempo.py` como script e publica em `.runtime/linha_do_tempo/` um JSON por empresa,
+que é o que a aba lê lá (o período pedido na tela é o que veio publicado).
 
 ### Abas Painel, Busca e Grafo
 

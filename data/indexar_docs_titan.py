@@ -1,21 +1,24 @@
 """Indexa os PDFs de relatórios como o indexar_docs.py, mas com embeddings do Amazon Titan (Bedrock) em vez do e5 local.
 
 Uso: python data/indexar_docs_titan.py [--threads N] [--tudo] [--limite N] [--publicar-a-cada N] [--saida CAMINHO]
-                                       [--do-indice-local]
+                                       [--do-indice-local] [--temas]
 Entrada: a mesma do indexar_docs.py (data/documentos.csv e os PDFs de data/raw/financeiro e data/raw/sustentabilidade).
 Com --do-indice-local, o texto por página e os trechos vêm prontos de data/docs.duckdb (o índice que o
 data/indexar_dados_local.py montou na GPU) e nenhum PDF é aberto: o corte dos trechos é o mesmo nos dois scripts, então só
 os vetores mudam (e5 local -> Titan). É o caminho rápido para reaproveitar uma extração que já custou horas de CPU.
 Credenciais: cadeia padrão da AWS (~/.aws/credentials), região BEDROCK_AWS_DEFAULT_REGION do .env.
 Saída: data/docs_titan.duckdb (ou --saida) com as mesmas tabelas do docs.duckdb (documentos, paginas, trechos com
-embedding FLOAT[1024] do amazon.titan-embed-text-v2:0, normalizado). Na busca, a pergunta passa pelo mesmo modelo, sem o
-prefixo "query: " do e5. Ponha a saída no disco local do nó (--saida) e ligue data/docs_titan.duckdb a ela: DuckDB em NFS
-trava, e a troca atômica da publicação apagaria o link simbólico.
+embedding FLOAT[1024] do amazon.titan-embed-text-v2:0, normalizado, e blocos, os parágrafos da aba Timeline), mais
+temas, o vetor da consulta de cada tema da aba Timeline. Na busca, a pergunta passa pelo mesmo modelo, sem o prefixo
+"query: " do e5. Ponha a saída no disco local do nó (--saida) e ligue data/docs_titan.duckdb a ela: DuckDB em NFS trava,
+e a troca atômica da publicação apagaria o link simbólico.
 
 Feito para máquina pequena e credencial temporária: cada PDF é gravado assim que termina em <saída>.trabalho
 (nada fica acumulado na memória), e a próxima execução continua de onde parou; PDF que mudou de tamanho ou saiu do CSV é
-refeito ou removido. A cada N PDFs e no fim, uma cópia do trabalho com o índice de palavras substitui a saída de forma
-atômica, então a busca funciona durante a indexação com o que já está pronto.
+refeito ou removido. A cada N PDFs e no fim, uma cópia do trabalho com o índice de palavras e os vetores dos temas
+substitui a saída de forma atômica, então a busca e a aba Timeline funcionam durante a indexação com o que já está
+pronto. Um trabalho de antes da tabela blocos ganha os parágrafos dos PDFs já indexados na execução seguinte, lidos dos
+próprios PDFs, sem chamar o Bedrock. --temas só refaz os vetores dos temas no índice publicado.
 """
 import argparse
 import csv
@@ -31,7 +34,8 @@ import pymupdf as fitz
 import pyarrow as pa
 from botocore.config import Config
 
-from indexar_docs import AQUI, AREAS, PDFS, RAIZ, trechos
+from indexar_docs import AQUI, AREAS, PDFS, RAIZ, blocos_de, trechos
+from linha_do_tempo import TEMAS
 
 SAIDA_PADRAO = os.path.join(RAIZ, "data", "docs_titan.duckdb")
 LOCAL = os.path.join(RAIZ, "data", "docs.duckdb")  # índice do e5 feito na GPU: a fonte do texto com --do-indice-local
@@ -73,23 +77,57 @@ def abrir_trabalho(saida: str, tudo: bool):
         shutil.copy(saida, trabalho)  # continua de um índice já publicado
     con = duckdb.connect(trabalho)
     con.execute("INSTALL fts; LOAD fts")
-    if con.execute("SELECT count(*) FROM information_schema.schemata WHERE schema_name = 'fts_main_trechos'").fetchone()[0]:
-        con.execute("PRAGMA drop_fts_index('trechos')")  # o índice de palavras só existe nas cópias publicadas
+    for tabela in ("trechos", "blocos"):  # o índice de palavras só existe nas cópias publicadas
+        if con.execute("SELECT count(*) FROM information_schema.schemata WHERE schema_name = ?",
+                       [f"fts_main_{tabela}"]).fetchone()[0]:
+            con.execute(f"PRAGMA drop_fts_index('{tabela}')")
     con.execute("""CREATE TABLE IF NOT EXISTS documentos (arquivo VARCHAR PRIMARY KEY, area VARCHAR, empresa VARCHAR,
                    cnpj VARCHAR, ano INTEGER, tipo VARCHAR, titulo VARCHAR, url VARCHAR, paginas INTEGER, bytes BIGINT)""")
     con.execute("CREATE TABLE IF NOT EXISTS paginas (arquivo VARCHAR, pagina INTEGER, texto VARCHAR)")
     con.execute(f"""CREATE TABLE IF NOT EXISTS trechos (id BIGINT, arquivo VARCHAR, pagina INTEGER, texto VARCHAR,
                     embedding FLOAT[{DIMENSOES}])""")
+    if not con.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = 'blocos'").fetchone()[0]:
+        # trabalho de antes da tabela: os parágrafos dos PDFs já indexados, numa transação só (se parar, recomeça inteira)
+        con.execute("BEGIN")
+        con.execute("CREATE TABLE blocos (id BIGINT, arquivo VARCHAR, pagina INTEGER, texto VARCHAR)")
+        arquivos = [r[0] for r in con.execute("SELECT arquivo FROM documentos").fetchall()]
+        for arquivo in arquivos:
+            if os.path.exists(os.path.join(PDFS, arquivo)):  # o que sumiu da pasta o main() tira do índice
+                with fitz.open(os.path.join(PDFS, arquivo)) as pdf:
+                    gravar_blocos(con, arquivo, [(n, t) for n, pagina in enumerate(pdf, start=1) for t in blocos_de(pagina)])
+        con.execute("COMMIT")
+        print(f"parágrafos dos {len(arquivos)} PDFs já indexados gravados na tabela blocos", flush=True)
     return con
 
 
+def gravar_blocos(con, arquivo: str, blocos: list[tuple[int, str]]):
+    """Parágrafos (página, texto) de um PDF na tabela blocos, com ids novos (o índice de palavras usa o id)."""
+    if not blocos:
+        return
+    inicio = con.execute("SELECT coalesce(max(id) + 1, 0) FROM blocos").fetchone()[0]
+    tabela = pa.table({"id": pa.array(range(inicio, inicio + len(blocos)), pa.int64()), "arquivo": [arquivo] * len(blocos),
+                       "pagina": pa.array([b[0] for b in blocos], pa.int32()), "texto": [b[1] for b in blocos]})
+    con.execute("INSERT INTO blocos SELECT * FROM tabela")
+
+
 def remover(con, arquivo: str):
-    for tabela in ("trechos", "paginas", "documentos"):
+    for tabela in ("trechos", "blocos", "paginas", "documentos"):
         con.execute(f"DELETE FROM {tabela} WHERE arquivo = ?", [arquivo])
 
 
-def publicar(con, saida: str):
-    """Copia o trabalho, monta o índice de palavras na cópia e troca a saída; devolve a conexão reaberta."""
+def gravar_temas(pub, bedrock):
+    """Vetor da consulta de cada tema da aba Timeline (data/linha_do_tempo.py), no mesmo modelo dos trechos.
+
+    São sete chamadas por publicação: a busca por sentido da linha do tempo compara esses vetores com os dos trechos,
+    então eles precisam viajar junto com o índice publicado."""
+    pub.execute(f"CREATE OR REPLACE TABLE temas (tema VARCHAR, consulta VARCHAR, embedding FLOAT[{DIMENSOES}])")
+    pub.executemany("INSERT INTO temas VALUES (?, ?, ?::FLOAT[%d])" % DIMENSOES,
+                    [(tema, consulta, embed(bedrock, consulta)) for tema, (_, consulta, _) in TEMAS.items()])
+
+
+def publicar(con, saida: str, bedrock):
+    """Copia o trabalho, monta o índice de palavras e os vetores dos temas na cópia e troca a saída; devolve a conexão
+    reaberta."""
     trabalho = saida + ".trabalho"
     con.execute("CHECKPOINT")
     con.close()
@@ -98,31 +136,36 @@ def publicar(con, saida: str):
     pub = duckdb.connect(tmp)
     pub.execute("LOAD fts")
     # índice de palavras em português, sem acento e mantendo números (escopo 1, 2025, tCO2e)
-    pub.execute("""PRAGMA create_fts_index('trechos', 'id', 'texto', stemmer = 'portuguese', stopwords = 'none',
-                   ignore = '(\\.|[^a-z0-9])+', strip_accents = 1, lower = 1)""")
-    documentos, trechos_ = pub.execute("SELECT (SELECT count(*) FROM documentos), (SELECT count(*) FROM trechos)").fetchone()
+    for tabela in ("trechos", "blocos"):
+        pub.execute(f"""PRAGMA create_fts_index('{tabela}', 'id', 'texto', stemmer = 'portuguese', stopwords = 'none',
+                        ignore = '(\\.|[^a-z0-9])+', strip_accents = 1, lower = 1)""")
+    gravar_temas(pub, bedrock)
+    documentos, trechos_, paragrafos = pub.execute("""SELECT (SELECT count(*) FROM documentos),
+        (SELECT count(*) FROM trechos), (SELECT count(*) FROM blocos)""").fetchone()
     pub.close()
     os.replace(tmp, saida)
-    print(f"publicado: {documentos} PDFs, {trechos_} trechos em {saida}", flush=True)
+    print(f"publicado: {documentos} PDFs, {trechos_} trechos, {paragrafos} parágrafos em {saida}", flush=True)
     con = duckdb.connect(trabalho)
     con.execute("LOAD fts")
     return con
 
 
-def do_pdf(d: dict) -> tuple[list, list]:
-    """Texto por página e trechos lidos do PDF; preenche d["paginas"]."""
-    paginas, pedacos = [], []
+def do_pdf(d: dict) -> tuple[list, list, list]:
+    """Texto por página, trechos e parágrafos lidos do PDF; preenche d["paginas"]."""
+    paginas, pedacos, blocos = [], [], []
     with fitz.open(os.path.join(PDFS, d["arquivo"])) as pdf:
         d["paginas"] = pdf.page_count
         for num, pagina in enumerate(pdf, start=1):
             texto = pagina.get_text("text", sort=True)
             paginas.append((d["arquivo"], num, texto))
             pedacos += [(num, t) for t in trechos(texto)]
-    return paginas, pedacos
+            blocos += [(num, t) for t in blocos_de(pagina)]
+    return paginas, pedacos, blocos
 
 
-def do_indice_local(local, d: dict) -> tuple[list, list]:
-    """O mesmo, lido do índice do e5 (data/docs.duckdb): o corte dos trechos é igual, só o vetor muda."""
+def do_indice_local(local, d: dict) -> tuple[list, list, list]:
+    """O mesmo, lido do índice do e5 (data/docs.duckdb): o corte dos trechos e dos parágrafos é igual, só o vetor
+    muda (e o parágrafo não tem vetor nenhum: é o texto que a aba Timeline mostra)."""
     linha = local.execute("SELECT paginas, bytes FROM documentos WHERE arquivo = ?", [d["arquivo"]]).fetchone()
     if not linha:
         raise SystemExit(f"{d['arquivo']} não está em {LOCAL}: rode data/indexar_dados_local.py antes")
@@ -133,7 +176,9 @@ def do_indice_local(local, d: dict) -> tuple[list, list]:
         "SELECT pagina, texto FROM paginas WHERE arquivo = ? ORDER BY pagina", [d["arquivo"]]).fetchall()]
     pedacos = local.execute("SELECT pagina, texto FROM trechos WHERE arquivo = ? ORDER BY id",
                             [d["arquivo"]]).fetchall()
-    return paginas, pedacos
+    blocos = local.execute("SELECT pagina, texto FROM blocos WHERE arquivo = ? ORDER BY id",
+                           [d["arquivo"]]).fetchall()
+    return paginas, pedacos, blocos
 
 
 def main():
@@ -144,8 +189,20 @@ def main():
     ap.add_argument("--publicar-a-cada", type=int, default=200, help="PDFs novos entre uma publicação e outra")
     ap.add_argument("--saida", default=SAIDA_PADRAO, help="banco de saída (ponha no disco local do nó; NFS trava)")
     ap.add_argument("--do-indice-local", action="store_true",
-                    help=f"pega páginas e trechos de {os.path.relpath(LOCAL, RAIZ)} em vez de abrir os PDFs")
+                    help=f"pega páginas, trechos e parágrafos de {os.path.relpath(LOCAL, RAIZ)} em vez de abrir os PDFs")
+    ap.add_argument("--temas", action="store_true",
+                    help="só refaz a tabela temas no índice já publicado (sete chamadas ao Bedrock, nada é reindexado)")
     a = ap.parse_args()
+
+    if a.temas:  # mesma troca atômica da publicação: a busca continua no ar com o índice antigo até o fim
+        tmp = a.saida + ".tmp"
+        shutil.copy(a.saida, tmp)
+        pub = duckdb.connect(tmp)
+        gravar_temas(pub, cliente(1))
+        temas = pub.execute("SELECT count(*) FROM temas").fetchone()[0]
+        pub.close()
+        os.replace(tmp, a.saida)
+        return print(f"{temas} temas vetorizados em {a.saida}")
 
     with open(os.path.join(AQUI, "documentos.csv"), newline="") as f:
         docs = list(csv.DictReader(f, delimiter=";"))
@@ -183,7 +240,7 @@ def main():
     inicio, novos, desde = time.time(), 0, 0
     with ThreadPoolExecutor(a.threads) as ex:
         for n, d in enumerate(pendentes, start=1):
-            paginas, pedacos = do_indice_local(local, d) if local else do_pdf(d)
+            paginas, pedacos, blocos = do_indice_local(local, d) if local else do_pdf(d)
             # empresa, ano e título dão contexto a trechos soltos de tabela
             vetores = list(ex.map(lambda p: embed(bedrock, f"{d['empresa']} {d['ano']}, {d['titulo']}. {p[1]}"), pedacos))
             con.execute("BEGIN")
@@ -201,14 +258,15 @@ def main():
                 })
                 con.execute("INSERT INTO trechos SELECT * FROM tabela")
                 proximo_id += len(pedacos)
+            gravar_blocos(con, d["arquivo"], blocos)
             con.execute("COMMIT")
             novos += len(pedacos)
             desde += 1
             print(f"[{n}/{len(pendentes)}] {d['arquivo']}: {d['paginas']} páginas, {len(pedacos)} trechos "
                   f"({novos / (time.time() - inicio):.0f} trechos/s)", flush=True)
             if desde >= a.publicar_a_cada:
-                con, desde = publicar(con, a.saida), 0
-    publicar(con, a.saida).close()
+                con, desde = publicar(con, a.saida, bedrock), 0
+    publicar(con, a.saida, bedrock).close()
     if local:
         local.close()
     print(f"ok em {time.time() - inicio:.0f} s")

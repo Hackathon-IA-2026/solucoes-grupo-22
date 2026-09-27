@@ -1,8 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
+import { get } from '../EnergyNexus/api';
 
 /**
- * Dados da aba Timeline: JSON gerados por data/linha_do_tempo.py a partir dos bancos do EnergyNexus e servidos pelo
- * LibreChat em /linha_do_tempo/ (o iniciar.sh liga .runtime/linha_do_tempo em client/public/assets).
+ * Dados da aba Timeline, montados na hora por data/linha_do_tempo.py a partir dos bancos do EnergyNexus e servidos
+ * pelo serviço da Busca (proper_mcps/docs/busca.py) nas rotas /api/busca/timeline_empresas e /api/busca/timeline: a
+ * linha do tempo só é montada quando a pessoa escolhe empresa e período e manda gerar.
+ * No site estático (VITE_SITE_ESTATICO=1) não há serviço da Busca e as mesmas rotas caem nos JSON que o
+ * `python data/linha_do_tempo.py` publica em .runtime/linha_do_tempo/ — veja ARQUIVOS_ESTATICOS em EnergyNexus/api.ts.
  */
 
 export type Fonte = {
@@ -72,21 +76,31 @@ export type Grafico = {
   linhas: Linha[];
 };
 
+/** Uma empresa no seletor: o que a base tem dela, sem montar linha do tempo nenhuma. */
 export type Empresa = {
   id: string;
   cnpj: string;
   nome: string;
   nome_comercial: string | null;
   apelidos: string;
-  anos: [number, number];
-  eventos: number;
-  destaques: number;
+  /** período sugerido na tela: cobre os relatórios indexados e as demonstrações da empresa */
+  periodo: [number, number];
+  /** primeiro e último ano com demonstração da CVM, ou null se a empresa não tem nenhuma */
+  dfp: [number, number] | null;
+  usinas: number;
   relatorios: number;
-  trajetorias: number;
+};
+
+export type Selecao = {
+  gerado_em: string;
+  /** período que se pode pedir */
+  limites: [number, number];
+  temas: Record<string, string>;
+  empresas: Empresa[];
 };
 
 export type LinhaDoTempo = {
-  empresa: Omit<Empresa, 'id' | 'anos' | 'eventos' | 'destaques' | 'relatorios' | 'trajetorias'>;
+  empresa: Pick<Empresa, 'cnpj' | 'nome' | 'nome_comercial' | 'apelidos'>;
   gerado_em: string;
   periodo: [number, number];
   temas: Record<string, string>;
@@ -96,26 +110,19 @@ export type LinhaDoTempo = {
   notas: string[];
 };
 
-async function buscar<T>(arquivo: string): Promise<T> {
-  const resposta = await fetch(new URL(`linha_do_tempo/${arquivo}`, document.baseURI), {
-    cache: 'no-cache',
-  });
-  if (!resposta.ok) {
-    throw new Error(`linha_do_tempo/${arquivo}: ${resposta.status}`);
-  }
-  return resposta.json();
-}
-
-export function useEmpresas() {
+export function useSelecao() {
   return useQuery(['linha_do_tempo', 'empresas'], () =>
-    buscar<{ gerado_em: string; empresas: Empresa[] }>('empresas.json'),
+    get<Selecao>('/api/busca/timeline_empresas'),
   );
 }
 
-export function useLinhaDoTempo(id?: string) {
-  return useQuery(['linha_do_tempo', id], () => buscar<LinhaDoTempo>(`${id}.json`), {
-    enabled: !!id,
-  });
+/** A linha do tempo do período pedido; só chama o serviço quando há empresa e os dois anos (o clique em Gerar). */
+export function useLinhaDoTempo(cnpj?: string, de?: number, ate?: number) {
+  return useQuery(
+    ['linha_do_tempo', cnpj, de, ate],
+    () => get<LinhaDoTempo>('/api/busca/timeline', { cnpj, de, ate }),
+    { enabled: !!cnpj && !!de && !!ate, staleTime: Infinity, retry: false },
+  );
 }
 
 /** Nome, apelidos e CNPJ sem acento, para a busca de empresas. */

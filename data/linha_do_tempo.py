@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""Monta a linha do tempo de cada empresa (aba Timeline do chat) a partir de data/energynexus.duckdb e data/docs.duckdb.
+"""Monta a linha do tempo de uma empresa (aba Timeline do chat) a partir de data/energynexus.duckdb e do índice dos
+relatórios, data/docs.duckdb (é dele que vem a tabela `blocos`).
 
-Uso: python data/linha_do_tempo.py      (o iniciar.sh roda a cada início)
-Saída: .runtime/linha_do_tempo/empresas.json (o seletor) e <CNPJ só com dígitos>.json por empresa, trocados de forma
-atômica; o iniciar.sh liga a pasta em client/public/assets e o site a serve em /linha_do_tempo/.
+Biblioteca e script, com as mesmas funções nos dois casos:
+- no aplicativo, quem chama é o serviço da Busca (proper_mcps/docs/busca.py, rotas /timeline_empresas e
+  /timeline?cnpj=&de=&ate=), que monta a linha do tempo na hora em que a pessoa escolhe empresa e período na tela;
+- rodando como script (`python data/linha_do_tempo.py`, o que o iniciar.sh faz), publica em SAIDA o `empresas.json` da
+  selecao() e um `<CNPJ só com dígitos>.json` por empresa no período sugerido dela, trocados de forma atômica. É o que
+  o site estático servido do S3 lê, onde não há serviço da Busca para chamar.
 
 Nada é digitado: cada evento, indicador e passo de trajetória sai de uma tabela ou de um trecho de relatório, com a fonte.
 - Empresa = o CNPJ e os agentes que ele controla hoje (participacoes_societarias), como em capacidade_por_grupo.
 - Eventos por ano: usinas que entraram em operação e leilões de geração (SIGA e leilões da ANEEL, ligados pelo CEG),
   contratos e obras de transmissão (SIGET), financiamentos do BNDES, projetos de P&D (ANEEL) e trechos dos relatórios
-  sobre os temas de TEMAS (busca por palavras, BM25, nos parágrafos do índice dos relatórios, tabela blocos).
+  sobre os temas de TEMAS (busca por palavras e por sentido nos relatórios da empresa, veja paginas_por_tema).
 - Indicadores por ano: demonstrações da CVM (kpis_financeiros), capacidade das usinas, BNDES, PDD e P&D.
 - Trajetórias: passos ligados pelo mesmo ativo (CEG, contrato, nome do projeto) ou só pela ordem no tempo, e cada
   ligação diz qual é: os dados mostram a sequência, não a causa.
@@ -21,17 +25,19 @@ import re
 import shutil
 import unicodedata
 
-import duckdb
-
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # raiz do repositório
 
 
 BANCO = os.path.join(RAIZ, "data", "energynexus.duckdb")
 DOCS = os.path.join(RAIZ, "data", "docs.duckdb")
-SAIDA = os.path.join(RAIZ, ".runtime", "linha_do_tempo")
-ANOS_ANTES = 2  # começa dois anos antes da primeira DFP da base, para mostrar o que antecede os números
+SAIDA = os.path.join(RAIZ, ".runtime", "linha_do_tempo")  # onde o script publica os JSON do site estático
+ANOS_ANTES = 2  # o período sugerido começa dois anos antes da primeira DFP, para mostrar o que antecede os números
+MAX_ANOS = 40  # teto do período pedido na tela
 MAX_TRAJETORIAS = 8
 ANOS_ANTES_TRAJETORIA = 5  # trajetórias podem começar até cinco anos antes da linha do tempo (leilão, contrato)
+CANDIDATAS = 12  # páginas candidatas por relatório e tema em cada um dos dois métodos de busca
+POR_RELATORIO = 6  # páginas lidas por relatório e tema depois da fusão
+K_RRF = 60  # constante da fusão por posição (RRF), a mesma da Busca (proper_mcps/docs/server.py)
 
 # tema: (rótulo, consulta BM25 nos relatórios, expressão que marca o tema num texto minúsculo e sem acento)
 TEMAS = {
@@ -124,34 +130,87 @@ def melhor_frase(texto, rx, ano, empresa):
     return melhor
 
 
-def trechos_dos_relatorios(docs):
-    """{(arquivo, tema): (pontos, página, frase, parágrafo)}: para cada relatório e tema, a melhor frase entre os 6
-    parágrafos mais bem colocados na busca por palavras (BM25) do índice dos relatórios."""
+def paginas_por_tema(docs, arquivos):
+    """{(arquivo, tema): [páginas candidatas, da mais provável para a menos]}.
+
+    Duas buscas, dentro de cada relatório:
+    - palavras: BM25 na consulta do tema sobre os parágrafos do relatório (tabela blocos);
+    - sentido: cosseno entre o vetor da consulta do tema (tabela temas, gravada pelo indexar_docs_titan.py) e os
+      vetores dos trechos da página (tabela trechos, Amazon Titan) - acha a página que fala do tema com outras
+      palavras, que é o que a lista de sinônimos da consulta não alcança.
+    Cada busca entra com as suas POR_RELATORIO primeiras páginas: a lista é a união, não uma reordenação, porque
+    eval/recuperacao.py mostra que no nosso corpus as palavras acertam mais que o sentido - então o sentido acrescenta
+    páginas e nunca tira uma que o BM25 achou. A ordem entre elas é a fusão por posição (RRF, o mesmo 1/(60 + posição)
+    da Busca), que põe na frente o que os dois métodos apontaram; quem escolhe a frase depois é melhor_frase.
+    Comparar sempre dentro do mesmo relatório deixa constante o contexto que o indexador põe antes de cada trecho
+    ("empresa ano, título."), que assim não distorce a ordem.
+    """
+    if not arquivos:
+        return {}
+    if not docs.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = 'temas'").fetchone()[0]:
+        raise RuntimeError(f"{DOCS} não tem a tabela temas: rode data/indexar_docs_titan.py --temas")
+    pontos, escolhidas = {}, {}
+
+    def marcar(chave, pagina, posicao):
+        por_pagina = pontos.setdefault(chave, {})
+        por_pagina[pagina] = por_pagina.get(pagina, 0) + 1 / (K_RRF + posicao)
+        if posicao <= POR_RELATORIO:
+            escolhidas.setdefault(chave, set()).add(pagina)
+
+    for tema, arquivo, pagina, posicao in docs.execute(f"""
+            SELECT tema, arquivo, pagina, row_number() OVER (PARTITION BY tema, arquivo ORDER BY s DESC) AS posicao
+            FROM (SELECT m.tema AS tema, t.arquivo AS arquivo, t.pagina AS pagina,
+                         max(array_cosine_similarity(t.embedding, m.embedding)) AS s
+                  FROM trechos t, temas m WHERE t.arquivo IN (SELECT unnest(?)) GROUP BY ALL)
+            QUALIFY posicao <= {CANDIDATAS}""", [arquivos]).fetchall():
+        marcar((arquivo, tema), pagina, posicao)
+    for tema, (_, consulta, _) in TEMAS.items():
+        for arquivo, pagina, posicao in docs.execute(f"""
+                SELECT arquivo, pagina, row_number() OVER (PARTITION BY arquivo ORDER BY s DESC) AS posicao
+                FROM (SELECT arquivo, pagina, max(s) AS s FROM
+                        (SELECT arquivo, pagina, fts_main_blocos.match_bm25(id, ?) AS s FROM blocos
+                         WHERE arquivo IN (SELECT unnest(?)))
+                      WHERE s IS NOT NULL GROUP BY ALL)
+                QUALIFY posicao <= {CANDIDATAS}""", [consulta, arquivos]).fetchall():
+            marcar((arquivo, tema), pagina, posicao)
+    return {chave: [p for p in sorted(pontos[chave], key=pontos[chave].get, reverse=True) if p in paginas]
+            for chave, paginas in escolhidas.items()}
+
+
+def trechos_dos_relatorios(docs, documentos):
+    """{(arquivo, tema): (pontos, página, frase, parágrafo)}: para cada relatório e tema, a melhor frase entre os
+    parágrafos das páginas candidatas (paginas_por_tema)."""
     # ano do relatório e primeira palavra do nome da empresa (Cemig, Engie, EDP...), para reconhecê-la como sujeito
-    info = {a: (ano, sem_acento(e).split()[0])
-            for a, ano, e in docs.execute("SELECT arquivo, ano, empresa FROM documentos").fetchall()}
+    info = {d["arquivo"]: (d["ano"], sem_acento(d["empresa"]).split()[0]) for d in documentos}
+    candidatas = paginas_por_tema(docs, sorted(info))
+    if not candidatas:
+        return {}
+    paragrafos = {}
+    for arquivo, pagina, texto in docs.execute(
+            "SELECT arquivo, pagina, texto FROM blocos WHERE arquivo || '#' || pagina IN (SELECT unnest(?))",
+            [[f"{a}#{p}" for (a, _), ps in candidatas.items() for p in ps]]).fetchall():
+        paragrafos.setdefault((arquivo, pagina), []).append(texto)
     achados = {}
-    for tema, (_, consulta, rx) in TEMAS.items():
-        for arquivo, pagina, texto, posicao in docs.execute("""
-                SELECT arquivo, pagina, texto, row_number() OVER (PARTITION BY arquivo ORDER BY s DESC) AS posicao
-                FROM (SELECT arquivo, pagina, texto, fts_main_blocos.match_bm25(id, ?) AS s FROM blocos)
-                WHERE s IS NOT NULL QUALIFY posicao <= 6""", [consulta]).fetchall():
-            if len(GRI.findall(texto)) >= 3:
-                continue
-            frase = melhor_frase(texto, rx, *info[arquivo])
-            if frase is None or frase[0] < 7:  # termos do tema e mais ação, sujeito ou o ano: não só uma definição
-                continue
-            pontos = frase[0] + 1 / posicao
-            if pontos > achados.get((arquivo, tema), (0,))[0]:
-                achados[(arquivo, tema)] = (pontos, pagina, frase[1], texto)
+    for (arquivo, tema), paginas in candidatas.items():
+        rx = TEMAS[tema][2]
+        for posicao, pagina in enumerate(paginas, start=1):
+            for texto in paragrafos.get((arquivo, pagina), []):
+                if len(GRI.findall(texto)) >= 3:
+                    continue
+                frase = melhor_frase(texto, rx, *info[arquivo])
+                if frase is None or frase[0] < 7:  # termos do tema e mais ação, sujeito ou o ano: não só uma definição
+                    continue
+                pontos = frase[0] + 1 / posicao
+                if pontos > achados.get((arquivo, tema), (0,))[0]:
+                    achados[(arquivo, tema)] = (pontos, pagina, frase[1], texto)
     return achados
 
 
-def eventos_dos_relatorios(documentos, achados, cnpj):
+def eventos_dos_relatorios(documentos, achados):
     """Um evento por ano e tema (o trecho mais bem pontuado entre os relatórios do ano); o mesmo trecho em vários
     temas vira um evento só."""
     melhor = {}
-    for d in (d for d in documentos if digitos(d["cnpj"]) == digitos(cnpj)):
+    for d in documentos:
         for tema in TEMAS:
             a = achados.get((d["arquivo"], tema))
             if a and a[0] > melhor.get((d["ano"], tema), (0,))[0]:
@@ -162,7 +221,7 @@ def eventos_dos_relatorios(documentos, achados, cnpj):
         if chave in por_pagina:
             por_pagina[chave]["temas"] = sorted(set(por_pagina[chave]["temas"]) | {tema})
             continue
-        # a maior parte dos documentos do índice não tem url no documentos.csv; a aba já mostra o evento sem o link
+        # sem link público (a maior parte dos PDFs do documentos.csv), a tela abre a cópia local pela rota da Busca
         url = d["url"] and d["url"] + (f"#page={pagina}" if d["url"].lower().endswith(".pdf") else "")
         por_pagina[chave] = {
             "ano": ano, "tipo": "relatorio", "titulo": TEMAS[tema][0], "descricao": curto(frase),
@@ -622,9 +681,62 @@ def trajetorias(d, rel, primeiro, ultimo):
 ORDEM_TIPOS = ["relatorio", "usina", "leilao", "bndes", "transmissao_contrato", "transmissao_operacao", "ped"]
 
 
-def linha_do_tempo(con, empresa, documentos, achados, catalogo, primeiro, ultimo):
+def selecao(con, docs):
+    """O seletor da tela: uma linha por empresa com o que a base tem dela, sem montar linha do tempo nenhuma.
+    'limites' é o período que se pode pedir e 'periodo' o sugerido para cada empresa."""
+    hoje = datetime.date.today().year
+    dfp = {c: (a, b) for c, a, b in con.execute(
+        "SELECT cnpj, min(ano), max(ano) FROM kpis_financeiros GROUP BY 1").fetchall()}
+    usinas = dict(con.execute("""
+        SELECT g.cnpj_participante, count(DISTINCT p.ceg) FROM
+            (SELECT cnpj_participante, cnpj_agente FROM participacoes_societarias WHERE na_cadeia_de_controle
+             UNION SELECT cnpj, cnpj FROM empresas) g
+        JOIN usinas_proprietarios p ON p.cnpj = g.cnpj_agente GROUP BY 1""").fetchall())
+    relatorios = {digitos(c): (n, a, b) for c, n, a, b in docs.execute(
+        "SELECT cnpj, count(*), min(ano), max(ano) FROM documentos WHERE cnpj IS NOT NULL GROUP BY 1").fetchall()}
+    inicio = min([a for a, _ in dfp.values()] + [hoje]) - ANOS_ANTES
+    primeiro = min([r[1] for r in relatorios.values()] + [inicio])
+    saida = []
+    for cnpj, nome, comercial, apelidos in con.execute("""
+            SELECT e.cnpj, e.nome_social, e.nome_comercial, string_agg(DISTINCT a.apelido, ', ')
+            FROM empresas e LEFT JOIN empresas_apelidos a USING (cnpj) GROUP BY ALL ORDER BY e.nome_social""").fetchall():
+        rel = relatorios.get(digitos(cnpj))
+        # o período sugerido cobre o que a empresa tem: os relatórios indexados e a primeira DFP, com os anos antes dela
+        candidatos = ([rel[1]] if rel else []) + ([dfp[cnpj][0] - ANOS_ANTES] if cnpj in dfp else [])
+        de = min(candidatos or [inicio])
+        saida.append({"id": digitos(cnpj), "cnpj": cnpj, "nome": nome, "nome_comercial": comercial,
+                      "apelidos": apelidos or "", "periodo": [max(de, primeiro), hoje],
+                      "dfp": list(dfp[cnpj]) if cnpj in dfp else None, "usinas": usinas.get(cnpj, 0),
+                      "relatorios": rel[0] if rel else 0})
+    return {"gerado_em": datetime.date.today().isoformat(), "limites": [primeiro, hoje],
+            "temas": {k: v[0] for k, v in TEMAS.items()}, "empresas": saida}
+
+
+def empresa_de(con, cnpj):
+    """{cnpj, nome, nome_comercial, apelidos} da empresa, ou None se o CNPJ não está na base."""
+    linha = con.execute("""SELECT e.cnpj, e.nome_social, e.nome_comercial, string_agg(DISTINCT a.apelido, ', ')
+                           FROM empresas e LEFT JOIN empresas_apelidos a USING (cnpj)
+                           WHERE regexp_replace(e.cnpj, '\\D', '', 'g') = ? GROUP BY ALL""",
+                        [digitos(cnpj)]).fetchone()
+    if not linha:
+        return None
+    return {"cnpj": linha[0], "nome": linha[1], "nome_comercial": linha[2], "apelidos": linha[3] or ""}
+
+
+def documentos_de(docs, cnpj, primeiro, ultimo):
+    """Relatórios da empresa publicados no período (o ano do evento é o ano de publicação do relatório)."""
+    cur = docs.execute("""SELECT arquivo, empresa, cnpj, ano, titulo, url FROM documentos
+                          WHERE regexp_replace(cnpj, '\\D', '', 'g') = ? AND ano BETWEEN ? AND ?
+                          ORDER BY ano, arquivo""", [digitos(cnpj), primeiro, ultimo])
+    return [dict(zip([c[0] for c in cur.description], r)) for r in cur.fetchall()]
+
+
+def linha_do_tempo(con, docs, empresa, primeiro, ultimo):
+    catalogo = dict(con.execute("SELECT tabela, fonte FROM catalogo").fetchall())
+    documentos = documentos_de(docs, empresa["cnpj"], primeiro, ultimo)
+    achados = trechos_dos_relatorios(docs, documentos)
     d = dados_do_grupo(con, empresa["cnpj"])
-    rel = eventos_dos_relatorios(documentos, achados, empresa["cnpj"])
+    rel = eventos_dos_relatorios(documentos, achados)
     eventos = rel + eventos_das_tabelas(d, catalogo, primeiro, ultimo)
     graf = graficos(d, primeiro, ultimo)
     anos = []
@@ -649,52 +761,51 @@ def linha_do_tempo(con, empresa, documentos, achados, catalogo, primeiro, ultimo
                   "leilões, transmissão, BNDES e P&D somam o grupo; os indicadores financeiros são os do CNPJ na CVM "
                   "(consolidado quando publicado).",
                   "Usinas e leilões mostram os ativos que o grupo controla hoje: compras e vendas passadas não aparecem.",
-                  "Os trechos de relatório vêm da busca por palavras no índice dos relatórios da empresa: confira a página.",
+                  "Os trechos de relatório vêm da busca por palavras (BM25) e por sentido (embedding) nos relatórios da "
+                  "empresa publicados no período: confira a página.",
                   "Impacto e trajetórias mostram o que veio depois nos dados, não a causa."]}
 
 
-def main():
+def publicar():
+    """Publica em SAIDA o que o site estático lê: `empresas.json` (a selecao(), só com as empresas publicadas) e um
+    `<id>.json` por empresa, no período sugerido dela. A troca é atômica (escreve em SAIDA.tmp e renomeia), para a aba
+    nunca ler uma pasta pela metade. Empresa sem nenhum ano na base não entra: no seletor ela só daria uma tela vazia.
+    """
+    import duckdb
+
     con = duckdb.connect(BANCO, read_only=True)
     docs = duckdb.connect(DOCS, read_only=True)
     docs.execute("LOAD fts")
-    if not docs.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = 'blocos'").fetchone()[0]:
-        raise SystemExit("data/docs.duckdb não tem a tabela blocos: rode data/indexar_docs.py (reaproveita os embeddings)")
-    primeiro = con.execute("SELECT min(ano) FROM kpis_financeiros").fetchone()[0] - ANOS_ANTES
-    ultimo = datetime.date.today().year
-    catalogo = dict(con.execute("SELECT tabela, fonte FROM catalogo").fetchall())
-    cur = docs.execute("SELECT arquivo, empresa, cnpj, ano, titulo, url FROM documentos")
-    documentos = [dict(zip([c[0] for c in cur.description], r)) for r in cur.fetchall()]
-    achados = trechos_dos_relatorios(docs)
-    docs.close()
-
+    if not docs.execute(
+            "SELECT count(*) FROM information_schema.tables WHERE table_name = 'blocos'").fetchone()[0]:
+        raise SystemExit(f"{DOCS} não tem a tabela blocos: rode data/indexar_dados_local.py")
+    sel = selecao(con, docs)
     tmp = SAIDA + ".tmp"
     shutil.rmtree(tmp, ignore_errors=True)
     os.makedirs(tmp)
-    indice = []
-    for cnpj, nome, comercial, apelidos in con.execute("""
-            SELECT e.cnpj, e.nome_social, e.nome_comercial, string_agg(DISTINCT a.apelido, ', ')
-            FROM empresas e LEFT JOIN empresas_apelidos a USING (cnpj) GROUP BY ALL ORDER BY e.nome_social""").fetchall():
-        empresa = {"cnpj": cnpj, "nome": nome, "nome_comercial": comercial, "apelidos": apelidos or ""}
-        t = linha_do_tempo(con, empresa, documentos, achados, catalogo, primeiro, ultimo)
+    publicadas = []
+    for e in sel["empresas"]:
+        primeiro, ultimo = e["periodo"]
+        t = linha_do_tempo(con, docs, empresa_de(con, e["cnpj"]), primeiro, ultimo)
         if not t["anos"]:
             continue
-        with open(os.path.join(tmp, digitos(cnpj) + ".json"), "w") as f:
+        with open(os.path.join(tmp, e["id"] + ".json"), "w") as f:
             json.dump(t, f, ensure_ascii=False, default=str)
-        eventos = [e for a in t["anos"] for e in a["eventos"]]
-        indice.append({**empresa, "id": digitos(cnpj), "anos": [t["anos"][0]["ano"], t["anos"][-1]["ano"]],
-                       "eventos": len(eventos), "destaques": sum(bool(e["temas"]) for e in eventos),
-                       "relatorios": sum(e["tipo"] == "relatorio" for e in eventos), "trajetorias": len(t["trajetorias"])})
+        publicadas.append(e)
     con.close()
+    docs.close()
+    ids = {e["id"] for e in publicadas}
     with open(os.path.join(tmp, "empresas.json"), "w") as f:
-        json.dump({"gerado_em": datetime.date.today().isoformat(), "empresas": indice}, f, ensure_ascii=False)
+        json.dump({**sel, "empresas": [e for e in sel["empresas"] if e["id"] in ids]}, f, ensure_ascii=False,
+                  default=str)
     velho = SAIDA + ".old"
     shutil.rmtree(velho, ignore_errors=True)
     if os.path.exists(SAIDA):
         os.rename(SAIDA, velho)
     os.rename(tmp, SAIDA)
     shutil.rmtree(velho, ignore_errors=True)
-    print(f"linha do tempo: {len(indice)} empresas em {SAIDA}")
+    print(f"linha do tempo: {len(publicadas)} empresas em {SAIDA}")
 
 
 if __name__ == "__main__":
-    main()
+    publicar()

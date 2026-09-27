@@ -2,14 +2,16 @@
 """Indexa neste nó todos os PDFs de data/raw: texto por página, trechos com embedding na GPU, parágrafos e BM25.
 
 Uso: .runtime/venv/bin/python data/indexar_dados_local.py --gpu 0 --saida /local/<usuário>/.../docs_local.duckdb
-     [--lote 256] [--leitores <núcleos>] [--limite N] [--tudo]
+     [--lote 256] [--leitores <núcleos>] [--limite N] [--tudo] [--temas]
 Entrada: todo PDF de data/raw — financeiro/<empresa>/pdfs/<ano>, sustentabilidade/<empresa>/<ano> (e referencias),
 pdfs_esg e os dicionários de dados da ANEEL em aneel/<base>. Os metadados saem de data/documentos.csv pelo caminho ou,
 quando o CSV aponta para a pasta organizada e o PDF só existe solto em pdfs_esg, pelo nome do arquivo; os dicionários da
 ANEEL não estão no CSV e vêm de DICIONARIOS. O mesmo PDF sob dois caminhos entra uma vez, pelo caminho organizado.
 Saída (--saida, sempre no disco local do nó: DuckDB no NFS trava): documentos, paginas, trechos (embedding FLOAT[1024]),
-blocos (os parágrafos de cada página na ordem do PDF, para data/linha_do_tempo.py), meta e o índice de palavras,
-trocados de forma atômica no fim. data/docs.duckdb é um link para esse arquivo no disco local.
+blocos (os parágrafos de cada página na ordem do PDF, para data/linha_do_tempo.py), temas (o vetor da consulta de cada
+tema da aba Timeline, que a busca por sentido dela compara com os trechos), meta e o índice de palavras, trocados de
+forma atômica no fim. data/docs.duckdb é um link para esse arquivo no disco local. --temas só regrava os temas no índice
+já publicado, sem ler PDF nenhum (use depois de mudar as consultas de TEMAS em data/linha_do_tempo.py).
 Embeddings do intfloat/multilingual-e5-large na GPU --gpu (fp16, média dos tokens, norma 1) com o prefixo "passage: "
 que o modelo exige — quem pergunta usa "query: ". Reaproveita do índice anterior o vetor de todo trecho igual (arquivo,
 página e texto), então refazer o índice depois de baixar alguns PDFs custa minutos, não horas.
@@ -33,6 +35,8 @@ import pymupdf as fitz
 import torch
 from transformers import AutoModel, AutoTokenizer
 
+from linha_do_tempo import TEMAS
+
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # raiz do repositório
 AQUI = os.path.join(RAIZ, "data")
 PDFS = os.path.join(AQUI, "raw")
@@ -42,6 +46,7 @@ PASTA_MODELO = os.path.join(AQUI, "modelos", "multilingual-e5-large-torch")
 DIMENSOES, TOKENS = 1024, 512  # o e5-large devolve 1024 números e lê até 512 tokens
 TAMANHO, SOBRA = 1200, 200  # caracteres por trecho e sobreposição
 PREFIXO = "passage: "  # o e5 é treinado com prefixo: "passage: " no que é indexado, "query: " na pergunta
+PREFIXO_PERGUNTA = "query: "  # o outro lado do par: consulta da aba Timeline (tabela temas) e pergunta da busca
 # o que muda o vetor: modelo, prefixo, pooling e o corte dos trechos. Vetor do índice anterior só serve se for igual.
 ASSINATURA = f"{MODELO}|{PREFIXO}|media|norma1|{TOKENS}t|{TAMANHO}/{SOBRA}c"
 LOTE = 256  # medido na RTX 5090 com trechos de 512 tokens: 195 trechos/s e 4,1 GiB. 512 rende 1% mais e dobra a memória
@@ -377,7 +382,7 @@ def gravar(banco: str, docs: list[dict], paginas: list, pedacos: list, vetores: 
     con.execute("CREATE TABLE meta (chave VARCHAR PRIMARY KEY, valor VARCHAR)")
     con.executemany("INSERT INTO meta VALUES (?, ?)", [
         ("modelo", MODELO), ("embedding", ASSINATURA), ("dimensoes", str(DIMENSOES)), ("prefixo_trecho", PREFIXO),
-        ("prefixo_pergunta", "query: "), ("gerado_em", time.strftime("%Y-%m-%dT%H:%M:%S")),
+        ("prefixo_pergunta", PREFIXO_PERGUNTA), ("gerado_em", time.strftime("%Y-%m-%dT%H:%M:%S")),
         ("documentos", str(len(docs))), ("paginas", str(len(paginas))), ("trechos", str(len(pedacos))),
         ("blocos", str(len(blocos))), ("vetores_reaproveitados", str(reaproveitados))])
     print("índice de palavras (BM25)...", flush=True)
@@ -391,6 +396,32 @@ def gravar(banco: str, docs: list[dict], paginas: list, pedacos: list, vetores: 
     shutil.rmtree(pasta)
 
 
+def gravar_temas(banco: str, lote: int, gpu: int):
+    """Grava no índice publicado a tabela temas: o vetor da consulta de cada tema da aba Timeline, no mesmo modelo e com
+    o prefixo de pergunta do e5.
+
+    A busca por sentido da linha do tempo (data/linha_do_tempo.py) compara esses vetores com os dos trechos deste mesmo
+    índice, então eles têm de viajar junto com ele — e só valem para os vetores deste modelo. A cópia é trocada de forma
+    atômica, como no gravar(): a busca e a aba continuam no ar com o índice antigo até o fim, e quem já estava lendo o
+    arquivo não vê nada mudar."""
+    pasta = tempfile.mkdtemp(prefix="docs_", dir=os.path.dirname(banco))  # mesmo disco: o os.replace é atômico
+    tmp = os.path.join(pasta, "docs.duckdb")
+    print(f"copiando {os.path.getsize(banco) / 2**20:.0f} MiB para gravar os temas...", flush=True)
+    shutil.copy(banco, tmp)
+    codificador = Codificador(min(lote, len(TEMAS)), gpu)
+    consultas = [(tema, consulta) for tema, (_, consulta, _) in TEMAS.items()]
+    vetores = codificador.codificar([PREFIXO_PERGUNTA + c for _, c in consultas])
+    con = duckdb.connect(tmp)
+    con.execute(f"CREATE OR REPLACE TABLE temas (tema VARCHAR, consulta VARCHAR, embedding FLOAT[{DIMENSOES}])")
+    con.executemany(f"INSERT INTO temas VALUES (?, ?, ?::FLOAT[{DIMENSOES}])",
+                    [(tema, consulta, vetores[i].tolist()) for i, (tema, consulta) in enumerate(consultas)])
+    con.execute("CHECKPOINT")
+    con.close()
+    os.replace(tmp, banco)
+    shutil.rmtree(pasta)
+    print(f"{len(consultas)} temas vetorizados em {banco}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--saida", required=True, help="caminho do DuckDB, sempre no disco local do nó (nunca no NFS)")
@@ -399,11 +430,15 @@ def main():
     ap.add_argument("--leitores", type=int, default=os.cpu_count(), help="processos lendo PDFs (um por núcleo)")
     ap.add_argument("--limite", type=int, help="indexa só os N primeiros documentos (teste)")
     ap.add_argument("--tudo", action="store_true", help="recalcula todos os vetores, sem olhar o índice anterior")
+    ap.add_argument("--temas", action="store_true",
+                    help="só refaz a tabela temas no índice já publicado (sete vetores; nenhum PDF é lido)")
     a = ap.parse_args()
 
     inicio, avisos = time.time(), []
     banco = destino(a.saida)
     conferir_gpu(a.gpu)
+    if a.temas:
+        return gravar_temas(banco, a.lote, a.gpu)
     docs = catalogo(avisos)
     if a.limite is not None:
         docs = docs[:a.limite]

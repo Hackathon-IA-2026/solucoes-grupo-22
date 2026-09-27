@@ -10,10 +10,19 @@ export const SITE_ESTATICO = import.meta.env.VITE_SITE_ESTATICO === '1';
 const ARQUIVOS_ESTATICOS: Record<string, string> = {
   '/api/painel/dados': 'dados/painel.json',
   '/api/busca/resumo': 'dados/busca_resumo.json',
+  '/api/busca/timeline_empresas': 'linha_do_tempo/empresas.json',
 };
 
-async function lerEstatico<T>(caminho: string): Promise<T> {
-  const arquivo = ARQUIVOS_ESTATICOS[caminho];
+// Rotas cujo arquivo depende dos parâmetros. A linha do tempo publicada é uma por empresa, no período que o
+// data/linha_do_tempo.py gerou: aqui não há serviço da Busca para montar outro, então o período pedido na tela é
+// ignorado e a aba mostra o período que vier no JSON (o data.periodo).
+const ARQUIVOS_POR_PARAMETRO: Record<string, (p: Record<string, unknown>) => string> = {
+  '/api/busca/timeline': (p) => `linha_do_tempo/${String(p.cnpj ?? '').replace(/\D/g, '')}.json`,
+};
+
+async function lerEstatico<T>(caminho: string, params?: Record<string, unknown>): Promise<T> {
+  const porParametro = ARQUIVOS_POR_PARAMETRO[caminho];
+  const arquivo = porParametro ? porParametro(params ?? {}) : ARQUIVOS_ESTATICOS[caminho];
   if (!arquivo) {
     throw new Error(
       `${caminho} exige o servidor do EnergyNexus; no site estático só existem os arquivos de dados`,
@@ -27,7 +36,9 @@ async function lerEstatico<T>(caminho: string): Promise<T> {
 }
 
 export const get = <T>(caminho: string, params?: Record<string, unknown>) =>
-  SITE_ESTATICO ? lerEstatico<T>(caminho) : request.get<T>(`${apiBaseUrl()}${caminho}`, { params });
+  SITE_ESTATICO
+    ? lerEstatico<T>(caminho, params)
+    : request.get<T>(`${apiBaseUrl()}${caminho}`, { params });
 
 export function mensagemDeErro(e: unknown): string {
   const erro = e as {
@@ -37,8 +48,12 @@ export function mensagemDeErro(e: unknown): string {
   return erro.response?.data?.message || erro.message || String(e);
 }
 
-/** Abre numa aba nova um arquivo protegido (imagem da página, PDF), baixado com o token. */
-export async function abrirArquivo(caminho: string, params: Record<string, unknown>) {
+/** Abre numa aba nova um arquivo protegido (imagem da página, PDF), baixado com o token; o PDF, na página dada. */
+export async function abrirArquivo(
+  caminho: string,
+  params: Record<string, unknown>,
+  pagina?: number,
+) {
   if (SITE_ESTATICO) {
     // Os PDFs (data/raw, ~1 GB) e as imagens de página não vão para o bucket: quem pede recebe o
     // motivo, não um erro seco.
@@ -53,7 +68,7 @@ export async function abrirArquivo(caminho: string, params: Record<string, unkno
       responseType: 'blob',
     });
     if (aba) {
-      aba.location.href = URL.createObjectURL(blob);
+      aba.location.href = URL.createObjectURL(blob) + (pagina ? `#page=${pagina}` : '');
     }
   } catch (e) {
     aba?.close();

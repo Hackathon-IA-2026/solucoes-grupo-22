@@ -18,8 +18,13 @@ EnergyNexus: chat de inteligência do setor elétrico. A raiz é o LibreChat v0.
   `.env` real nunca vai para o git);
 - `instalar.sh`, `iniciar.sh`, `parar.sh`, `vllm.sh`;
 - `proper_mcps/` (dados, docs, relatorio, placar), `proper_skills/`, `data/`, `researches/`, `eval/`;
-- `data/linha_do_tempo.py`: os dados da aba Timeline (eventos, trajetórias e gráficos de cada empresa), gerados dos dois
-  bancos em `.runtime/linha_do_tempo/` pelo `iniciar.sh` e servidos em `/linha_do_tempo/`.
+- `data/linha_do_tempo.py`: biblioteca que monta os dados da aba Timeline (eventos, trajetórias e gráficos) do
+  `energynexus.duckdb` e do `docs.duckdb`, **na hora**, para a empresa e o período que a pessoa escolhe; quem a chama é
+  o serviço da Busca (`/timeline_empresas` e `/timeline`, repassados pela rota `/api/busca`). As páginas de relatório de
+  cada tema saem de duas buscas somadas: BM25 nos parágrafos (`blocos`) e cosseno entre o vetor da consulta do tema
+  (tabela `temas`, gravada pelo `indexar_docs_titan.py`) e os vetores dos `trechos`. Rodado como script (o que o
+  `iniciar.sh` faz), publica em `.runtime/linha_do_tempo/` o mesmo JSON por empresa, que é o que o **site estático** lê
+  em `/linha_do_tempo/` — lá não há serviço da Busca para chamar.
 
 O relatório final é PDF: o roteiro `proper_skills/relatorio-energynexus` traz as regras de redação do modelo oficial,
 `gerar_relatorio` (`proper_mcps/relatorio`) preenche o template em `proper_mcps/relatorio/modelo/` e compila com o
@@ -58,11 +63,14 @@ python3 eval/chat.py "Qual foi a receita líquida da Taesa em 2025?"           #
 python3 eval/chat.py --perfil energynexus-analista-claude "a mesma pergunta"   # Claude pelo Bedrock
 python3 eval/regressao.py                                # 34 perguntas com resposta conhecida
 node eval/e2e/telas.js                                   # telas do placar no navegador (fonte em cada número)
+.runtime/venv/bin/python eval/recuperacao.py             # busca nos relatórios: pares de eval/pares_relatorios.csv
 ```
 
-Mudou o banco (`data/construir.py` ou `data/indexar_docs.py`)? Rode os testes das ferramentas, a regressão e
-`data/exportar_painel.py`; a linha do tempo se refaz no próximo `./iniciar.sh` (ou com
-`.runtime/venv/bin/python data/linha_do_tempo.py`). Mudou o prompt ou o `librechat.yaml`? Reinicie
+Mudou o banco (`data/construir.py`, `data/indexar_dados_local.py` ou `data/indexar_docs_titan.py`)? Rode os testes das
+ferramentas, a regressão e `data/exportar_painel.py`; a linha do tempo do site estático se refaz no próximo
+`./iniciar.sh` (ou com `.runtime/venv/bin/python data/linha_do_tempo.py`). Mudou as consultas dos temas (`TEMAS`) ou o
+modelo de embedding? Regrave os vetores dos temas (`.runtime/venv/bin/python data/indexar_docs_titan.py --temas`) e rode
+o `eval/recuperacao.py` antes e depois, para saber se melhorou. Mudou o prompt ou o `librechat.yaml`? Reinicie
 (`./parar.sh && ./iniciar.sh`) e rode a regressão. Mudou a extração do placar (`data/extrair_placar.py`)? Rode
 `data/conferir_placar.py` (gabarito §3.2) além dos testes.
 
@@ -83,4 +91,5 @@ Mudou o banco (`data/construir.py` ou `data/indexar_docs.py`)? Rode os testes da
 | nova tabela na aba Painel | `CONJUNTOS` em `data/exportar_painel.py` |
 | aba Busca | `proper_mcps/docs/busca.py` (serviço) e `client/src/components/EnergyNexus/BuscaView.tsx` (tela) |
 | aba Grafo | `client/src/components/EnergyNexus/grafo/dados.ts` (nós a partir do `painel.json` e dos documentos), `modelo.ts` (layout), `GraphView.tsx` e `grafo.css` (tela); página em `GrafoView.tsx` |
-| aba Timeline | dados em `data/linha_do_tempo.py` (temas, eventos, trajetórias; teste em `data/test_linha_do_tempo.py`), tela em `client/src/components/Timeline/` (depois `npm run frontend`) |
+| aba Timeline | dados em `data/linha_do_tempo.py` (temas, eventos, trajetórias; teste em `data/test_linha_do_tempo.py`), rotas em `proper_mcps/docs/busca.py`, tela em `client/src/components/Timeline/` (depois `npm run frontend`) |
+| medir a busca nos relatórios | pares conferidos à mão em `eval/pares_relatorios.csv`, medida em `eval/recuperacao.py` |

@@ -1,4 +1,5 @@
 /* eslint-disable i18next/no-literal-string -- aba do EnergyNexus: textos em português, como os dados que ela mostra */
+import { useState } from 'react';
 import {
   ChevronDown,
   ExternalLink,
@@ -13,6 +14,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import type { Ano, Evento, Fonte } from './data';
 import { formatar } from './data';
+import { abrirArquivo, mensagemDeErro } from '~/components/EnergyNexus/api';
 import { cn } from '~/utils';
 
 export const TIPOS: Record<string, { rotulo: string; Icone: LucideIcon }> = {
@@ -35,6 +37,7 @@ export function TemaChip({ rotulo }: { rotulo: string }) {
 
 /** Documento, página e link, ou tabela e origem, com o trecho ou os itens que a sustentam. */
 export function FonteDetalhe({ fonte }: { fonte: Fonte }) {
+  const [erro, setErro] = useState('');
   const registros = fonte.itens?.length ?? 0;
   let rotulo = `Ver os ${registros} registros`;
   if (fonte.trecho) {
@@ -42,21 +45,36 @@ export function FonteDetalhe({ fonte }: { fonte: Fonte }) {
   } else if (registros === 1) {
     rotulo = 'Ver o registro';
   }
+  const abrir = fonte.pagina ? `Abrir o documento na página ${fonte.pagina}` : 'Abrir a fonte';
+  const link =
+    'inline-flex w-fit items-center gap-1 text-text-primary underline underline-offset-2 hover:text-text-secondary';
   return (
     <div className="flex flex-col gap-1 text-xs text-text-secondary">
       <span className="text-text-primary">{fonte.texto}</span>
       {fonte.origem && <span>Origem: {fonte.origem}</span>}
       {fonte.url && (
-        <a
-          href={fonte.url}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex w-fit items-center gap-1 text-text-primary underline underline-offset-2 hover:text-text-secondary"
-        >
-          {fonte.pagina ? `Abrir o documento na página ${fonte.pagina}` : 'Abrir a fonte'}
+        <a href={fonte.url} target="_blank" rel="noreferrer" className={link}>
+          {abrir}
           <ExternalLink className="size-3" aria-hidden="true" />
         </a>
       )}
+      {!fonte.url && fonte.arquivo && (
+        // relatório sem link público: a cópia local do PDF, pela rota da aba Busca (com o token do login)
+        <button
+          type="button"
+          className={link}
+          onClick={() => {
+            setErro('');
+            abrirArquivo('/api/busca/pdf', { arquivo: fonte.arquivo }, fonte.pagina).catch((e) =>
+              setErro(mensagemDeErro(e)),
+            );
+          }}
+        >
+          {abrir}
+          <ExternalLink className="size-3" aria-hidden="true" />
+        </button>
+      )}
+      {erro && <span className="text-red-600 dark:text-red-400">Não abriu o PDF: {erro}</span>}
       {(fonte.trecho || registros > 0) && (
         <details className="group">
           <summary className="w-fit cursor-pointer select-none hover:text-text-primary">
