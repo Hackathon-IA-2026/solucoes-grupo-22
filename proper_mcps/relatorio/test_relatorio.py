@@ -91,7 +91,7 @@ def test_gera_pdf_no_modelo_com_fonte_e_bloco_do_painel(s, tmp_path):
                    "81,4%", "Página 1 de", "Referências", "Demonstrações Financeiras Padronizadas (DFP) 2025"):
         assert trecho in texto, trecho
     with zipfile.ZipFile(tmp_path / pdf.replace(".pdf", ".zip")) as z:
-        assert sorted(z.namelist()) == ["imagens/zip_logo.png", "main.tex", "referencias.bib"]
+        assert sorted(z.namelist()) == ["imagens/energynexus_logo.png", "main.tex", "referencias.bib"]
         tex = z.read("main.tex").decode()
     modelo = open(os.path.join(server.MODELO, "main.tex"), encoding="utf-8").read()
     corte = "%%  DADOS DO RELATÓRIO"

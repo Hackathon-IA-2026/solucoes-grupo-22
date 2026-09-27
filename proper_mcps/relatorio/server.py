@@ -391,7 +391,7 @@ def gerar_relatorio(titulo: str, subtitulo: str, periodo: str, conteudo: str, re
         nome = f"{quando:%Y%m%d-%H%M%S}-{_slug(titulo)}-{secrets.token_hex(4)}"
         shutil.copy(os.path.join(pasta, "main.pdf"), os.path.join(PASTA, nome + ".pdf"))
         with zipfile.ZipFile(os.path.join(PASTA, nome + ".zip"), "w", zipfile.ZIP_DEFLATED) as z:
-            for arquivo in ("main.tex", "referencias.bib", "imagens/zip_logo.png"):
+            for arquivo in ("main.tex", "referencias.bib", "imagens/energynexus_logo.png"):
                 z.write(os.path.join(pasta, arquivo), arquivo)
     pdf = publicar(os.path.join(PASTA, nome + ".pdf"))
     rotulo = re.sub(r'["{}\n]', "", " ".join(titulo.split()))

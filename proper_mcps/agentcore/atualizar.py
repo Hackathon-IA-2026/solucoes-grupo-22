@@ -1,4 +1,8 @@
-"""Republica os três MCP do EnergyNexus (dados, docs, relatorio) no Amazon Bedrock AgentCore Runtime e testa o que subiu.
+"""Republica os dois MCP de consulta do EnergyNexus (dados e docs) no Amazon Bedrock AgentCore Runtime e testa o que subiu.
+
+O relatório NÃO sobe: ele compila o modelo LaTeX com o pdflatex do TinyTeX, que é x86_64, e o runtime do AgentCore é
+ARM64 e só tem /tmp gravável — o PDF também precisa ser servido pelo próprio LibreChat em /relatorios/. Por isso
+`energynexus-relatorio` e `energynexus-placar` rodam por stdio na máquina do chat (veja o librechat.yaml).
 
 Uso (da raiz do repositório, com um Python que tenha boto3 e pip):
   COGNITO_USUARIO=... COGNITO_SENHA=... .runtime/venv/bin/python proper_mcps/agentcore/atualizar.py
@@ -9,7 +13,7 @@ Passos: monta o pacote (bibliotecas para ARM64 + proper_mcps/ no mesmo layout do
 .runtime/agentcore/coppezip-mcp.zip, envia com uma chave datada (o bucket não tem versionamento e o CloudFormation
 ignora a atualização se a chave não muda), reenvia a configuração inteira de cada runtime trocando só o zip
 (update_agent_runtime substitui a configuração, não corrige campo a campo: o que não for reenviado se perde), espera
-cada um ficar READY e chama tools/list e uma ferramenta de verdade nos três.
+cada um ficar READY e chama tools/list e uma ferramenta de verdade nos dois.
 
 Autenticação: só `Authorization: Bearer <JWT do Cognito>`. SigV4 é recusado ("Authorization method mismatch"),
 inclusive pelo invoke_agent_runtime do boto3, e o user pool não tem domínio nem segredo no app client, logo não existe
@@ -36,9 +40,9 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 REGIAO = "us-west-2"
 BUCKET = "coppezip-dados-oeste-139382521595"
-QUAIS = ("dados", "docs", "relatorio")
-# banco que cada runtime baixa do bucket na subida (o relatorio não usa banco) e de onde ele vem no repositório.
-# A chave do S3 mantém o nome antigo porque é ela que o servidor.py dos três runtimes já em produção baixa; só o
+QUAIS = ("dados", "docs")  # o relatorio e o placar rodam por stdio no LibreChat, não aqui
+# banco que cada runtime baixa do bucket na subida e de onde ele vem no repositório.
+# A chave do S3 mantém o nome antigo porque é ela que o servidor.py dos runtimes já em produção baixa; só o
 # caminho local acompanhou a renomeação para EnergyNexus.
 BANCOS = {"bancos/coppezip.duckdb": "data/energynexus.duckdb", "bancos/docs_titan.duckdb": "data/docs_titan.duckdb"}
 BIBLIOTECAS = ["duckdb==1.5.5", "mcp==2.2.0", "boto3"]  # o que os servidores importam, em roda ARM64
@@ -51,12 +55,6 @@ TRANSFERENCIA = TransferConfig(multipart_threshold=64 * 1024 * 1024, multipart_c
 TESTES = {
     "dados": ("listar_tabelas", {}),
     "docs": ("buscar_documentos", {"consulta": "metas de redução de emissões de gases de efeito estufa", "k": 2}),
-    "relatorio": ("gerar_relatorio", {
-        "titulo": "Teste de fumaça do coppezip-relatorio",
-        "sumario": "Relatório gerado por proper_mcps/agentcore/atualizar.py para conferir o runtime recém-publicado.",
-        "secoes": [{"titulo": "Verificação", "texto": "O servidor gravou Markdown e DOCX e publicou os dois no S3 "
-                                                     "com link assinado [F1]."}],
-        "fontes": [{"id": "F1", "descricao": "proper_mcps/agentcore/atualizar.py, teste de fumaça"}]}),
 }
 
 controle = boto3.client("bedrock-agentcore-control", region_name=REGIAO)
@@ -68,7 +66,7 @@ def log(mensagem: str):
 
 
 def configuracoes() -> dict:
-    """Configuração atual dos três runtimes, achados pelo nome (coppezip_dados, coppezip_docs, coppezip_relatorio)."""
+    """Configuração atual dos runtimes de consulta, achados pelo nome (coppezip_dados e coppezip_docs)."""
     ids = {}
     proximo = None
     while True:
@@ -261,7 +259,7 @@ def main():
             esperar(qual, achados[qual]["agentRuntimeId"], versoes[qual])
     for qual in QUAIS:
         testar(qual, achados[qual]["agentRuntimeArn"], jwt)
-    log("os três runtimes responderam")
+    log(f"os {len(QUAIS)} runtimes responderam")
 
 
 if __name__ == "__main__":
