@@ -1,0 +1,7 @@
+# resultados, logs e medidas ficam fora do git (vão para AVALIACAO_SAIDA, no disco local)
+resultados/
+*.log
+log_*.txt
+medida_vllm.json
+ambiente.json
+__pycache__/

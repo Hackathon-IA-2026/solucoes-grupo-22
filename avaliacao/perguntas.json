@@ -1,0 +1,1224 @@
+{
+  "geradas_em": "2026-09-27T00:00:00",
+  "observacoes": [
+    "Todos os valores com arquivo+pagina foram conferidos abrindo o TEXTO DA PAGINA em data/docs.duckdb (tabela paginas) e confirmando que o numero aparece no formato brasileiro (1.234,56).",
+    "data/placar.duckdb estava em extracao no momento da montagem (so tinha Taesa em esg_emissoes; esg_metas, esg_renovavel, esg_capex e esg_frameworks vazias). Por isso o gabarito de placar_esg vem do dicionario GABARITO de data/conferir_placar.py e/ou do texto da pagina em docs.duckdb.",
+    "Quando varias paginas do mesmo PDF trazem o mesmo numero, o campo extra paginas_aceitas lista todas as paginas validas para a citacao.",
+    "data/docs.duckdb tem 2503 documentos (2497 do catalogo documentos.csv + 6 dicionarios de dados da ANEEL na area 'dados'); data/docs_titan.duckdb e documentos.csv tem 2497. As contagens de agregacao usam o catalogo (2497) e os SQL estao escritos para docs_titan.duckdb/documentos.csv."
+  ],
+  "perguntas": [
+    {
+      "id": "fd01",
+      "categoria": "factual_docs",
+      "pergunta": "Quantos quilometros de linhas de transmissao a Taesa tinha no fim de 2025, segundo o relatorio de sustentabilidade dela? Cite o arquivo e a pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 15313,
+        "unidade": "km",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "sustentabilidade/taesa/2025/taesa_rs2025.pdf",
+        "pagina": 12,
+        "paginas_aceitas": [12, 39],
+        "todos": ["15.313"],
+        "proibidos": ["nao encontrei", "nao consta no relatorio"]
+      },
+      "fonte_gabarito": "texto da pagina 12 de sustentabilidade/taesa/2025/taesa_rs2025.pdf em data/docs.duckdb: \"Fechamos 2025 com 44 concessoes, 15.313 km de linhas de transmissao\"",
+      "conferido": true
+    },
+    {
+      "id": "fd02",
+      "categoria": "factual_docs",
+      "pergunta": "Quantos colaboradores proprios a Taesa tinha em 2025? Diga em qual relatorio e pagina voce viu isso.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 867,
+        "unidade": "colaboradores",
+        "tolerancia_absoluta": 0,
+        "arquivo": "sustentabilidade/taesa/2025/taesa_rs2025.pdf",
+        "pagina": 39,
+        "paginas_aceitas": [14, 39],
+        "todos": ["867"],
+        "proibidos": ["nao consta", "nao encontrei"]
+      },
+      "fonte_gabarito": "texto das paginas 14 e 39 de sustentabilidade/taesa/2025/taesa_rs2025.pdf em data/docs.duckdb (\"867 colaboradores\", GRI 2-7)",
+      "conferido": true
+    },
+    {
+      "id": "fd03",
+      "categoria": "factual_docs",
+      "pergunta": "Qual a capacidade instalada de geracao da Alupar em 2025, segundo o relatorio de sustentabilidade? Cite arquivo e pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 798.5,
+        "unidade": "MW",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "sustentabilidade/alupar/2025/alupar_rs2025.pdf",
+        "pagina": 12,
+        "todos": ["798,5"],
+        "proibidos": ["nao consta"]
+      },
+      "fonte_gabarito": "texto da pagina 12 de sustentabilidade/alupar/2025/alupar_rs2025.pdf em data/docs.duckdb: \"798,5 MW de capacidade instalada\"",
+      "conferido": true
+    },
+    {
+      "id": "fd04",
+      "categoria": "factual_docs",
+      "pergunta": "Quantos quilometros de linhas de transmissao a Alupar declara ter no relatorio de 2025, e quanto disso esta em operacao? Cite a pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 10100,
+        "unidade": "km",
+        "tolerancia_relativa": 0.02,
+        "arquivo": "sustentabilidade/alupar/2025/alupar_rs2025.pdf",
+        "pagina": 12,
+        "todos": ["10,1", "8,4"],
+        "proibidos": ["nao consta"]
+      },
+      "fonte_gabarito": "texto da pagina 12 de sustentabilidade/alupar/2025/alupar_rs2025.pdf em data/docs.duckdb: \"10,1 mil km de linhas de transmissao ... 8,4 mil km em operacao ... 1,7 mil km em construcao\"",
+      "conferido": true
+    },
+    {
+      "id": "fd05",
+      "categoria": "factual_docs",
+      "pergunta": "Qual era a capacidade instalada de geracao em operacao da Neoenergia no fim de 2024 e que percentual vinha de fontes renovaveis? Cite arquivo e pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 4412,
+        "unidade": "MW",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "sustentabilidade/neoenergia/2024/neoenergia_ras2024.pdf",
+        "pagina": 9,
+        "paginas_aceitas": [9, 16],
+        "todos": ["4.412", "88"],
+        "proibidos": ["nao consta"]
+      },
+      "fonte_gabarito": "texto das paginas 9 e 16 de sustentabilidade/neoenergia/2024/neoenergia_ras2024.pdf em data/docs.duckdb: \"capacidade instalada em operacao de 4.412 MW, dos quais 88% sao de fontes renovaveis\"",
+      "conferido": true
+    },
+    {
+      "id": "fd06",
+      "categoria": "factual_docs",
+      "pergunta": "Quantos empregados proprios a Celesc tinha no fim de 2025? Cite o relatorio e a pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 3886,
+        "unidade": "empregados",
+        "tolerancia_absoluta": 0,
+        "arquivo": "sustentabilidade/celesc/2025/celesc_rs2025.pdf",
+        "pagina": 11,
+        "paginas_aceitas": [11, 22, 44],
+        "todos": ["3.886"],
+        "proibidos": ["nao consta"]
+      },
+      "fonte_gabarito": "texto das paginas 11, 22 e 44 de sustentabilidade/celesc/2025/celesc_rs2025.pdf em data/docs.duckdb: \"Com 3.886 empregados proprios em 2025\"",
+      "conferido": true
+    },
+    {
+      "id": "fd07",
+      "categoria": "factual_docs",
+      "pergunta": "Qual foi a receita operacional bruta consolidada da Celesc em 2025 e quanto ela cresceu em relacao a 2024? Cite arquivo e pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 18800000000,
+        "unidade": "R$",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "sustentabilidade/celesc/2025/celesc_rs2025.pdf",
+        "pagina": 11,
+        "todos": ["18,8", "14,4"],
+        "proibidos": ["nao consta"]
+      },
+      "fonte_gabarito": "texto da pagina 11 de sustentabilidade/celesc/2025/celesc_rs2025.pdf em data/docs.duckdb: \"a Receita Operacional Bruta - ROB consolidada, foi de R$18,8 bilhoes, sendo 14,4% superior ... 2024, que foi de R$16,4 bilhoes\"",
+      "conferido": true
+    },
+    {
+      "id": "fd08",
+      "categoria": "factual_docs",
+      "pergunta": "Qual a capacidade instalada operada pela Engie Brasil Energia em 2025 segundo o relatorio de sustentabilidade, e quanto e a capacidade instalada propria? Cite a pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 12.4,
+        "unidade": "GW",
+        "tolerancia_relativa": 0.02,
+        "arquivo": "sustentabilidade/engie/2025/engie_rs2025.pdf",
+        "pagina": 6,
+        "todos": ["12,4"],
+        "aceitos": ["10,7", "10.685"],
+        "proibidos": ["nao consta"]
+      },
+      "fonte_gabarito": "texto da pagina 6 de sustentabilidade/engie/2025/engie_rs2025.pdf em data/docs.duckdb: \"12,4 GW ... Capacidade instalada operada ... 10,7 GW de capacidade instalada propria\"",
+      "conferido": true
+    },
+    {
+      "id": "fd09",
+      "categoria": "factual_docs",
+      "pergunta": "Quantos complexos eolicos em operacao o Grupo Equatorial tinha em 2025 e quanto somam de capacidade instalada? Cite arquivo e pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 1.8,
+        "unidade": "GW",
+        "tolerancia_relativa": 0.05,
+        "arquivo": "sustentabilidade/equatorial/2025/equatorial_rs2025.pdf",
+        "pagina": 17,
+        "todos": ["12", "1,8"],
+        "proibidos": ["nao consta"]
+      },
+      "fonte_gabarito": "texto da pagina 17 de sustentabilidade/equatorial/2025/equatorial_rs2025.pdf em data/docs.duckdb: \"O portfolio reune 12 complexos eolicos em operacao, que somam 1,8 GW de capacidade instalada ... dois parques solares ... 0,6 GW\"",
+      "conferido": true
+    },
+    {
+      "id": "fd10",
+      "categoria": "factual_docs",
+      "pergunta": "Qual foi a intensidade de emissoes de GEE do portfolio de geracao da Eneva em 2025 e qual e o teto da meta dela? Cite arquivo e pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 0.37,
+        "unidade": "tCO2e/MWh",
+        "tolerancia_relativa": 0.03,
+        "arquivo": "sustentabilidade/eneva/2025/eneva_ri2025.pdf",
+        "pagina": 70,
+        "todos": ["0,37", "0,39"],
+        "proibidos": ["nao consta"]
+      },
+      "fonte_gabarito": "texto da pagina 70 de sustentabilidade/eneva/2025/eneva_ri2025.pdf em data/docs.duckdb: \"intensidade ... foi de 0,37 tCO2e/MWh ... abaixo do teto da meta estabelecida, de 0,39 tCO2e/MWh\"",
+      "conferido": true
+    },
+    {
+      "id": "fd11",
+      "categoria": "factual_docs",
+      "pergunta": "Nas demonstracoes financeiras anuais da Taesa, qual foi a receita liquida consolidada de 2025? Cite o arquivo e a pagina do PDF.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 4624113000,
+        "unidade": "R$",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "financeiro/taesa/pdfs/2025/2025_taesa_20260317_1b8aac2a2f.pdf",
+        "pagina": 16,
+        "paginas_aceitas": [16, 36, 40, 43, 47, 105],
+        "todos": ["4.624.113"],
+        "proibidos": ["nao consta"]
+      },
+      "sql_gabarito": "SELECT receita_liquida_brl FROM kpis_financeiros WHERE empresa = 'TRANSMISSORA ALIANÇA DE ENERGIA ELÉTRICA S.A.' AND ano = 2025 AND escopo = 'consolidado'",
+      "fonte_gabarito": "SQL em data/energynexus.duckdb (kpis_financeiros) = 4.624.113.000 e a string \"4.624.113\" (R$ mil) confirmada no texto da pagina 16 do PDF em data/docs.duckdb",
+      "conferido": true
+    },
+    {
+      "id": "fd12",
+      "categoria": "factual_docs",
+      "pergunta": "Qual foi o lucro liquido consolidado de 2024 da Axia Energia (ex-Eletrobras) nas demonstracoes financeiras anuais? Cite arquivo e pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 10380753000,
+        "unidade": "R$",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "financeiro/axia/pdfs/2024/2024_axia_20250316_3adbb3a7c2.pdf",
+        "pagina": 20,
+        "todos": ["10.380.753"],
+        "proibidos": ["4,02 bi", "40,18 bilhoes de lucro"]
+      },
+      "sql_gabarito": "SELECT lucro_liquido_brl FROM kpis_financeiros WHERE empresa = 'AXIA ENERGIA S.A.' AND ano = 2024 AND escopo = 'consolidado'",
+      "fonte_gabarito": "SQL em data/energynexus.duckdb (kpis_financeiros) = 10.380.753.000 e a string \"10.380.753\" (R$ mil) confirmada no texto da pagina 20 do PDF em data/docs.duckdb",
+      "conferido": true
+    },
+    {
+      "id": "fd13",
+      "categoria": "factual_docs",
+      "pergunta": "Qual foi a receita liquida consolidada da Cemig em 2025 conforme o documento da proposta da administracao para a AGO? Cite arquivo e pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 42751283000,
+        "unidade": "R$",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "financeiro/cemig/pdfs/2026/2026_cemig_20260331_proposta_da_administracao_ago_30_04_2026_0e5e8a2160.pdf",
+        "pagina": 27,
+        "todos": ["42.751.283"],
+        "proibidos": ["nao consta"]
+      },
+      "sql_gabarito": "SELECT receita_liquida_brl FROM kpis_financeiros WHERE empresa = 'CIA ENERGETICA DE MINAS GERAIS - CEMIG' AND ano = 2025 AND escopo = 'consolidado'",
+      "fonte_gabarito": "SQL em data/energynexus.duckdb (kpis_financeiros) = 42.751.283.000 e a string \"42.751.283\" (R$ mil) confirmada no texto da pagina 27 do PDF em data/docs.duckdb",
+      "conferido": true
+    },
+    {
+      "id": "fd14",
+      "categoria": "factual_docs",
+      "pergunta": "As emissoes de escopo 2 da Engie Brasil Energia em 2024 aparecem como zero no relatorio. Por que? Cite arquivo e pagina.",
+      "tipo_correcao": "texto_contem",
+      "gabarito": {
+        "arquivo": "sustentabilidade/engie/2024/engie_rs2024.pdf",
+        "pagina": 73,
+        "aceitos": ["I-REC", "certificado de origem", "certificados de origem", "escolha de compra"],
+        "todos": ["zerad"],
+        "proibidos": ["a Engie nao divulga escopo 2", "a empresa omitiu o escopo 2"]
+      },
+      "fonte_gabarito": "texto da pagina 73 de sustentabilidade/engie/2024/engie_rs2024.pdf em data/docs.duckdb: \"as emissoes do Escopo 2 zeradas atraves de certificados de origem (I-RECs)\"",
+      "conferido": true
+    },
+    {
+      "id": "pl01",
+      "categoria": "placar_esg",
+      "pergunta": "Quais foram as emissoes de escopo 1 da Cemig em 2024, em tCO2e? Cite o relatorio e a pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 42860.81,
+        "unidade": "tCO2e",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "sustentabilidade/cemig/2024/cemig_ras2024.pdf",
+        "pagina": 139,
+        "paginas_aceitas": [139, 140, 141],
+        "todos": ["42.860,8"],
+        "proibidos": ["nao consta"]
+      },
+      "fonte_gabarito": "data/conferir_placar.py GABARITO ('Cemig', 2024) escopo 1 = 42860.81; confirmado no texto da pagina 139 de sustentabilidade/cemig/2024/cemig_ras2024.pdf em data/docs.duckdb (\"Emissoes 2024 por escopo (tCO2e) ... Escopo 1 42.860,81\")",
+      "respondivel_por": ["energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "pl02",
+      "categoria": "placar_esg",
+      "pergunta": "E as emissoes de escopo 2 da Cemig em 2024? Traga o numero e a pagina do relatorio.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 376174.25,
+        "unidade": "tCO2e",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "sustentabilidade/cemig/2024/cemig_ras2024.pdf",
+        "pagina": 139,
+        "paginas_aceitas": [139, 140, 141],
+        "todos": ["376.174"],
+        "proibidos": ["nao consta"]
+      },
+      "fonte_gabarito": "data/conferir_placar.py GABARITO ('Cemig', 2024) escopo 2 = 376174.25; confirmado no texto da pagina 139 de sustentabilidade/cemig/2024/cemig_ras2024.pdf em data/docs.duckdb",
+      "respondivel_por": ["energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "pl03",
+      "categoria": "placar_esg",
+      "pergunta": "Qual foi o escopo 3 da Cemig em 2024 e onde esse numero esta no relatorio?",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 5911209.35,
+        "unidade": "tCO2e",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "sustentabilidade/cemig/2024/cemig_ras2024.pdf",
+        "pagina": 139,
+        "paginas_aceitas": [139, 140, 141],
+        "todos": ["5.911.209"],
+        "proibidos": ["5.911,20 tCO2e", "5,9 mil tCO2e"]
+      },
+      "fonte_gabarito": "data/conferir_placar.py GABARITO ('Cemig', 2024) escopo 3 = 5911209.35; confirmado no texto da pagina 139 de sustentabilidade/cemig/2024/cemig_ras2024.pdf em data/docs.duckdb",
+      "respondivel_por": ["energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "pl04",
+      "categoria": "placar_esg",
+      "pergunta": "Quanto a Engie Brasil Energia emitiu de escopo 1 em 2024 na abordagem de controle operacional? Cite arquivo e pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 17361.38,
+        "unidade": "tCO2e",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "sustentabilidade/engie/2024/engie_rs2024.pdf",
+        "pagina": 73,
+        "todos": ["17.361"],
+        "proibidos": ["nao consta"]
+      },
+      "fonte_gabarito": "data/conferir_placar.py GABARITO ('Engie', 2024) escopo 1 = 17361.38; confirmado no texto da pagina 73 de sustentabilidade/engie/2024/engie_rs2024.pdf em data/docs.duckdb (\"As emissoes diretas da Companhia em 2024 totalizaram 17.361,38 tCO2e na abordagem por controle operacional\")",
+      "respondivel_por": ["energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "pl05",
+      "categoria": "placar_esg",
+      "pergunta": "Qual foi o escopo 3 da Engie Brasil Energia em 2024 por controle operacional, e por que ele caiu tanto? Cite a pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 242514.38,
+        "unidade": "tCO2e",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "sustentabilidade/engie/2024/engie_rs2024.pdf",
+        "pagina": 73,
+        "todos": ["242.514"],
+        "aceitos": ["metodolog", "EPA", "fator de emiss"],
+        "proibidos": ["nao consta"]
+      },
+      "fonte_gabarito": "data/conferir_placar.py GABARITO ('Engie', 2024) escopo 3 = 242514.38; confirmado no texto da pagina 73 de sustentabilidade/engie/2024/engie_rs2024.pdf em data/docs.duckdb",
+      "respondivel_por": ["energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "pl06",
+      "categoria": "placar_esg",
+      "pergunta": "Quais foram as emissoes de escopo 1 da Auren Energia em 2024? Cite o relatorio e a pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 12597.6,
+        "unidade": "tCO2e",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "sustentabilidade/auren/2024/auren_ra2024.pdf",
+        "pagina": 88,
+        "todos": ["12.597,6"],
+        "proibidos": ["nao consta"]
+      },
+      "fonte_gabarito": "data/conferir_placar.py GABARITO ('Auren', 2024) escopo 1 = 12597.6; confirmado no texto da pagina 88 de sustentabilidade/auren/2024/auren_ra2024.pdf em data/docs.duckdb",
+      "respondivel_por": ["energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "pl07",
+      "categoria": "placar_esg",
+      "pergunta": "Qual foi o escopo 3 da Auren Energia em 2024, em tCO2e? Cite arquivo e pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 1607.1,
+        "unidade": "tCO2e",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "sustentabilidade/auren/2024/auren_ra2024.pdf",
+        "pagina": 89,
+        "paginas_aceitas": [89, 120],
+        "todos": ["1.607,1"],
+        "proibidos": ["nao consta"]
+      },
+      "fonte_gabarito": "data/conferir_placar.py GABARITO ('Auren', 2024) escopo 3 = 1607.1; confirmado no texto das paginas 89 e 120 de sustentabilidade/auren/2024/auren_ra2024.pdf em data/docs.duckdb",
+      "respondivel_por": ["energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "pl08",
+      "categoria": "placar_esg",
+      "pergunta": "Quanto a ISA Energia Brasil (ex-ISA CTEEP) emitiu de escopo 1 em 2024? Cite o relatorio e a pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 14455.0,
+        "unidade": "tCO2e",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "sustentabilidade/isa_energia/2024/isacteep_ras2024.pdf",
+        "pagina": 82,
+        "todos": ["14.455"],
+        "proibidos": ["nao consta"]
+      },
+      "fonte_gabarito": "data/conferir_placar.py GABARITO ('ISA', 2024) escopo 1 = 14455.0; confirmado no texto da pagina 82 de sustentabilidade/isa_energia/2024/isacteep_ras2024.pdf em data/docs.duckdb",
+      "respondivel_por": ["energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "pl09",
+      "categoria": "placar_esg",
+      "pergunta": "Quais foram as emissoes de escopo 1 e de escopo 2 da Neoenergia em 2024? Cite arquivo e pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 108284.0,
+        "unidade": "tCO2e",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "sustentabilidade/neoenergia/2024/neoenergia_ras2024.pdf",
+        "pagina": 37,
+        "paginas_aceitas": [37, 39],
+        "todos": ["108.284", "415.898"],
+        "proibidos": ["nao consta"]
+      },
+      "fonte_gabarito": "data/conferir_placar.py GABARITO ('Neoenergia', 2024) escopo 1 = 108284.0 e escopo 2 = 415898.0; ambos confirmados no texto da pagina 37 de sustentabilidade/neoenergia/2024/neoenergia_ras2024.pdf em data/docs.duckdb",
+      "respondivel_por": ["energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "pl10",
+      "categoria": "placar_esg",
+      "pergunta": "Qual foi o escopo 3 da Neoenergia em 2024, em tCO2e? Diga onde esta.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 2023488.0,
+        "unidade": "tCO2e",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "sustentabilidade/neoenergia/2024/neoenergia_ras2024.pdf",
+        "pagina": 37,
+        "paginas_aceitas": [37, 39],
+        "todos": ["2.023.488"],
+        "proibidos": ["2.023,48"]
+      },
+      "fonte_gabarito": "data/conferir_placar.py GABARITO ('Neoenergia', 2024) escopo 3 = 2023488.0; confirmado no texto da pagina 37 de sustentabilidade/neoenergia/2024/neoenergia_ras2024.pdf em data/docs.duckdb",
+      "respondivel_por": ["energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "pl11",
+      "categoria": "placar_esg",
+      "pergunta": "Quais foram as emissoes de escopo 1 e escopo 2 da Taesa no inventario de 2024? Cite o relatorio e a pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 9367.51,
+        "unidade": "tCO2e",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "sustentabilidade/taesa/2024/taesa_rs2024.pdf",
+        "pagina": 170,
+        "paginas_aceitas": [170, 171],
+        "todos": ["9.367,51", "77.270,32"],
+        "proibidos": ["nao consta"]
+      },
+      "sql_gabarito": "SELECT empresa, ano_relatorio, escopo, tco2e, arquivo, pagina FROM esg_emissoes WHERE empresa = 'Taesa' AND ano_relatorio = 2024",
+      "fonte_gabarito": "data/conferir_placar.py GABARITO ('Taesa', 2024): escopo 1 = 9367.51, escopo 2 = 77270.32; confirmados no texto das paginas 170 e 171 de sustentabilidade/taesa/2024/taesa_rs2024.pdf em data/docs.duckdb e tambem presentes hoje em esg_emissoes (data/placar.duckdb)",
+      "respondivel_por": ["energynexus-placar", "energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "pl12",
+      "categoria": "placar_esg",
+      "pergunta": "No relatorio de sustentabilidade 2025 da Taesa, quais foram as emissoes de escopo 1, 2 e 3? Cite a pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 32687.01,
+        "unidade": "tCO2e",
+        "tolerancia_relativa": 0.01,
+        "arquivo": "sustentabilidade/taesa/2025/taesa_rs2025.pdf",
+        "pagina": 183,
+        "todos": ["32.687,01", "72.517,89", "2.253,87"],
+        "proibidos": ["nao consta"]
+      },
+      "sql_gabarito": "SELECT escopo, tco2e, arquivo, pagina FROM esg_emissoes WHERE empresa = 'Taesa' AND ano_relatorio = 2025",
+      "fonte_gabarito": "texto da pagina 183 de sustentabilidade/taesa/2025/taesa_rs2025.pdf em data/docs.duckdb (tabelas GRI 305-1/305-2/305-3: totais 32.687,01 / 72.517,89 / 2.253,87), coincidindo com as linhas de esg_emissoes em data/placar.duckdb",
+      "respondivel_por": ["energynexus-placar", "energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "pl13",
+      "categoria": "placar_esg",
+      "pergunta": "Quanto a Eneva emitiu de escopo 1 em 2025 e quanto isso variou frente a 2024? Cite arquivo e pagina.",
+      "tipo_correcao": "numerico_com_citacao",
+      "gabarito": {
+        "valor": 5800000.0,
+        "unidade": "tCO2e",
+        "tolerancia_relativa": 0.02,
+        "arquivo": "sustentabilidade/eneva/2025/eneva_ri2025.pdf",
+        "pagina": 70,
+        "aceitos": ["5,8 milh", "5.800.000", "5,8 mi"],
+        "todos": ["20"],
+        "proibidos": ["5,8 mil tCO2e"]
+      },
+      "fonte_gabarito": "data/conferir_placar.py GABARITO ('Eneva', 2025) escopo 1 = 5800000.0; confirmado no texto da pagina 70 de sustentabilidade/eneva/2025/eneva_ri2025.pdf em data/docs.duckdb (\"as emissoes de Escopo 1 da Eneva atingiram 5,8 milhoes de tCO2e, valor 20% superior ao registrado em 2024\")",
+      "respondivel_por": ["energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "pl14",
+      "categoria": "placar_esg",
+      "pergunta": "Quem fez a asseguracao (verificacao independente) do relatorio de sustentabilidade 2024 da Cemig? Cite arquivo e pagina.",
+      "tipo_correcao": "texto_contem",
+      "gabarito": {
+        "arquivo": "sustentabilidade/cemig/2024/cemig_ras2024.pdf",
+        "pagina": 157,
+        "aceitos": ["Bureau Veritas", "Bureau Veritas Certification Brasil"],
+        "proibidos": ["Deloitte", "KPMG", "PwC", "EY", "nao houve asseguracao"]
+      },
+      "fonte_gabarito": "texto da pagina 157 de sustentabilidade/cemig/2024/cemig_ras2024.pdf em data/docs.duckdb: \"DECLARACAO DE VERIFICACAO INDEPENDENTE - BUREAU VERITAS\"",
+      "respondivel_por": ["energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "pl15",
+      "categoria": "placar_esg",
+      "pergunta": "O relatorio de sustentabilidade 2024 da Neoenergia teve asseguracao externa? Por qual auditor? Cite a pagina.",
+      "tipo_correcao": "texto_contem",
+      "gabarito": {
+        "arquivo": "sustentabilidade/neoenergia/2024/neoenergia_ras2024.pdf",
+        "pagina": 145,
+        "aceitos": ["Deloitte", "Deloitte Touche Tohmatsu"],
+        "todos": ["assegura"],
+        "proibidos": ["nao teve asseguracao", "Bureau Veritas"]
+      },
+      "fonte_gabarito": "texto da pagina 145 de sustentabilidade/neoenergia/2024/neoenergia_ras2024.pdf em data/docs.duckdb: \"O relatorio passou por asseguracao limitada por auditor independente (Deloitte Touche Tohmatsu)\"",
+      "respondivel_por": ["energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "pl16",
+      "categoria": "placar_esg",
+      "pergunta": "Qual e a meta de descarbonizacao da CPFL Energia declarada no relatorio anual de 2025, e qual a reducao de emissoes prometida em relacao ao ano-base? Cite arquivo e pagina.",
+      "tipo_correcao": "texto_contem",
+      "gabarito": {
+        "arquivo": "sustentabilidade/cpfl/2025/cpfl_ra2025.pdf",
+        "pagina": 37,
+        "todos": ["2030", "56"],
+        "aceitos": ["carbono neutro", "2021"],
+        "proibidos": ["net zero 2050", "nao tem meta"]
+      },
+      "fonte_gabarito": "texto da pagina 37 de sustentabilidade/cpfl/2025/cpfl_ra2025.pdf em data/docs.duckdb: \"Promover um negocio carbono neutro, ate 2030 ... 56% de reducao nas emissoes dos escopos 1, 2 e 3 em relacao ao ano-base 2021\"",
+      "respondivel_por": ["energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "pl17",
+      "categoria": "placar_esg",
+      "pergunta": "Quais sao as metas climaticas da ISA Energia Brasil para 2040 e 2050 no relatorio de 2025? Cite a pagina.",
+      "tipo_correcao": "texto_contem",
+      "gabarito": {
+        "arquivo": "sustentabilidade/isa_energia/2025/isaenergia_ra2025.pdf",
+        "pagina": 88,
+        "todos": ["60", "2040", "2050"],
+        "aceitos": ["Net Zero", "net zero", "90"],
+        "proibidos": ["2030", "nao tem meta"]
+      },
+      "fonte_gabarito": "texto da pagina 88 de sustentabilidade/isa_energia/2025/isaenergia_ra2025.pdf em data/docs.duckdb: \"compromisso de reduzir 60% das emissoes dos Escopos 1 e 2 ate 2040 e alcancar o Net Zero em 2050, com reducao absoluta de 90% das emissoes\"",
+      "respondivel_por": ["energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "pl18",
+      "categoria": "placar_esg",
+      "pergunta": "Em que ano a EDP promete ser Net Zero e qual a meta de producao renovavel do grupo, segundo o relatorio de sustentabilidade 2025? Cite arquivo e pagina.",
+      "tipo_correcao": "texto_contem",
+      "gabarito": {
+        "arquivo": "sustentabilidade/edp/2025/edp_ras2025.pdf",
+        "pagina": 23,
+        "todos": ["2040", "95"],
+        "aceitos": ["Net Zero", "net zero", "100% na America do Sul"],
+        "proibidos": ["2050", "nao tem meta"]
+      },
+      "fonte_gabarito": "texto da pagina 23 de sustentabilidade/edp/2025/edp_ras2025.pdf em data/docs.duckdb: \"seremos Net Zero ate 2040 e atingiremos mais de 95% de producao renovavel em todo o Grupo EDP - meta que ja consolidamos em 100% na America do Sul\"",
+      "respondivel_por": ["energynexus-docs"],
+      "conferido": true
+    },
+    {
+      "id": "ag01",
+      "categoria": "agregacao",
+      "pergunta": "Quantos documentos (PDFs) estao indexados no catalogo da base do EnergyNexus?",
+      "tipo_correcao": "contagem",
+      "gabarito": {
+        "valor": 2497,
+        "unidade": "documentos",
+        "tolerancia_absoluta": 0,
+        "proibidos": ["milhares de documentos", "nao sei quantos"]
+      },
+      "sql_gabarito": "SELECT count(*) FROM documentos",
+      "fonte_gabarito": "SQL em data/docs_titan.duckdb (tabela documentos) = 2497; igual ao numero de linhas de data/documentos.csv (2497 + cabecalho). data/docs.duckdb traz 2503 porque inclui tambem 6 dicionarios de dados da ANEEL na area 'dados'.",
+      "conferido": true
+    },
+    {
+      "id": "ag02",
+      "categoria": "agregacao",
+      "pergunta": "Quantas organizacoes diferentes tem documentos indexados no catalogo?",
+      "tipo_correcao": "contagem",
+      "gabarito": {
+        "valor": 18,
+        "unidade": "organizacoes",
+        "tolerancia_absoluta": 0,
+        "proibidos": ["nao sei"]
+      },
+      "sql_gabarito": "SELECT count(DISTINCT empresa) FROM documentos",
+      "fonte_gabarito": "SQL em data/docs_titan.duckdb (tabela documentos) = 18 (15 empresas do setor eletrico + CVM, EPE e SEEG como referencias setoriais)",
+      "conferido": true
+    },
+    {
+      "id": "ag03",
+      "categoria": "agregacao",
+      "pergunta": "Qual e o periodo coberto pelos documentos indexados, do ano mais antigo ao mais recente?",
+      "tipo_correcao": "texto_contem",
+      "gabarito": {
+        "todos": ["2003", "2026"],
+        "proibidos": ["1990", "2010 a 2025"]
+      },
+      "sql_gabarito": "SELECT min(ano), max(ano) FROM documentos",
+      "fonte_gabarito": "SQL em data/docs_titan.duckdb (tabela documentos) = (2003, 2026)",
+      "conferido": true
+    },
+    {
+      "id": "ag04",
+      "categoria": "agregacao",
+      "pergunta": "Quantos documentos da Cemig estao indexados na base?",
+      "tipo_correcao": "contagem",
+      "gabarito": {
+        "valor": 478,
+        "unidade": "documentos",
+        "tolerancia_absoluta": 0,
+        "proibidos": ["nao sei"]
+      },
+      "sql_gabarito": "SELECT count(*) FROM documentos WHERE empresa = 'Cemig'",
+      "fonte_gabarito": "SQL em data/docs_titan.duckdb (tabela documentos) = 478 (mesmo numero em data/docs.duckdb)",
+      "conferido": true
+    },
+    {
+      "id": "ag05",
+      "categoria": "agregacao",
+      "pergunta": "Quantos relatorios de sustentabilidade (esse tipo especifico de documento) estao indexados?",
+      "tipo_correcao": "contagem",
+      "gabarito": {
+        "valor": 27,
+        "unidade": "documentos",
+        "tolerancia_absoluta": 0,
+        "proibidos": ["nao sei"]
+      },
+      "sql_gabarito": "SELECT count(*) FROM documentos WHERE tipo = 'relatorio_sustentabilidade'",
+      "fonte_gabarito": "SQL em data/docs_titan.duckdb e data/docs.duckdb (tabela documentos) = 27 nos dois",
+      "conferido": true
+    },
+    {
+      "id": "ag06",
+      "categoria": "agregacao",
+      "pergunta": "Quantos documentos da area de sustentabilidade estao indexados, e qual empresa tem mais documentos no total?",
+      "tipo_correcao": "contagem",
+      "gabarito": {
+        "valor": 303,
+        "unidade": "documentos",
+        "tolerancia_absoluta": 0,
+        "aceitos": ["Energisa"],
+        "proibidos": ["nao sei"]
+      },
+      "sql_gabarito": "SELECT count(*) FROM documentos WHERE area = 'sustentabilidade'; SELECT empresa, count(*) n FROM documentos GROUP BY 1 ORDER BY n DESC LIMIT 1",
+      "fonte_gabarito": "SQL em data/docs_titan.duckdb (tabela documentos): area='sustentabilidade' = 303; empresa com mais documentos = Energisa com 508",
+      "conferido": true
+    },
+    {
+      "id": "ag07",
+      "categoria": "agregacao",
+      "pergunta": "Quantas usinas estao em operacao no Brasil segundo a base da ANEEL (SIGA) e quanto somam de potencia fiscalizada?",
+      "tipo_correcao": "contagem",
+      "gabarito": {
+        "valor": 22801,
+        "unidade": "usinas",
+        "tolerancia_absoluta": 0,
+        "aceitos": ["220,6", "220,7", "220.686"],
+        "proibidos": ["nao sei"]
+      },
+      "sql_gabarito": "SELECT count(*) AS usinas, round(sum(potencia_fiscalizada_kw)/1e6, 3) AS gw FROM usinas WHERE fase = 'Operação'",
+      "fonte_gabarito": "SQL em data/energynexus.duckdb (tabela usinas) = 22801 usinas e 220,686 GW de potencia fiscalizada",
+      "conferido": true
+    },
+    {
+      "id": "ag08",
+      "categoria": "agregacao",
+      "pergunta": "Quantas usinas eolicas estao em operacao no Brasil na base da ANEEL?",
+      "tipo_correcao": "contagem",
+      "gabarito": {
+        "valor": 1138,
+        "unidade": "usinas",
+        "tolerancia_absoluta": 0,
+        "proibidos": ["nao sei"]
+      },
+      "sql_gabarito": "SELECT count(*) FROM usinas WHERE fase = 'Operação' AND fonte_energia = 'Cinética do vento'",
+      "fonte_gabarito": "SQL em data/energynexus.duckdb (tabela usinas) = 1138",
+      "conferido": true
+    },
+    {
+      "id": "ag09",
+      "categoria": "agregacao",
+      "pergunta": "Quantos empreendimentos solares foram contratados nos leiloes de geracao de 2019 e quanta potencia eles somam?",
+      "tipo_correcao": "contagem",
+      "gabarito": {
+        "valor": 17,
+        "unidade": "empreendimentos",
+        "tolerancia_absoluta": 0,
+        "aceitos": ["733,7", "733"],
+        "proibidos": ["nao ha dados de leilao", "nao temos dados de leiloes"]
+      },
+      "sql_gabarito": "SELECT count(*) AS n, round(sum(potencia_mw), 1) AS mw FROM leiloes_geracao WHERE ano = 2019 AND fonte_energia = 'Solar'",
+      "fonte_gabarito": "SQL em data/energynexus.duckdb (tabela leiloes_geracao) = 17 empreendimentos e 733,7 MW",
+      "conferido": true
+    },
+    {
+      "id": "ag10",
+      "categoria": "agregacao",
+      "pergunta": "Quantas distribuidoras entraram no ranking de continuidade da ANEEL de 2025?",
+      "tipo_correcao": "contagem",
+      "gabarito": {
+        "valor": 51,
+        "unidade": "distribuidoras",
+        "tolerancia_absoluta": 0,
+        "proibidos": ["nao sei"]
+      },
+      "sql_gabarito": "SELECT count(*) FROM ranking_continuidade WHERE ano = 2025",
+      "fonte_gabarito": "SQL em data/energynexus.duckdb (tabela ranking_continuidade) = 51",
+      "conferido": true
+    },
+    {
+      "id": "ag11",
+      "categoria": "agregacao",
+      "pergunta": "Quantas empresas do setor eletrico existem no cadastro de companhias da CVM que esta na base?",
+      "tipo_correcao": "contagem",
+      "gabarito": {
+        "valor": 151,
+        "unidade": "empresas",
+        "tolerancia_absoluta": 0,
+        "proibidos": ["nao sei"]
+      },
+      "sql_gabarito": "SELECT count(*) FROM empresas",
+      "fonte_gabarito": "SQL em data/energynexus.duckdb (tabela empresas) = 151",
+      "conferido": true
+    },
+    {
+      "id": "fi01",
+      "categoria": "financeiro",
+      "pergunta": "Qual foi a receita liquida consolidada da Taesa em 2025?",
+      "tipo_correcao": "numerico",
+      "gabarito": {
+        "valor": 4624113000,
+        "unidade": "R$",
+        "tolerancia_relativa": 0.01,
+        "proibidos": ["AES ELPA", "46,2 bilhoes", "462 milhoes"]
+      },
+      "sql_gabarito": "SELECT receita_liquida_brl FROM kpis_financeiros WHERE empresa = 'TRANSMISSORA ALIANÇA DE ENERGIA ELÉTRICA S.A.' AND ano = 2025 AND escopo = 'consolidado'",
+      "fonte_gabarito": "eval/regressao.py caso 'empresa-taesa' + SQL em data/energynexus.duckdb (kpis_financeiros) = 4.624.113.000",
+      "conferido": true
+    },
+    {
+      "id": "fi02",
+      "categoria": "financeiro",
+      "pergunta": "Qual foi o EBITDA da Equatorial em 2024?",
+      "tipo_correcao": "numerico",
+      "gabarito": {
+        "valor": 11393653000,
+        "unidade": "R$",
+        "tolerancia_relativa": 0.01,
+        "aceitos": ["deprecia", "amortiza"],
+        "proibidos": ["113,9 bilhoes", "1,13 bilhao"]
+      },
+      "sql_gabarito": "SELECT ebitda_brl FROM kpis_financeiros WHERE empresa = 'EQUATORIAL S.A.' AND ano = 2024 AND escopo = 'consolidado'",
+      "fonte_gabarito": "eval/regressao.py caso 'ebitda-equatorial' + SQL em data/energynexus.duckdb (kpis_financeiros) = 11.393.653.000",
+      "conferido": true
+    },
+    {
+      "id": "fi03",
+      "categoria": "financeiro",
+      "pergunta": "Compare a alavancagem (divida liquida sobre EBITDA) de 2025 da Equatorial e da Taesa.",
+      "tipo_correcao": "numerico",
+      "gabarito": {
+        "valor": 3.9,
+        "unidade": "x",
+        "tolerancia_relativa": 0.02,
+        "todos": ["3,9", "3,6"],
+        "proibidos": ["nao tenho esse dado"]
+      },
+      "sql_gabarito": "SELECT empresa, divida_liquida_ebitda FROM kpis_financeiros WHERE ano = 2025 AND escopo = 'consolidado' AND empresa IN ('EQUATORIAL S.A.', 'TRANSMISSORA ALIANÇA DE ENERGIA ELÉTRICA S.A.')",
+      "fonte_gabarito": "eval/regressao.py caso 'alavancagem-comparada' + SQL em data/energynexus.duckdb (kpis_financeiros): Equatorial 3,90x e Taesa 3,66x",
+      "conferido": true
+    },
+    {
+      "id": "fi04",
+      "categoria": "financeiro",
+      "pergunta": "Qual foi o lucro liquido da Axia Energia (ex-Eletrobras) em 2024?",
+      "tipo_correcao": "numerico",
+      "gabarito": {
+        "valor": 10380753000,
+        "unidade": "R$",
+        "tolerancia_relativa": 0.01,
+        "aceitos": ["Axia", "axia"],
+        "proibidos": ["1,03 bilhao", "103 bilhoes"]
+      },
+      "sql_gabarito": "SELECT lucro_liquido_brl FROM kpis_financeiros WHERE empresa = 'AXIA ENERGIA S.A.' AND ano = 2024 AND escopo = 'consolidado'",
+      "fonte_gabarito": "eval/regressao.py caso 'empresa-eletrobras' + SQL em data/energynexus.duckdb (kpis_financeiros) = 10.380.753.000",
+      "conferido": true
+    },
+    {
+      "id": "fi05",
+      "categoria": "financeiro",
+      "pergunta": "Qual foi a receita liquida da Neoenergia Coelba em 2025?",
+      "tipo_correcao": "numerico",
+      "gabarito": {
+        "valor": 18380000000,
+        "unidade": "R$",
+        "tolerancia_relativa": 0.01,
+        "proibidos": ["52,6 bilhoes", "52,63 bilhoes"]
+      },
+      "sql_gabarito": "SELECT receita_liquida_brl FROM kpis_financeiros WHERE empresa = 'CIA ELETRICIDADE EST. DA BAHIA - COELBA' AND ano = 2025",
+      "fonte_gabarito": "eval/regressao.py caso 'entidade-coelba' + SQL em data/energynexus.duckdb (kpis_financeiros, escopo individual - a Coelba nao tem linha consolidada) = 18.380.000.000",
+      "conferido": true
+    },
+    {
+      "id": "fi06",
+      "categoria": "financeiro",
+      "pergunta": "Quanto a Taesa investiu em 2025, incluindo as obras das concessoes?",
+      "tipo_correcao": "numerico",
+      "gabarito": {
+        "valor": 1781309000,
+        "unidade": "R$",
+        "tolerancia_relativa": 0.01,
+        "proibidos": ["investimento total de R$ 43", "43,8 milhoes"]
+      },
+      "sql_gabarito": "SELECT capex_brl, custo_construcao_concessao_brl, investimento_total_brl FROM kpis_financeiros WHERE empresa = 'TRANSMISSORA ALIANÇA DE ENERGIA ELÉTRICA S.A.' AND ano = 2025 AND escopo = 'consolidado'",
+      "fonte_gabarito": "eval/regressao.py caso 'investimento-taesa' + SQL em data/energynexus.duckdb (kpis_financeiros): investimento_total_brl = 1.781.309.000 (capex de 43,797 milhoes + custo de construcao das concessoes)",
+      "conferido": true
+    },
+    {
+      "id": "fi07",
+      "categoria": "financeiro",
+      "pergunta": "Qual e a capacidade instalada hidraulica em operacao da Engie Brasil Energia, segundo a ANEEL?",
+      "tipo_correcao": "numerico",
+      "gabarito": {
+        "valor": 7688.92,
+        "unidade": "MW",
+        "tolerancia_relativa": 0.01,
+        "proibidos": ["7,69 MW", "7,68 MW"]
+      },
+      "sql_gabarito": "SELECT sum(u.potencia_fiscalizada_kw)/1000 AS mw FROM usinas u JOIN usinas_proprietarios p USING(ceg) WHERE p.proprietario ILIKE '%ENGIE%' AND u.fase = 'Operação' AND u.fonte_energia = 'Potencial hidráulico'",
+      "fonte_gabarito": "eval/regressao.py caso 'capacidade-engie' + SQL em data/energynexus.duckdb (usinas + usinas_proprietarios) = 7.688,92 MW hidraulicos (mais 222,445 MW solares e 6,299 MW eolicos)",
+      "conferido": true
+    },
+    {
+      "id": "fi08",
+      "categoria": "financeiro",
+      "pergunta": "Qual a RAP ativa das concessoes em nome da propria Taesa (CNPJ 07.859.971/0001-30), sem somar SPEs nem participacoes?",
+      "tipo_correcao": "numerico",
+      "gabarito": {
+        "valor": 2313168501.59,
+        "unidade": "R$",
+        "tolerancia_relativa": 0.01,
+        "proibidos": ["nao tenho dados de RAP"]
+      },
+      "sql_gabarito": "SELECT sum(rap_ciclo_brl) FROM rap_transmissao_concessionaria WHERE cnpj = '07.859.971/0001-30' AND situacao ILIKE '%ativ%'",
+      "fonte_gabarito": "eval/regressao.py caso 'rap-taesa' + SQL em data/energynexus.duckdb (rap_transmissao_concessionaria) = R$ 2.313.168.501,59",
+      "conferido": true
+    },
+    {
+      "id": "fi09",
+      "categoria": "financeiro",
+      "pergunta": "Qual foi o CMO medio do subsistema Sudeste em julho de 2026, segundo o ONS?",
+      "tipo_correcao": "numerico",
+      "gabarito": {
+        "valor": 111.54,
+        "unidade": "R$/MWh",
+        "tolerancia_relativa": 0.01,
+        "proibidos": ["PLD"]
+      },
+      "sql_gabarito": "SELECT cmo_medio_brl_mwh FROM ons_cmo_mensal WHERE nome_subsistema = 'SUDESTE' AND mes = DATE '2026-07-01'",
+      "fonte_gabarito": "eval/regressao.py caso 'cmo-sudeste' + SQL em data/energynexus.duckdb (ons_cmo_mensal) = 111,54 R$/MWh",
+      "conferido": true
+    },
+    {
+      "id": "fi10",
+      "categoria": "financeiro",
+      "pergunta": "Mostre a evolucao da receita liquida da Equatorial de 2020 a 2025.",
+      "tipo_correcao": "numerico",
+      "gabarito": {
+        "valor": 52073804000,
+        "unidade": "R$",
+        "tolerancia_relativa": 0.01,
+        "todos": ["17,8", "52,0"],
+        "proibidos": ["nao tenho a serie"]
+      },
+      "sql_gabarito": "SELECT ano, receita_liquida_brl FROM kpis_financeiros WHERE empresa = 'EQUATORIAL S.A.' AND escopo = 'consolidado' AND ano BETWEEN 2020 AND 2025 ORDER BY ano",
+      "fonte_gabarito": "eval/regressao.py caso 'serie-receita' + SQL em data/energynexus.duckdb (kpis_financeiros): 2020 = 17.890.069.000 e 2025 = 52.073.800.000",
+      "conferido": true
+    },
+    {
+      "id": "fi11",
+      "categoria": "financeiro",
+      "pergunta": "Quanto a Neoenergia investiu em 2025 (investimento total) e qual era a divida liquida da Cemig no fim de 2025?",
+      "tipo_correcao": "numerico",
+      "gabarito": {
+        "valor": 9936000000,
+        "unidade": "R$",
+        "tolerancia_relativa": 0.01,
+        "todos": ["9,9", "16,8"],
+        "proibidos": ["nao tenho esse dado"]
+      },
+      "sql_gabarito": "SELECT empresa, investimento_total_brl, divida_liquida_brl FROM kpis_financeiros WHERE ano = 2025 AND escopo = 'consolidado' AND empresa IN ('NEOENERGIA S.A.', 'CIA ENERGETICA DE MINAS GERAIS - CEMIG')",
+      "fonte_gabarito": "SQL em data/energynexus.duckdb (kpis_financeiros): Neoenergia investimento_total_brl 2025 = 9.936.000.000; Cemig divida_liquida_brl 2025 = 16.803.993.000",
+      "conferido": true
+    },
+    {
+      "id": "fi12",
+      "categoria": "financeiro",
+      "pergunta": "Quanta energia eolica foi cortada por curtailment no Brasil em 2025, em TWh, e que percentual da geracao de referencia isso representa?",
+      "tipo_correcao": "numerico",
+      "gabarito": {
+        "valor": 26.2169245,
+        "unidade": "TWh",
+        "tolerancia_relativa": 0.02,
+        "todos": ["26,2", "19,4"],
+        "proibidos": ["nao tenho dados de curtailment"]
+      },
+      "sql_gabarito": "SELECT sum(energia_cortada_mwh)/1e6 AS twh_cortado, sum(referencia_mwh)/1e6 AS twh_referencia, 100*sum(energia_cortada_mwh)/sum(referencia_mwh) AS pct FROM ons_curtailment_mensal WHERE year(mes) = 2025 AND fonte = 'eólica'",
+      "fonte_gabarito": "eval/regressao.py caso 'curtailment-2025' + SQL em data/energynexus.duckdb (ons_curtailment_mensal) = 26,2169 TWh cortados de 134,8624 TWh de referencia (19,44%)",
+      "conferido": true
+    },
+    {
+      "id": "we01",
+      "categoria": "web",
+      "pergunta": "Qual e o orgao que regula o setor eletrico brasileiro e o que significa a sigla dele?",
+      "tipo_correcao": "texto_contem",
+      "gabarito": {
+        "aceitos": ["Agencia Nacional de Energia Eletrica", "Agência Nacional de Energia Elétrica", "ANEEL"],
+        "todos": ["ANEEL"],
+        "proibidos": ["ONS e o regulador", "CCEE e o regulador"]
+      },
+      "fonte_gabarito": "fato institucional estavel do setor eletrico brasileiro (nao esta como texto na base; a base so tem dados publicados pela ANEEL)",
+      "conferido": true
+    },
+    {
+      "id": "we02",
+      "categoria": "web",
+      "pergunta": "Quem opera o Sistema Interligado Nacional brasileiro e o que quer dizer a sigla ONS?",
+      "tipo_correcao": "texto_contem",
+      "gabarito": {
+        "aceitos": ["Operador Nacional do Sistema Eletrico", "Operador Nacional do Sistema Elétrico", "Operador Nacional do Sistema"],
+        "todos": ["ONS"],
+        "proibidos": ["Operadora Nacional de Servicos"]
+      },
+      "fonte_gabarito": "fato institucional estavel do setor eletrico brasileiro (a base tem series do ONS, mas nao a definicao institucional)",
+      "conferido": true
+    },
+    {
+      "id": "we03",
+      "categoria": "web",
+      "pergunta": "Qual instituicao faz a contabilizacao e a liquidacao do mercado de curto prazo de energia eletrica no Brasil, e o que significa a sigla CCEE?",
+      "tipo_correcao": "texto_contem",
+      "gabarito": {
+        "aceitos": ["Camara de Comercializacao de Energia Eletrica", "Câmara de Comercialização de Energia Elétrica"],
+        "todos": ["CCEE"],
+        "proibidos": ["Comissao de Comercializacao"]
+      },
+      "fonte_gabarito": "fato institucional estavel do setor eletrico brasileiro (nao esta na base; a base nao tem dados da CCEE, so o CMO do ONS)",
+      "conferido": true
+    },
+    {
+      "id": "we04",
+      "categoria": "web",
+      "pergunta": "O que significa a sigla EPE e a qual ministerio ela e vinculada?",
+      "tipo_correcao": "texto_contem",
+      "gabarito": {
+        "aceitos": ["Empresa de Pesquisa Energetica", "Empresa de Pesquisa Energética"],
+        "todos": ["Minas e Energia"],
+        "proibidos": ["Ministerio do Meio Ambiente", "Ministerio da Economia"]
+      },
+      "fonte_gabarito": "fato institucional estavel (a base traz tabelas do PDE 2035 e do BEN da EPE, mas nao a vinculacao institucional)",
+      "conferido": true
+    },
+    {
+      "id": "we05",
+      "categoria": "web",
+      "pergunta": "Qual organismo internacional emitiu as normas IFRS S1 e S2 de divulgacao de informacoes de sustentabilidade?",
+      "tipo_correcao": "texto_contem",
+      "gabarito": {
+        "aceitos": ["ISSB", "International Sustainability Standards Board", "IFRS Foundation", "Fundacao IFRS"],
+        "proibidos": ["GRI emitiu as IFRS", "SASB emitiu as IFRS", "CVM emitiu as IFRS"]
+      },
+      "fonte_gabarito": "fato institucional estavel; a base tem a Resolucao CVM 244 (que recepciona IFRS S1/S2 no Brasil) mas nao a autoria das normas",
+      "conferido": true
+    },
+    {
+      "id": "we06",
+      "categoria": "web",
+      "pergunta": "O que e o SBTi, citado nas metas climaticas das eletricas?",
+      "tipo_correcao": "texto_contem",
+      "gabarito": {
+        "aceitos": ["Science Based Targets initiative", "Science Based Targets"],
+        "todos": ["metas"],
+        "proibidos": ["Sistema Brasileiro de Transicao", "orgao regulador"]
+      },
+      "fonte_gabarito": "fato institucional estavel; a sigla aparece em relatorios da base (ex.: EDP), mas a definicao da iniciativa nao",
+      "conferido": true
+    },
+    {
+      "id": "we07",
+      "categoria": "web",
+      "pergunta": "Qual e o orgao que regula o mercado de capitais brasileiro e fiscaliza as companhias abertas?",
+      "tipo_correcao": "texto_contem",
+      "gabarito": {
+        "aceitos": ["Comissao de Valores Mobiliarios", "Comissão de Valores Mobiliários", "CVM"],
+        "todos": ["CVM"],
+        "proibidos": ["B3 e o regulador", "Banco Central regula as companhias abertas"]
+      },
+      "fonte_gabarito": "fato institucional estavel (a base usa dados da CVM, mas nao descreve a competencia do orgao)",
+      "conferido": true
+    },
+    {
+      "id": "au01",
+      "categoria": "ausente",
+      "pergunta": "Qual foi a receita liquida da Light em 2018?",
+      "tipo_correcao": "ausencia",
+      "gabarito": {
+        "aceitos": ["nao tenho", "nao ha", "nao consta", "nao esta na base", "indisponivel", "sem dados", "a base comeca em 2020", "fora do periodo"],
+        "proibidos": ["a receita liquida da Light em 2018 foi de R$"]
+      },
+      "sql_gabarito": "SELECT * FROM kpis_financeiros WHERE empresa ILIKE '%LIGHT%' AND ano = 2018",
+      "prova_ausencia": "A consulta volta vazia. kpis_financeiros cobre apenas 2020 a 2025 (SELECT min(ano), max(ano) FROM kpis_financeiros = 2020, 2025), porque vem das DFP da CVM baixadas a partir de 2020. A Light existe na base (LIGHT S.A., LIGHT ENERGIA, LIGHT SERVICOS), mas so de 2020 em diante - a pergunta e plausivel e o ano esta fora do periodo coberto.",
+      "fonte_gabarito": "SQL em data/energynexus.duckdb (kpis_financeiros) retorna 0 linhas",
+      "conferido": true
+    },
+    {
+      "id": "au02",
+      "categoria": "ausente",
+      "pergunta": "Quais foram as emissoes de escopo 1 da Light no relatorio de sustentabilidade dela? Cite a pagina.",
+      "tipo_correcao": "ausencia",
+      "gabarito": {
+        "aceitos": ["nao tenho", "nao ha", "nao consta", "nao esta indexado", "nao encontrei documento", "sem relatorio indexado", "nao esta na base"],
+        "proibidos": ["as emissoes de escopo 1 da Light foram de"]
+      },
+      "sql_gabarito": "SELECT count(*) FROM documentos WHERE empresa ILIKE '%light%'",
+      "prova_ausencia": "A consulta retorna 0. Nenhum documento da Light esta indexado em data/docs.duckdb nem em data/docs_titan.duckdb nem no catalogo data/documentos.csv (as 18 organizacoes indexadas sao Alupar, Auren, Axia, CPFL, Celesc, Cemig, Copel, EDP, Energisa, Eneva, Engie, Equatorial, ISA Energia, Neoenergia, Taesa e as referencias CVM, EPE e SEEG). Sem PDF indexado nao ha pagina para citar.",
+      "fonte_gabarito": "SQL em data/docs.duckdb e data/docs_titan.duckdb (tabela documentos) retorna 0",
+      "conferido": true
+    },
+    {
+      "id": "au03",
+      "categoria": "ausente",
+      "pergunta": "Qual foi o PLD horario do submercado Sudeste ontem?",
+      "tipo_correcao": "ausencia",
+      "gabarito": {
+        "aceitos": ["nao tenho", "nao ha", "nao consta", "nao esta", "indisponivel", "sem acesso", "sem dados", "CMO", "nao e exatamente o PLD"],
+        "proibidos": ["o PLD horario foi R$", "o PLD medio de ontem foi R$"]
+      },
+      "sql_gabarito": "SELECT table_name, column_name FROM duckdb_columns() WHERE lower(column_name) LIKE '%pld%' OR lower(table_name) LIKE '%pld%'",
+      "prova_ausencia": "A consulta volta vazia: nenhuma tabela ou coluna de data/energynexus.duckdb tem PLD. O que existe e o CMO do ONS (ons_cmo_mensal e ons_cmo_semihora), que e um indicador parecido mas nao e o PLD da CCEE. A resposta certa e dizer que o PLD nao esta na base (podendo oferecer o CMO como aproximacao, desde que nao o chame de PLD).",
+      "fonte_gabarito": "eval/regressao.py caso 'sem-dado' + SQL em duckdb_columns() de data/energynexus.duckdb retorna 0 linhas",
+      "conferido": true
+    },
+    {
+      "id": "au04",
+      "categoria": "ausente",
+      "pergunta": "Qual foi o indice de rotatividade (turnover) dos empregados da Energisa em 2025?",
+      "tipo_correcao": "ausencia",
+      "gabarito": {
+        "aceitos": ["nao tenho", "nao ha", "nao consta", "nao esta na base", "indisponivel", "sem dados", "nao encontrei"],
+        "proibidos": ["o turnover da Energisa em 2025 foi de"]
+      },
+      "sql_gabarito": "SELECT table_name, column_name FROM duckdb_columns() WHERE lower(column_name) SIMILAR TO '%(turnover|rotativ|empregad|colaborador)%'; SELECT count(*) FROM documentos WHERE empresa = 'Energisa' AND tipo = 'relatorio_sustentabilidade'",
+      "prova_ausencia": "As duas consultas voltam vazias/zero: (1) nenhuma tabela de data/energynexus.duckdb tem coluna de turnover, rotatividade, empregados ou colaboradores; (2) a Energisa tem 508 documentos indexados, mas nenhum e relatorio de sustentabilidade (os da area de sustentabilidade dela sao estatutos sociais de 2025 e 2026), entao o indicador social tambem nao esta nos PDFs.",
+      "fonte_gabarito": "SQL em duckdb_columns() de data/energynexus.duckdb (0 linhas) e em data/docs.duckdb (documentos, 0 linhas)",
+      "conferido": true
+    },
+    {
+      "id": "au05",
+      "categoria": "ausente",
+      "pergunta": "Qual foi o CMO medio do subsistema Sudeste em janeiro de 2015?",
+      "tipo_correcao": "ausencia",
+      "gabarito": {
+        "aceitos": ["nao tenho", "nao ha", "nao consta", "indisponivel", "sem dados", "a serie comeca em 2020", "fora do periodo"],
+        "proibidos": ["em janeiro de 2015 o CMO medio foi de R$"]
+      },
+      "sql_gabarito": "SELECT * FROM ons_cmo_mensal WHERE year(mes) = 2015",
+      "prova_ausencia": "A consulta volta vazia. ons_cmo_mensal cobre janeiro/2020 a setembro/2026 (SELECT min(mes), max(mes) FROM ons_cmo_mensal = 2020-01-01, 2026-09-01). 2015 esta fora do periodo coberto.",
+      "fonte_gabarito": "SQL em data/energynexus.duckdb (ons_cmo_mensal) retorna 0 linhas",
+      "conferido": true
+    },
+    {
+      "id": "au06",
+      "categoria": "ausente",
+      "pergunta": "Quantos empreendimentos foram contratados nos leiloes de geracao de 2002?",
+      "tipo_correcao": "ausencia",
+      "gabarito": {
+        "aceitos": ["nao tenho", "nao ha", "nao consta", "indisponivel", "sem dados", "a base comeca em 2005", "fora do periodo"],
+        "proibidos": ["em 2002 foram contratados"]
+      },
+      "sql_gabarito": "SELECT count(*) FROM leiloes_geracao WHERE ano < 2005",
+      "prova_ausencia": "A consulta retorna 0. leiloes_geracao cobre 2005 a 2025 (SELECT min(ano), max(ano) FROM leiloes_geracao = 2005, 2025) - coerente com o fato de os leiloes de energia nova terem comecado depois da Lei 10.848/2004. Nao ha nenhuma linha de 2002.",
+      "fonte_gabarito": "SQL em data/energynexus.duckdb (leiloes_geracao) retorna 0",
+      "conferido": true
+    },
+    {
+      "id": "au07",
+      "categoria": "ausente",
+      "pergunta": "Qual foi o DEC e o FEC da Enel Sao Paulo em 2012?",
+      "tipo_correcao": "ausencia",
+      "gabarito": {
+        "aceitos": ["nao tenho", "nao ha", "nao consta", "indisponivel", "sem dados", "a serie comeca em 2020", "fora do periodo"],
+        "proibidos": ["o DEC de 2012 foi de"]
+      },
+      "sql_gabarito": "SELECT count(*) FROM dec_fec_distribuidora_anual WHERE ano < 2020",
+      "prova_ausencia": "A consulta retorna 0. dec_fec_distribuidora_anual cobre 2020 a 2026 (SELECT min(ano), max(ano) = 2020, 2026). Nao ha DEC/FEC de 2012 na base para nenhuma distribuidora.",
+      "fonte_gabarito": "SQL em data/energynexus.duckdb (dec_fec_distribuidora_anual) retorna 0",
+      "conferido": true
+    },
+    {
+      "id": "au08",
+      "categoria": "ausente",
+      "pergunta": "Quanta energia eolica foi cortada por curtailment no Brasil em 2021?",
+      "tipo_correcao": "ausencia",
+      "gabarito": {
+        "aceitos": ["nao tenho", "nao ha", "nao consta", "indisponivel", "sem dados", "a serie comeca em 2023", "fora do periodo"],
+        "proibidos": ["em 2021 foram cortados"]
+      },
+      "sql_gabarito": "SELECT count(*) FROM ons_curtailment_mensal WHERE year(mes) < 2023",
+      "prova_ausencia": "A consulta retorna 0. ons_curtailment_mensal cobre janeiro/2023 a setembro/2026 (SELECT min(mes), max(mes) = 2023-01-01, 2026-09-01), porque a serie de restricao de geracao do ONS foi publicada a partir de 2023. Nao ha dado de 2021.",
+      "fonte_gabarito": "SQL em data/energynexus.duckdb (ons_curtailment_mensal) retorna 0",
+      "conferido": true
+    },
+    {
+      "id": "au09",
+      "categoria": "ausente",
+      "pergunta": "Qual foi a receita da Iberdrola, a controladora da Neoenergia, em 2025?",
+      "tipo_correcao": "ausencia",
+      "gabarito": {
+        "aceitos": ["nao tenho", "nao ha", "nao consta", "nao esta na base", "indisponivel", "somente companhias brasileiras", "so companhias abertas brasileiras"],
+        "proibidos": ["a receita da Iberdrola em 2025 foi de"]
+      },
+      "sql_gabarito": "SELECT count(*) FROM kpis_financeiros WHERE empresa ILIKE '%iberdrola%'; SELECT count(*) FROM empresas WHERE nome_social ILIKE '%iberdrola%' OR nome_comercial ILIKE '%iberdrola%'",
+      "prova_ausencia": "As duas consultas retornam 0, e o catalogo de documentos tambem nao tem nada da Iberdrola (SELECT count(*) FROM documentos WHERE empresa ILIKE '%iberdrola%' = 0). A base cobre apenas companhias abertas brasileiras registradas na CVM; a matriz espanhola nao esta em nenhuma tabela. A subsidiaria Neoenergia esta.",
+      "fonte_gabarito": "SQL em data/energynexus.duckdb (kpis_financeiros, empresas) e data/docs.duckdb (documentos), todos 0",
+      "conferido": true
+    },
+    {
+      "id": "au10",
+      "categoria": "ausente",
+      "pergunta": "Qual e a projecao de preco do carbono no mercado regulado brasileiro (SBCE) para 2030?",
+      "tipo_correcao": "ausencia",
+      "gabarito": {
+        "aceitos": ["nao tenho", "nao ha", "nao consta", "nao esta na base", "indisponivel", "sem dados", "premissa", "cenario que eu assumo"],
+        "proibidos": ["o preco vigente no Brasil e R$", "a projecao oficial do SBCE para 2030 e de R$"]
+      },
+      "sql_gabarito": "SELECT table_name, column_name FROM duckdb_columns() WHERE lower(column_name) LIKE '%carbono%' OR lower(table_name) LIKE '%carbono%' OR lower(table_name) LIKE '%sbce%'",
+      "prova_ausencia": "A consulta volta vazia: nao existe nenhuma tabela ou coluna sobre preco de carbono ou SBCE em data/energynexus.duckdb. A ferramenta exposicao_carbono do MCP do placar calcula exposicao a partir de um preco informado pelo usuario como premissa - ela nao traz um preco de mercado da base.",
+      "fonte_gabarito": "SQL em duckdb_columns() de data/energynexus.duckdb retorna 0 linhas",
+      "conferido": true
+    },
+    {
+      "id": "au11",
+      "categoria": "ausente",
+      "pergunta": "Qual foi o consumo de agua e a geracao de residuos da Taesa em 2025 no Placar da Transicao?",
+      "tipo_correcao": "ausencia",
+      "gabarito": {
+        "aceitos": ["nao tenho", "nao ha", "nao consta", "o placar nao cobre", "nao esta no placar", "indisponivel", "sem dados"],
+        "proibidos": ["o consumo de agua da Taesa em 2025 foi de", "o placar mostra consumo de agua de"]
+      },
+      "sql_gabarito": "SELECT table_name, column_name FROM duckdb_columns() WHERE lower(column_name) SIMILAR TO '%(agua|hidric|residuo)%'",
+      "prova_ausencia": "A consulta volta vazia em data/placar.duckdb (e tambem em data/energynexus.duckdb). O Placar da Transicao tem so cinco tabelas - esg_emissoes, esg_metas, esg_renovavel, esg_capex e esg_frameworks - e nenhuma delas cobre agua ou residuos. O indicador e plausivel (aparece em relatorios GRI) mas nao existe como campo estruturado na base.",
+      "fonte_gabarito": "SQL em duckdb_columns() de data/placar.duckdb (aberto com read_only=True) retorna 0 linhas",
+      "conferido": true
+    },
+    {
+      "id": "au12",
+      "categoria": "ausente",
+      "pergunta": "Qual e a tarifa de gas natural canalizado cobrada pelas distribuidoras de gas no Brasil?",
+      "tipo_correcao": "ausencia",
+      "gabarito": {
+        "aceitos": ["nao tenho", "nao ha", "nao consta", "nao esta na base", "indisponivel", "sem dados", "a base e do setor eletrico", "apenas energia eletrica"],
+        "proibidos": ["a tarifa de gas canalizado e de R$"]
+      },
+      "sql_gabarito": "SELECT table_name FROM duckdb_tables() WHERE lower(table_name) SIMILAR TO '%(gas_canalizad|comgas|distribuicao_gas|tarifa_gas)%'",
+      "prova_ausencia": "A consulta volta vazia. A unica tabela de tarifas e tarifas_distribuicao, que traz TUSD e TE de energia eletrica por distribuidora, subgrupo e classe (resolucoes da ANEEL) - nao ha tarifa de gas canalizado, que e regulada pelas agencias estaduais. As tabelas com 'gas' no nome tratam de demanda e de expansao termica no PDE 2035, nao de tarifa.",
+      "fonte_gabarito": "SQL em duckdb_tables() de data/energynexus.duckdb retorna 0 linhas",
+      "conferido": true
+    },
+    {
+      "id": "re01",
+      "categoria": "relatorio",
+      "pergunta": "Monte um memorando em PDF comparando as emissoes de escopo 1, 2 e 3 das eletricas que tem relatorio indexado na base, com as fontes (arquivo e pagina) de cada numero.",
+      "tipo_correcao": "relatorio",
+      "gabarito": {
+        "todos": [":::artifact", "application/pdf", "/relatorios/"],
+        "aceitos": ["escopo 1", "Escopo 1"],
+        "empresas_minimas": 4,
+        "indicadores_obrigatorios": ["emissoes de escopo 1 em tCO2e", "emissoes de escopo 2 em tCO2e", "emissoes de escopo 3 em tCO2e", "arquivo e pagina de cada valor"],
+        "estrutura_obrigatoria": ["Sumario Executivo", "Introducao", "Dados e Metodologia", "Resultados", "Discussao e Pontos de Atencao", "Conclusoes e Recomendacoes"],
+        "proibidos": ["nao consigo gerar PDF", "nao tenho ferramenta de relatorio"]
+      },
+      "fonte_gabarito": "proper_mcps/relatorio/server.py (ferramenta gerar_relatorio: exige as 6 secoes na ordem, \\cite em todo numero, tabelas com \\caption/\\label/\\fonte, e devolve o bloco :::artifact com a URL /relatorios/<arquivo>.pdf); librechat.yaml manda terminar a resposta com o bloco :::artifact sem alterar nada. Os numeros e citacoes conferidos estao nas perguntas pl01 a pl13 deste arquivo.",
+      "conferido": true
+    },
+    {
+      "id": "re02",
+      "categoria": "relatorio",
+      "pergunta": "Gere um relatorio em PDF sobre a alavancagem das transmissoras e distribuidoras em 2025, com receita liquida, EBITDA, divida liquida e divida liquida/EBITDA, citando a fonte dos dados.",
+      "tipo_correcao": "relatorio",
+      "gabarito": {
+        "todos": [":::artifact", "application/pdf", "/relatorios/"],
+        "aceitos": ["EBITDA"],
+        "empresas_minimas": 5,
+        "indicadores_obrigatorios": ["receita liquida", "EBITDA", "divida liquida", "divida liquida/EBITDA", "ano de referencia 2025"],
+        "estrutura_obrigatoria": ["Sumario Executivo", "Introducao", "Dados e Metodologia", "Resultados", "Discussao e Pontos de Atencao", "Conclusoes e Recomendacoes"],
+        "valores_de_referencia": {"TAESA divida_liquida_ebitda 2025": 3.66, "EQUATORIAL divida_liquida_ebitda 2025": 3.9, "CEMIG divida_liquida_brl 2025": 16803993000, "NEOENERGIA divida_liquida_ebitda 2025": 3.39},
+        "proibidos": ["nao consigo gerar PDF", "recomendo comprar", "recomendo vender"]
+      },
+      "sql_gabarito": "SELECT empresa, receita_liquida_brl, ebitda_brl, divida_liquida_brl, divida_liquida_ebitda FROM kpis_financeiros WHERE ano = 2025 AND escopo = 'consolidado' AND empresa IN ('TRANSMISSORA ALIANÇA DE ENERGIA ELÉTRICA S.A.', 'EQUATORIAL S.A.', 'CIA ENERGETICA DE MINAS GERAIS - CEMIG', 'NEOENERGIA S.A.', 'CPFL ENERGIA S.A.', 'ENERGISA S.A.', 'ISA ENERGIA BRASIL') ORDER BY divida_liquida_ebitda DESC",
+      "fonte_gabarito": "SQL em data/energynexus.duckdb (kpis_financeiros) para os valores + proper_mcps/relatorio/server.py para o formato exigido (6 secoes, \\cite em todo numero, bloco :::artifact com URL /relatorios/<arquivo>.pdf)",
+      "conferido": true
+    }
+  ]
+}
