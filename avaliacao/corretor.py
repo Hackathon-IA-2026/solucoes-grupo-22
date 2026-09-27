@@ -182,16 +182,33 @@ def paginas_citadas(texto: str) -> set[int]:
     return {int(m.group(1)) for m in PAGINA_CITADA.finditer(texto)}
 
 
+GENERICOS = {"sustentabilidade", "financeiro", "regulatorio", "relatorio", "relatorios", "docs", "pdf"}
+
+
 def arquivo_citado(texto: str, arquivo: str) -> bool:
-    """O nome do arquivo (ou um pedaço dele bem específico) aparece na resposta?"""
+    """A resposta identifica o documento do gabarito?
+
+    Vale o caminho literal (`sustentabilidade/cemig/2024/cemig_ras2024.pdf`) e vale a citação humana, que é o que o
+    promptPrefix do agente pede: nome da companhia mais o ano da edição ("Relatório de Sustentabilidade 2024 da
+    Cemig"). Exigir o caminho seria mais rígido do que o próprio agente pede e reprovaria resposta certa e
+    rastreável. Nomes de pasta genéricos ("sustentabilidade") não contam como identificação.
+    """
     alvo = sem_acento(arquivo).lower()
     resposta = sem_acento(texto).lower()
-    if alvo in resposta:
-        return True
     raiz = re.sub(r"\.pdf$", "", alvo)
-    if raiz and raiz in resposta:
+    if alvo in resposta or (raiz and raiz in resposta):
         return True
-    # o modelo costuma citar o documento pelo nome humano; aceita se todos os pedaços fortes aparecerem
+    partes = [p for p in raiz.split("/") if p]
+    nome = partes[-1] if partes else ""
+    if nome and nome in resposta:
+        return True
+    # companhia = segmento entre a área e o ano; ano = segmento de quatro dígitos
+    ano = next((p for p in partes if re.fullmatch(r"(19|20)\d{2}", p)), None)
+    empresa = [t for p in partes[:-1] if p != ano
+               for t in re.split(r"[^a-z0-9]+", p) if len(t) > 2 and t not in GENERICOS
+               and not re.fullmatch(r"(19|20)\d{2}", t)]
+    if empresa and ano:
+        return any(t in resposta for t in empresa) and ano in resposta
     pedacos = [p for p in re.split(r"[^a-z0-9]+", raiz) if len(p) > 3]
     return bool(pedacos) and all(p in resposta for p in pedacos)
 
