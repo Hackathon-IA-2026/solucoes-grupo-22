@@ -42,4 +42,5 @@ Percentuais, somas e razões: calcule por SQL e confira que o total bate com as 
    Plano de investimento de distribuidora **não** é lacuna: consulte `pdd_investimentos` (planejado e realizado, até
    2030) antes de dizer que não está na base.
 
-Memorando de uma página: tese em 3 frases, a tabela, riscos, lacunas e fontes; termine com `gerar_relatorio`.
+Memorando: siga o roteiro `relatorio-energynexus` (tese no Sumário Executivo, a tabela em Resultados, riscos e
+lacunas em Discussão e Pontos de Atenção) e termine com `gerar_relatorio`.

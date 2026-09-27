@@ -40,4 +40,4 @@ no mesmo `WHERE cnpj IN (...)`.
    (resolução homologatória do reajuste). Ranking da ANEEL e violação por conjunto **estão** na base
    (`ranking_continuidade`, `continuidade_limites`, `continuidade_conjuntos`): consulte antes de declarar lacuna.
 
-Se o usuário pedir documento para enviar, termine com `gerar_relatorio`.
+Se o usuário pedir documento para enviar, carregue o roteiro `relatorio-energynexus` e termine com `gerar_relatorio`.

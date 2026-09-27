@@ -1,9 +1,11 @@
-"""Testes de gerar_relatorio. Rodar: .runtime/venv/bin/python -m pytest proper_mcps -q"""
+"""Testes de gerar_relatorio: conferência do conteúdo e compilação com o TinyTeX de .runtime/tinytex.
+Rodar: .runtime/venv/bin/python -m pytest proper_mcps -q"""
 import importlib.util
 import os
+import re
 import zipfile
-from xml.dom import minidom
 
+import pymupdf
 import pytest
 
 # carregado pelo caminho: proper_mcps/dados também tem um server.py
@@ -18,142 +20,166 @@ def s(tmp_path, monkeypatch):
     return server
 
 
-FONTES = [{"id": "F1", "descricao": "CVM DFP 2025, conta 3.01, via kpis_financeiros"},
-          {"id": "F2", "descricao": "Relatório de Sustentabilidade Taesa 2025", "pagina": 22}]
+REFS = r"""
+@misc{cvm_dfp_2025,
+  author = {{Comissão de Valores Mobiliários}},
+  title  = {{Demonstrações Financeiras Padronizadas} ({DFP}) 2025},
+  year   = {2026},
+  url    = {https://dados.cvm.gov.br/dataset/cia_aberta-doc-dfp},
+  note   = {Acesso em: 26/09/2026. Tabela/consulta: indicadores\_financeiros.}
+}
+
+@techreport{taesa_rs_2025,
+  author      = {{Taesa}},
+  title       = {Relatório de Sustentabilidade 2025},
+  institution = {Taesa},
+  year        = {2026},
+  note        = {Acesso em: 26/09/2026. Página 22.}
+}
+"""
+
+CONTEUDO = r"""\section{Sumário Executivo}\label{sec:sumario}
+A receita líquida da Taesa foi de R\$ 4,62 bilhões em 2025 \cite{cvm_dfp_2025}, com margem EBITDA de
+81,4\% \cite{cvm_dfp_2025}. A Tabela~\ref{tab:taesa} resume os números.
+
+\section{Introdução}\label{sec:introducao}
+Este relatório descreve o desempenho financeiro da Taesa em 2025.
+
+\section{Dados e Metodologia}\label{sec:metodologia}
+Os valores vêm das demonstrações financeiras consolidadas entregues à CVM \cite{cvm_dfp_2025} e do relatório de
+sustentabilidade da empresa \cite{taesa_rs_2025}.
+
+\section{Resultados}\label{sec:resultados}
+\subsection{Receita e EBITDA}\label{sec:receita}
+\begin{table}[H]
+  \centering
+  \caption{Receita líquida e EBITDA da Taesa em 2025 (R\$ bilhões)}\label{tab:taesa}
+  \begin{tabular}{lr}
+    \toprule
+    \textbf{Indicador} & \textbf{2025} \\
+    \midrule
+    Receita líquida & 4,62 \\
+    EBITDA & 3,76 \\
+    \bottomrule
+  \end{tabular}
+  \fonte{\cite{cvm_dfp_2025}}
+\end{table}
+
+\section{Discussão e Pontos de Atenção}\label{sec:discussao}
+A análise do Energy Nexus sugere margem estável; o dado de dívida por instrumento não está disponível na base
+consultada.
+
+\section{Conclusões e Recomendações}\label{sec:conclusoes}
+\begin{itemize}
+  \item Acompanhar a receita de 2026 \cite{cvm_dfp_2025}.
+\end{itemize}"""
 
 
-def secao(texto="A receita da Taesa foi R$ 4,62 bi em 2025 [F1].", fontes_tab=("F1",)):
-    return [{"titulo": "Receita", "texto": texto,
-             "tabelas": [{"titulo": "Receita líquida 2025, R$ bi", "colunas": ["Empresa", "Receita"],
-                          "linhas": [["Taesa", "4,62"]], "fontes": list(fontes_tab)}]}]
+def gerar(s, conteudo=CONTEUDO, referencias=REFS, periodo="01/01/2025 a 31/12/2025"):
+    return s.gerar_relatorio("Taesa em 2025", "Desempenho financeiro", periodo, conteudo, referencias)
 
 
-def test_grava_markdown_e_docx_valido(s, tmp_path):
-    r = s.gerar_relatorio("Taesa em 2025", secao(), FONTES, sumario="Receita de R$ 4,62 bi [F1]; RAP na p. 22 [F2].",
-                          lacunas=["Sem cronograma de dívida por instrumento na base."])
-    assert r["gravado"], r
-    arquivos = sorted(os.listdir(tmp_path))
-    assert [a.rsplit(".", 1)[1] for a in arquivos] == ["docx", "md"]
-    md = open(tmp_path / arquivos[1], encoding="utf-8").read()
-    assert "| Taesa | 4,62 |" in md and "- [F2] Relatório de Sustentabilidade Taesa 2025, pagina 22" in md
-    with zipfile.ZipFile(tmp_path / arquivos[0]) as z:
-        minidom.parseString(z.read("word/document.xml"))  # XML bem formado
-        assert "4,62" in z.read("word/document.xml").decode()
+def test_gera_pdf_no_modelo_com_fonte_e_bloco_do_painel(s, tmp_path):
+    r = gerar(s)
+    assert r.startswith("Relatório gerado"), r
+    pdf = re.search(r"^PDF: /relatorios/(\S+\.pdf)$", r, re.M).group(1)
+    assert 'type="application/pdf" title="Taesa em 2025.pdf"' in r and f"\n/relatorios/{pdf}\n" in r
+    doc = pymupdf.open(tmp_path / pdf)
+    texto = " ".join(" ".join(p.get_text().split()) for p in doc)
+    assert doc.page_count >= 4 and "??" not in texto  # sumário, "Página x de y" e citações resolvidos
+    for trecho in ("Taesa em 2025", "Desempenho financeiro", "01/01/2025 a 31/12/2025", "R$ 4,62 bilhões",
+                   "81,4%", "Página 1 de", "Referências", "Demonstrações Financeiras Padronizadas (DFP) 2025"):
+        assert trecho in texto, trecho
+    with zipfile.ZipFile(tmp_path / pdf.replace(".pdf", ".zip")) as z:
+        assert sorted(z.namelist()) == ["imagens/zip_logo.png", "main.tex", "referencias.bib"]
+        tex = z.read("main.tex").decode()
+    modelo = open(os.path.join(server.MODELO, "main.tex"), encoding="utf-8").read()
+    corte = "%%  DADOS DO RELATÓRIO"
+    assert tex.split(corte)[0] == modelo.split(corte)[0]  # preâmbulo e identidade visual intactos
+    assert tex.split("%%  FIM DO CONTEÚDO")[1] == modelo.split("%%  FIM DO CONTEÚDO")[1]
 
 
-def test_recusa_numero_sem_fonte(s, tmp_path):
-    r = s.gerar_relatorio("X", secao("A receita foi R$ 4,62 bi em 2025."), FONTES)
-    assert not r["gravado"] and "sem fonte" in r["erros"][0]
+def test_recusa_estrutura_numero_sem_fonte_e_citacao_inexistente(s, tmp_path):
+    conteudo = (CONTEUDO.replace(r"\section{Introdução}", r"\section{Contexto}")
+                .replace("Este relatório descreve", "A Taesa tem 12 concessões. Este relatório descreve")
+                .replace(r"\fonte{\cite{cvm_dfp_2025}}", r"\fonte{\cite{ons_carga_2025}}"))
+    r = gerar(s, conteudo)
+    assert r.startswith("Relatório NÃO gerado")
+    assert "Veio: Sumário Executivo; Contexto" in r
+    assert "tem número (12) sem \\cite" in r and "\\cite{ons_carga_2025} não existe" in r
     assert os.listdir(tmp_path) == []
 
 
-def test_recusa_tabela_sem_fonte_e_citacao_inexistente(s):
-    r = s.gerar_relatorio("X", secao("Receita de 4,62 [F9].", fontes_tab=()), FONTES)
-    assert not r["gravado"]
-    assert any("F9" in e for e in r["erros"]) and any("nenhuma fonte" in e for e in r["erros"])
+def test_recusa_percentual_sem_barra_comando_proibido_e_referencia_incompleta(s):
+    conteudo = CONTEUDO.replace(r"81,4\%", "81,4%").replace("Este relatório", r"\input{/etc/passwd} Este relatório")
+    r = gerar(s, conteudo, REFS.replace("  year   = {2026},\n", "", 1), periodo="2025")
+    assert "linha 3 do conteúdo: '%' sem barra" in r and "\\input não é permitido" in r
+    assert "referência 'cvm_dfp_2025': faltam os campos year" in r and "fora do formato DD/MM/AAAA" in r
 
 
-def test_coluna_fonte_por_linha_vale_como_fonte(s):
-    sec = [{"titulo": "T", "tabelas": [{"titulo": "2025", "colunas": ["Empresa", "Valor", "Fonte"],
-                                        "linhas": [["A", "1,5", "[F1]"], ["B", "2,5", "[F2]"]]}]}]
-    assert s.gerar_relatorio("T", sec, FONTES)["gravado"]
+def test_recusa_tabela_sem_fonte_e_figura(s):
+    conteudo = CONTEUDO.replace(r"\fonte{\cite{cvm_dfp_2025}}", "") + "\n\\includegraphics{x.png}"
+    r = gerar(s, conteudo)
+    assert "falta a linha de fonte" in r and "não aceita figuras" in r
+
+
+def test_erro_de_latex_aponta_a_linha_do_conteudo(s):
+    r = gerar(s, CONTEUDO.replace("Este relatório descreve", r"Este \textbff{relatório} descreve"))
+    assert r.startswith("Relatório NÃO gerado: o LaTeX não compilou")
+    assert "linha 6 do conteúdo: Undefined control sequence" in r
+
+
+@pytest.mark.parametrize("conteudo, motivo", [
+    pytest.param(CONTEUDO.replace("da Taesa em 2025.", "da Taesa em"), "no meio da frase", id="paragrafo-do-meio"),
+    pytest.param(CONTEUDO.replace("da Taesa em 2025.", "da Taesa [...]"), "marca de corte", id="marca-de-corte"),
+    pytest.param(CONTEUDO + "\n\nEm 2026 a Taesa deve", "no meio da frase", id="fim-do-conteudo"),
+])
+def test_recusa_conteudo_truncado(s, tmp_path, conteudo, motivo):
+    """Dois relatórios da auditoria foram gravados cortados no meio da frase, com aparência de completos."""
+    r = gerar(s, conteudo)
+    assert r.startswith("Relatório NÃO gerado") and motivo in " ".join(r.split())
+    assert os.listdir(tmp_path) == []
+
+
+def test_aceita_citacao_literal_com_supressao_e_item_sem_ponto(s):
+    """A marca [...] no meio de uma citação literal é supressão, e item de lista pode acabar sem pontuação."""
+    conteudo = (CONTEUDO.replace("Este relatório descreve",
+                                 'A empresa afirma "reduzir emissões [...] até 2030" \\cite{taesa_rs_2025}. '
+                                 "Este relatório descreve")
+                .replace(r"\item Acompanhar a receita de 2026 \cite{cvm_dfp_2025}.",
+                         r"\item Acompanhar a receita de 2026 \cite{cvm_dfp_2025}"))
+    r = gerar(s, conteudo)
+    assert r.startswith("Relatório gerado"), r
+
+
+def test_avisa_tabela_que_nao_esta_no_catalogo_e_aceita_a_que_esta(s):
+    """A auditoria passou "tabela_que_nao_existe, conta 9.99" e o relatório saiu com cara de auditado."""
+    inventada = REFS.replace(r"Tabela/consulta: indicadores\_financeiros.",
+                             r"Tabela/consulta: tabela\_que\_nao\_existe, conta 9.99.")
+    r = gerar(s, referencias=inventada)
+    assert r.startswith("Relatório gerado")  # é aviso, não erro: fonte de documento e de link não têm tabela
+    assert "referência cvm_dfp_2025: 'tabela_que_nao_existe' não é uma tabela nem uma ferramenta" in r
+    certa = REFS.replace(r"Tabela/consulta: indicadores\_financeiros.", r"Tabela/consulta: kpis\_financeiros.")
+    assert "não é uma tabela" not in gerar(s, referencias=certa)
+
+
+def test_diz_que_a_conferencia_e_de_forma_nao_de_valor(s):
+    """O chat repassava "conferido automaticamente" ao usuário; a ferramenta não confere valor contra a base."""
+    r = gerar(s)
+    assert "Os valores NÃO foram reconferidos na base" in r
+    assert "nunca o valor em si contra a base" in server.__doc__
+    assert "não são reconferidos contra a base" in server.gerar_relatorio.__doc__
 
 
 @pytest.mark.parametrize("texto, tem", [
     ("Em 2025 a empresa cresceu.", False),          # ano não conta
     ("Dados do 2T26 e escopo 1.", False),           # trimestre e número de um dígito
     ("Alavancagem de 3,9x.", True),
-    ("Alta de 12%.", True),
-    ("Lucro de R$ 616 mi.", True),
-    ("Veja https://ri.taesa.com.br/2026/05/x.pdf", False),
+    (r"Alta de 12\%.", True),
+    (r"Lucro de R\$~616 milhões.", True),
+    (r"Veja a Tabela~\ref{tab:x2025} e \cite{cvm_dfp_2025}.", False),
+    (r"Veja \url{https://ri.taesa.com.br/2026/05/x.pdf}", False),
     ("Dados preliminares até 30/09/2025 e vigência em 04/2026.", False),  # datas
 ])
 def test_o_que_conta_como_numero(s, texto, tem):
     assert bool(s._numeros(texto)) is tem
-
-# ---------------------------------------------------------------- correções da auditoria de 26/09/2026
-def test_conta_os_numeros_das_tabelas_e_das_lacunas(s):
-    sec = [{"titulo": "Receita", "texto": "O quadro está na tabela [F1].",
-            "tabelas": [{"titulo": "Receita líquida 2025, R$ bi", "colunas": ["Empresa", "Receita", "Margem"],
-                         "linhas": [["Taesa", "4,62", "38,7%"], ["Alupar", "3,19", "41,2%"]], "fontes": ["F1"]}]}]
-    r = s.gerar_relatorio("Transmissoras em 2025", sec, FONTES, sumario="O quadro está na tabela abaixo [F1].",
-                          lacunas=["Falta a receita de 2026, que sai em 12 meses [F1]."])
-    assert r["gravado"], r
-    # antes a conta era só do texto: um relatório com os números em tabela devolvia zero
-    assert r["numeros_com_fonte"] == {"total": 5, "no_texto": 0, "em_tabelas": 4, "em_lacunas": 1}
-    assert "não foi conferido" in r["conferencia"]
-
-
-def test_relatorio_sem_lacunas_recebe_aviso(s):
-    r = s.gerar_relatorio("Taesa em 2025", secao(), FONTES, sumario="Receita de R$ 4,62 bi [F1]; RAP na p. 22 [F2].")
-    assert r["gravado"]
-    assert any("não tem lacunas" in a for a in r["avisos"])
-
-
-@pytest.mark.parametrize("texto, cortado", [
-    ("A receita foi de R$ 4,62 bi em 2025 [F1].", False),
-    ("A receita de 2025 foi de R$ 4,62 bi [F1]", False),   # acabar na citação não é corte
-    ("A receita subiu (4,62 contra 4,10 [F1])", False),
-    ("A receita foi de R$ 4,62 bi [F1]...", True),
-    ("A receita foi de R$ 4,62 bi [F1] […]", True),
-    ("A Equatorial GO é a única dist", True),              # cortado no meio da palavra, mesmo em texto curto
-    ("A receita cresceu [F1]. " + "Detalhe do período com números de 4,62 e 3,19 [F1]. " * 4 + "e o resto vem", True),
-])
-def test_texto_cortado_e_apontado(s, texto, cortado):
-    assert bool(s._cortado(texto)) is cortado
-
-
-def test_secao_cortada_recusa_o_relatorio(s, tmp_path):
-    # a auditoria gravou dois relatórios cortados no meio da frase com gravado: true; agora é erro
-    r = s.gerar_relatorio("Taesa em 2025", secao("A receita foi de R$ 4,62 bi em 2025 [F1]..."), FONTES,
-                          sumario="Receita de R$ 4,62 bi [F1]; RAP na p. 22 [F2].",
-                          lacunas=["Sem cronograma de dívida na base."])
-    assert not r["gravado"] and os.listdir(tmp_path) == []
-    assert any("marca de corte" in e for e in r["erros"])
-
-
-def test_sumario_truncado_recusa_e_avisa_das_lacunas(s):
-    r = s.gerar_relatorio("Distribuidoras em 2025", secao(), FONTES,
-                          sumario="Entre as 4 comparadas, a Equatorial GO é a única dist", lacunas=[])
-    assert not r["gravado"]
-    assert any("parece truncado" in e and "única dist" in e for e in r["erros"])
-    assert any("não tem lacunas" in a for a in r["avisos"])  # os avisos vêm junto da recusa, para corrigir de uma vez
-
-
-def test_fonte_sem_localizador_gera_aviso(s):
-    fontes = [{"id": "F1", "descricao": "dados da empresa"}]
-    r = s.gerar_relatorio("X", secao("Receita de R$ 4,62 bi em 2025 [F1]."), fontes,
-                          lacunas=["Sem comparação com 2024."])
-    assert r["gravado"]
-    assert any("não diz onde achar o número" in a for a in r["avisos"])
-
-
-def test_fonte_com_tabela_pagina_ou_link_nao_gera_aviso(s):
-    r = s.gerar_relatorio("X", secao("Receita de R$ 4,62 bi em 2025 [F1]."), FONTES,
-                          lacunas=["Sem comparação com 2024."])
-    assert r["gravado"]
-    assert not any("não diz onde achar" in a for a in r.get("avisos", []))
-
-
-def test_nome_de_arquivo_e_link_nao_contam_como_tabela(s):
-    assert s._tabelas_citadas("Cemig, cemig_relatorio_2025.pdf, p. 87") == []
-    assert s._tabelas_citadas("veja https://ri.taesa.com.br/dados_2025.html") == []
-    assert s._tabelas_citadas("CVM DFP 2025, conta 3.01, via kpis_financeiros") == ["kpis_financeiros"]
-
-
-@pytest.mark.skipif(not os.path.exists(server.CATALOGO_DB), reason="o catálogo da base não está nesta máquina")
-def test_fonte_com_tabela_inventada_gera_aviso(s):
-    # a auditoria passou "tabela_que_nao_existe, conta 9.99" e o relatório saiu com cara de auditado
-    fontes = [{"id": "F1", "descricao": "tabela_que_nao_existe, conta 9.99, via ORGAO_INVENTADO"}]
-    r = s.gerar_relatorio("X", secao(), fontes, lacunas=["Sem comparação com 2024."])
-    assert r["gravado"]
-    assert any("'tabela_que_nao_existe' não é uma tabela da base" in a for a in r["avisos"])
-    boa = s.gerar_relatorio("X", secao(), FONTES, lacunas=["Sem comparação com 2024."])  # kpis_financeiros existe
-    assert boa["gravado"] and not any("não é uma tabela da base" in a for a in boa.get("avisos", []))
-
-
-def test_sem_o_catalogo_o_relatorio_diz_que_nao_conferiu(s, tmp_path, monkeypatch):
-    # o runtime do AgentCore sobe só o relatório, sem o banco ao lado: a conferência não acontece e isso fica dito
-    monkeypatch.setattr(s, "CATALOGO_DB", str(tmp_path / "nao_existe.duckdb"))
-    r = s.gerar_relatorio("X", secao(), FONTES, lacunas=["Sem comparação com 2024."])
-    assert r["gravado"] and any("não confiro os nomes de tabela" in a for a in r["avisos"])

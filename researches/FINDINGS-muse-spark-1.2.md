@@ -1,6 +1,6 @@
 # FINDINGS: Base de Pesquisa Extensiva para Inteligência Comparativa e Transição Energética no Setor Elétrico Brasileiro
 
-**Projeto:** CoppeZIP (Equipe ZIP)  
+**Projeto:** EnergyNexus (Equipe ZIP)  
 **Branch:** `muse-spark-1.2-contributor-free`  
 **Data:** 13 de Setembro de 2026  
 **Problema Central:** *Como transformar os relatórios financeiros e socioambientais que as empresas do setor elétrico são obrigadas a divulgar em inteligência comparativa, capaz de revelar, de forma rápida e rastreável, como cada companhia investe, se posiciona e avança na transição energética?*
@@ -42,7 +42,7 @@ flowchart TD
         DUCK[(DuckDB OLAP / Parquet\nFato CVM + Fato ESG + Séries)]
     end
     subgraph AGENT_TOOLS["4. Agente IA - Tool Calling Determinístico"]
-        AGENT["Agente CoppeZIP"]
+        AGENT["Agente EnergyNexus"]
         T_CVM["query_cvm_financials()"]
         T_ESG["extract_esg_metric()"]
         T_CALC["calculate_hybrid_kpi() -> SQL DuckDB"]
@@ -268,7 +268,7 @@ wget https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2026
 
 ---
 
-## 6. MAPEAMENTO DAS 11 PRINCIPAIS ELÉTRICAS (Foco CoppeZIP)
+## 6. MAPEAMENTO DAS 11 PRINCIPAIS ELÉTRICAS (Foco EnergyNexus)
 
 | Empresa | Tickers B3 | Cód CVM | CNPJ | Segmento | Portal RI & Sustentabilidade | Destaques Transição 2026 |
 |---|---|---|---|---|---|---|
@@ -426,7 +426,7 @@ loader = PyMuPDFLoader('https://www.epe.gov.br/sites-pt/publicacoes-dados-aberto
 - **CDP 2026:** setor renomeado "Concessionárias & geradores" + questionário PME com scoring A.
 - **B3 ESG Workspace:** credenciamento gratuito → export scores ISE/ICO2.
 
-**5 Recomendações Ouro p/ CoppeZIP (próximas 2 semanas):**
+**5 Recomendações Ouro p/ EnergyNexus (próximas 2 semanas):**
 1. **Harvest núcleo 5/5:** Configurar ingest CKAN diário ANEEL SIGA/MMGD + ONS S3 Parquet + CCEE CKAN API + CVM CAD. São Parquet/CSV diário com dicionário JSON.
 2. **Case curtailment:** View `curtailment_por_usina = join SIGA CEG + ONS coff_detail + LEI REN SAE 2026` → prever alívio com BESS/UHR (PEN 19%→14% até 2030).
 3. **Case CAPEX verde:** DFP Delta Imobilizado 2023-2026 + FRE 10.x previsto + ANBIMA green bond → scatter `CAPEX verde %` vs `Green Debt %` vs `IC Receita` (9 métricas).
@@ -522,7 +522,7 @@ loader = PyMuPDFLoader('https://www.epe.gov.br/sites-pt/publicacoes-dados-aberto
 
 ---
 
-## 14. CONCLUSÕES E PRÓXIMOS PASSOS COPPEZIP
+## 14. CONCLUSÕES E PRÓXIMOS PASSOS ENERGYNEXUS
 
 1. **Pipeline completo mapeado:** 100+ endpoints catalogados com scripts automação (CSVs/Parquets Bronze→Gold sem LLM onde possível).
 2. **Zero-hallucination garantido:** Hash SHA256 + BBox [x0,y0,x1,y1] + citação literal + SQL DuckDB determinístico; LLM só orquestra `Tool Calling`.

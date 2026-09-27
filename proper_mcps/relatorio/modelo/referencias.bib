@@ -1,0 +1,70 @@
+% =====================================================================
+%  ENERGY NEXUS — REFERÊNCIAS DO RELATÓRIO
+% =====================================================================
+%  INSTRUÇÕES PARA A IA:
+%  - Adicione aqui UMA entrada para cada fonte citada com \cite{} no
+%    main.tex. Somente as entradas citadas aparecem no PDF.
+%  - Use apenas fontes presentes na base de dados. Nunca invente
+%    autores, títulos, URLs ou datas.
+%  - Padrão de chave: fonte_tema_ano (minúsculas, sem acentos, sem
+%    espaços). Ex.: ons_carga_2025, aneel_tarifas_2024, epe_ben_2025.
+%  - Campos obrigatórios em toda entrada:
+%      author  -> instituição entre chaves duplas: {{Operador Nacional do Sistema Elétrico}}
+%      title   -> nome do conjunto de dados, relatório ou página;
+%                 siglas e nomes próprios entre chaves para manter as
+%                 maiúsculas: {Balanço Energético Nacional} {ONS}
+%      year    -> ano de publicação ou da versão dos dados
+%      url     -> link de origem, quando existir
+%      note    -> "Acesso em: DD/MM/AAAA." e, se aplicável, a
+%                 tabela/consulta da base de onde o dado foi extraído
+%  - Tipos de entrada: misc (bases de dados e páginas web), techreport
+%    (relatórios técnicos), article (artigos) e book (livros).
+%  - ATENÇÃO: nunca escreva o caractere arroba dentro de comentários
+%    deste arquivo; o BibTeX o interpreta como início de uma entrada.
+%    Por isso os modelos abaixo aparecem sem o arroba: ao copiar um
+%    modelo, remova os "%" e acrescente o arroba antes do tipo.
+%  - Acentos: podem ser digitados normalmente (UTF-8).
+% =====================================================================
+
+% --- Base de dados interna do Energy Nexus (manter sempre) ------------
+% Cite esta entrada quando o dado vier da base interna sem uma fonte
+% primária identificada. Atualize "note" com a versão/data de extração.
+@misc{energynexus_db,
+  author = {{Energy Nexus}},
+  title  = {Base de dados do setor elétrico do {Energy Nexus}},
+  year   = {2026},
+  note   = {Versão/extração: DD/MM/AAAA. Tabela/consulta: NOME\_DA\_TABELA.}
+}
+
+% --- MODELOS (copie, preencha e renomeie a chave) ---------------------
+%
+% misc{fonte_tema_ano,
+%   author = {{Nome da Instituição}},
+%   title  = {Nome do conjunto de dados ou da página},
+%   year   = {AAAA},
+%   url    = {https://...},
+%   note   = {Acesso em: DD/MM/AAAA. Tabela/consulta: NOME\_DA\_TABELA.}
+% }
+%
+% techreport{fonte_tema_ano,
+%   author      = {{Nome da Instituição}},
+%   title       = {Título do relatório técnico},
+%   institution = {Nome da Instituição},
+%   address     = {Cidade},
+%   year        = {AAAA},
+%   url         = {https://...},
+%   note        = {Acesso em: DD/MM/AAAA.}
+% }
+%
+% article{autor_tema_ano,
+%   author  = {Sobrenome, Nome and Sobrenome, Nome},
+%   title   = {Título do artigo},
+%   journal = {Nome do periódico},
+%   volume  = {0},
+%   number  = {0},
+%   pages   = {1--10},
+%   year    = {AAAA},
+%   doi     = {10.xxxx/xxxxx}
+% }
+
+% --- REFERÊNCIAS DO RELATÓRIO (a IA adiciona abaixo) ------------------

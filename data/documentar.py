@@ -37,8 +37,9 @@ def tamanho(t, n):
 
 texto = ["# Dados do EnergyNexus", "",
          f"Tabelas e visões do `energynexus.duckdb` em {datetime.date.today():%d/%m/%Y}, geradas do catálogo por "
-         "`data/documentar.py`. Não edite à mão: descrição, fonte e ressalvas vêm do catálogo em `data/construir.py`, o "
-         "mesmo texto que o modelo lê. O formato dos arquivos brutos de cada fonte está em `data/raw/README.md`.", "",
+         "`data/documentar.py`. Não edite à mão: descrição, fonte e ressalvas vêm do catálogo em "
+         "`data/construir.py`, o mesmo texto que o modelo lê. O formato dos arquivos brutos de cada fonte está em "
+         "`data/raw/README.md` (e o levantamento inicial, em `researches/DATA_DICTIONARY.md`).", "",
          "| Tabela | Linhas | Descrição | Fonte |", "|---|---:|---|---|"]
 texto += [f"| [`{t}`](#{t}) | {tamanho(t, n)} | {celula(d)} | {celula(f)} |" for t, d, f, _, n in catalogo]
 for t, d, f, r, n in catalogo:

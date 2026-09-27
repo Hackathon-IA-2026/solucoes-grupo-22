@@ -263,7 +263,7 @@ def registrar(saida, **linha):
 
 def mostrar(cid, resp, segundos, modelo):
     usadas = ferramentas(resp)
-    print(f"Conversa: {cid}   (para continuar: ./perguntar --conversa {cid} \"próxima pergunta\")")
+    print(f"Conversa: {cid}   (para continuar: eval/chat.py --conversa {cid} \"próxima pergunta\")")
     print(f"Tempo de resposta: {segundos:.0f} s · modelo: {modelo}")
     print(f"Ferramentas que o chat usou ({len(usadas)}): {', '.join(usadas) if usadas else 'nenhuma'}")
     if resp.get("error"):
@@ -296,7 +296,7 @@ def main():
         msgs, resp, motivo = aguardar(sessao, a.aguardar, antes, a.timeout)
         salvar(a.saida, a.persona, a.aguardar, msgs)
         if not resp:
-            falhar(f"{motivo}; rode de novo: ./perguntar --aguardar {a.aguardar}", 2)
+            falhar(f"{motivo}; rode de novo: eval/chat.py --aguardar {a.aguardar}", 2)
         mostrar(a.aguardar, resp, time.time() - inicio, resp.get("model") or "?")
         return
 
@@ -327,7 +327,8 @@ def main():
         # o LibreChat aplica do lado do servidor o prompt de sistema do perfil (ele não aparece em /api/config)
         "spec": esc["name"],
         # com modelSpecs.enforce: false o servidor só aplica o promptPrefix do perfil: sem estes campos a conversa roda
-        # com o padrão do endpoint (o Claude gravou maxContextTokens 95.000 e 4.096 de saída), não com o do librechat.yaml
+        # com o padrão do endpoint (o Claude gravou maxContextTokens 95.000 e 4.096 de saída), não com o do
+        # librechat.yaml — e em 4.096 tokens a chamada de gerar_relatorio chega sem o conteúdo
         **{k: esc["preset"][k] for k in ("maxContextTokens", "maxOutputTokens") if esc["preset"].get(k)},
         "ephemeralAgent": {"mcp": mcps, **({"web_search": True} if a.busca_web else {})},
     }
@@ -351,7 +352,7 @@ def main():
               erro=motivo or ("o chat devolveu erro" if resp.get("error") else None),
               tamanho_resposta=len(texto_resposta(resp)) if resp else 0)
     if not resp:
-        dica = f"rode: ./perguntar --aguardar {cid}" if motivo == "tempo esgotado" else "anote como falha do chat"
+        dica = f"rode: eval/chat.py --aguardar {cid}" if motivo == "tempo esgotado" else "anote como falha do chat"
         falhar(f"{motivo}; {dica}", 2)
     mostrar(cid, resp, segundos, modelo)
 
