@@ -44,6 +44,13 @@ baixar "$EN_PREFIXO/dados/painel.json" "$RAIZ/dados/painel.json"
 baixar bancos/docs.duckdb "$RAIZ/dados/docs.duckdb"
 baixar bancos/docs_titan.duckdb "$RAIZ/dados/docs_titan.duckdb"
 
+# O compose monta esta pasta em /app/data, e a montagem *esconde* o data/ que veio na imagem — com ele, o
+# data/linha_do_tempo.py, que o entrada.sh executa e que o proper_mcps/docs/busca.py importa (ele põe <RAIZ>/data no
+# sys.path). Sem esta cópia a aba Busca sobe e morre na hora com "ModuleNotFoundError: No module named
+# 'linha_do_tempo'", e a rota /api/busca responde 502 "servico de busca indisponivel". São scripts versionados, sem
+# segredo nenhum; ficam ao lado dos bancos porque é esse o diretório que o contêiner vê como data/.
+cp -p "$CODIGO"/data/*.py "$RAIZ"/dados/
+
 echo "== montando o .env"
 # A parte que não é segredo. HOST=0.0.0.0 porque o Node tem de ser alcançável de fora do contêiner; MONGO_URI e
 # MEILI_HOST apontam para os nomes dos serviços do compose; ENDPOINTS perde o `custom` porque não há vLLM aqui

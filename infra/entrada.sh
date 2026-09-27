@@ -18,6 +18,13 @@ ln -sfn /app/.runtime/linha_do_tempo client/public/assets/linha_do_tempo
 "$ENERGYNEXUS_PYTHON" infra/ajustar_yaml.py librechat.yaml .runtime/librechat.aws.yaml
 export CONFIG_PATH=/app/.runtime/librechat.aws.yaml
 
+# O .env que o contêiner não tem: aqui a configuração chega pelo `env_file` do compose, que virou ambiente e não
+# arquivo. Só que o `_embed` de proper_mcps/docs/server.py lê a região do Bedrock de <RAIZ>/.env na mão (o LibreChat
+# sobe os MCP sem as variáveis do .env, e é assim que o servidor de documentos a descobre). Sem este arquivo a busca
+# semântica da aba Busca morre com FileNotFoundError. Vai só a região, que não é segredo — os segredos ficam no
+# ambiente, fora do disco do contêiner.
+printf 'BEDROCK_AWS_DEFAULT_REGION=%s\n' "$BEDROCK_AWS_DEFAULT_REGION" > /app/.env
+
 # Dados da aba Timeline: o mesmo JSON por empresa que o site estático usa. Depende de data/energynexus.duckdb e
 # data/docs.duckdb; sem eles a aba fica sem dados e o resto do chat segue igual (é o que o iniciar.sh também faz).
 "$ENERGYNEXUS_PYTHON" data/linha_do_tempo.py || echo "aviso: a aba Timeline ficou sem dados novos (erro acima)"

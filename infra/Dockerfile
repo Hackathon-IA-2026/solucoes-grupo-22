@@ -33,6 +33,11 @@ RUN npm ci --no-audit --no-fund && npm run frontend
 RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir -q -r proper_mcps/requirements.txt
 
+# Extensão fts do DuckDB, a do BM25. O `_con()` de proper_mcps/docs/server.py faz `LOAD fts` em cada conexão, e `LOAD`
+# não baixa nada: sem instalar aqui, a primeira consulta da aba Busca morre com `Extension "fts" not found`. Baixar
+# agora, na construção, também evita depender da internet em tempo de consulta.
+RUN /opt/venv/bin/python -c "import duckdb; duckdb.connect().execute('INSTALL fts')"
+
 # TinyTeX + os seis pacotes que o modelo do relatório usa e o TinyTeX-1 não traz (mesma lista do instalar.sh).
 # O caminho é o que proper_mcps/relatorio/server.py espera: <RAIZ>/.runtime/tinytex/bin/x86_64-linux.
 ARG TINYTEX=v2026.09

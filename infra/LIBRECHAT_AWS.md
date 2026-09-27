@@ -167,6 +167,47 @@ O `placar.anterior.duckdb` é o caminho de volta: um `mv` no sentido contrário 
 necessário quando muda **código** (o `COPY . /app` do Dockerfile invalida o `npm ci` e o `vite build`, e aí são os vinte
 minutos de novo).
 
+## A aba Busca: três coisas que a montagem e a imagem escondiam
+
+A rota `/api/busca` do LibreChat é só um proxy para `proper_mcps/docs/busca.py`, que escuta em `127.0.0.1:$BUSCA_PORTA`
+**dentro do contêiner do chat** (por isso ele mora na mesma imagem, e não num vizinho). Quando o serviço não está de pé,
+a aba mostra `servico de busca indisponivel (http://127.0.0.1:8766): fetch failed` — que é o proxy dizendo 502, não o
+índice faltando. No evento ele subiu e morreu três vezes, por três motivos diferentes; todos já estão corrigidos no
+código, e ficam registrados aqui porque cada um só aparece na nuvem:
+
+1. **A montagem esconde o `data/` da imagem.** O compose monta `/opt/energynexus/dados` em `/app/data` para deixar os
+   ~3 GB de banco fora da imagem — e, junto com isso, tapa o `data/` que o `COPY . /app` tinha posto lá, inclusive o
+   `data/linha_do_tempo.py` que o `busca.py` importa. Resultado: `ModuleNotFoundError: No module named
+   'linha_do_tempo'`. O `partida_ec2.sh` agora copia os `data/*.py` para dentro da pasta montada.
+2. **A extensão `fts` do DuckDB não vinha na imagem.** O `_con()` de `proper_mcps/docs/server.py` faz `LOAD fts` a cada
+   conexão, e `LOAD` não baixa nada — a primeira consulta morria com `Extension "fts" not found`. O `Dockerfile` agora
+   roda `INSTALL fts` na construção. (No AgentCore isso já era feito na subida do runtime; é por isso que o MCP
+   `energynexus-docs` nunca sofreu do problema.)
+3. **Não havia `.env` no contêiner.** Aqui a configuração chega como ambiente, pelo `env_file` do compose, mas o
+   `_embed` lê `BEDROCK_AWS_DEFAULT_REGION` de `<RAIZ>/.env` na mão — o LibreChat sobe os MCP sem as variáveis do
+   `.env`, e é assim que o servidor de documentos descobre a região. O `entrada.sh` agora escreve esse arquivo com uma
+   linha só: a região, que não é segredo.
+
+Nenhum dos três exige reconstruir a imagem para consertar uma instância que já está no ar. Com a máquina de pé:
+
+```bash
+# 1. os scripts versionados de data/ para dentro da pasta montada
+cp -p /opt/energynexus/codigo/data/*.py /opt/energynexus/dados/
+# 2. a extensão, no mesmo Python que roda a busca (o LOAD é por conexão, então vale na consulta seguinte)
+docker exec energynexus-chat-1 /opt/venv/bin/python -c "import duckdb; duckdb.connect().execute('INSTALL fts')"
+# 3. a região onde o _embed a procura
+docker exec energynexus-chat-1 sh -c 'printf "BEDROCK_AWS_DEFAULT_REGION=%s\n" "$BEDROCK_AWS_DEFAULT_REGION" > /app/.env'
+# e sobe o serviço destacado: morre com o contêiner, não com a sessão
+docker exec -d -w /app energynexus-chat-1 sh -c \
+  '/opt/venv/bin/python proper_mcps/docs/busca.py --porta "$BUSCA_PORTA" >> /app/.runtime/logs/busca.log 2>&1'
+```
+
+O log do serviço fica em `/app/.runtime/logs/busca.log`, dentro do contêiner — não no `docker logs`, que só mostra a
+linha "serviço da Busca subindo". Quem procurar a causa de um 502 tem de ler aquele arquivo.
+
+Consertar isso também levanta a aba **Timeline** (`/timeline_empresas`, `/timeline`) e a **Grafo**, que lê
+`/api/busca/resumo` para montar os nós dos documentos: são rotas do mesmo serviço.
+
 ## Acompanhar a partida
 
 A primeira subida leva perto de vinte minutos, quase tudo em `npm ci` e `vite build` da interface. `estado --log` mostra
@@ -193,8 +234,12 @@ o S3, que já existia.
 
 ## O que fica de fora, e por quê
 
-- **`data/raw/`** (os PDFs) não está no bucket: a aba Busca acha o trecho e cita arquivo e página, mas não abre o PDF na
-  tela. Seriam dezenas de GB subindo deste cluster.
+- **`data/raw/`** (os PDFs) não está no bucket: seriam dezenas de GB subindo deste cluster. A aba Busca funciona sem
+  eles — acha a página, mostra o trecho e diz arquivo, empresa, ano e página, e o "ver o texto da página"
+  (`/api/busca/pagina`) também responde, porque o texto vem da tabela `paginas` do índice, não do PDF. O que falha são
+  os dois botões que precisam do arquivo: "ver página" (`/imagem`) e "abrir PDF" (`/pdf`) devolvem `404 <arquivo> está
+  no índice mas não em /app/data/raw`. A tela **não** quebra: o `BuscaView` põe a mensagem numa linha vermelha e a
+  lista de resultados continua onde estava.
 - **`bancos/docs.duckdb`** no S3 é o índice e5 antigo, de 83 MB; o `data/docs.duckdb` local aponta para um
   `docs_local.duckdb` de 2,37 GB. A aba Timeline sai parcial, em vez de esperar 2,4 GB de upload.
 - O MCP `energynexus-docs` **não** depende disso: ele roda no AgentCore, com o índice Titan que já está no bucket.
