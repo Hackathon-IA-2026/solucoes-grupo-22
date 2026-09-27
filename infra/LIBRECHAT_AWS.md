@@ -145,21 +145,27 @@ mesma criou (como administrador) e que pode ligar, desligar e descrever **só es
 
 ## Trocar o placar sem reprovisionar
 
-O `placar.duckdb` continua sendo reextraído enquanto o chat já está no ar. Trocá-lo não pede pilha nova: o banco é uma
-montagem (`/opt/energynexus/dados` → `/app/data`), então basta subir o arquivo novo e reiniciar o contêiner do chat, que
-é quem executa o MCP `energynexus-placar` como processo filho — o filho antigo tem o banco velho aberto.
+O `placar.duckdb` continua sendo reextraído enquanto o chat já está no ar. Trocá-lo não pede pilha nova nem reinício: o
+banco é uma montagem (`/opt/energynexus/dados` → `/app/data`) e o `_con()` de `proper_mcps/placar/server.py` abre uma
+conexão nova do DuckDB **a cada chamada** de ferramenta. Então o processo filho que o LibreChat mantém vivo pega o
+arquivo novo na chamada seguinte, sem derrubar ninguém — medido em produção: o chat respondeu `200` antes e depois, e o
+contêiner não reiniciou.
 
 ```bash
 # daqui, com o venv do repositório:
 .runtime/venv/bin/python -c "import boto3; boto3.client('s3').upload_file('data/placar.duckdb', \
   'coppezip-dados-oeste-139382521595', 'chat/dados/placar.duckdb')"
-# e na instância, por SSM:
-aws s3 cp s3://coppezip-dados-oeste-139382521595/chat/dados/placar.duckdb /opt/energynexus/dados/placar.duckdb
-cd /opt/energynexus/codigo && docker compose --env-file /opt/energynexus/.env -f infra/compose.yaml restart chat
+# e na instância, por SSM: baixa ao lado, confere, guarda o anterior e troca com rename (atômico no mesmo disco)
+D=/opt/energynexus/dados
+aws s3 cp s3://coppezip-dados-oeste-139382521595/chat/dados/placar.duckdb $D/placar.novo.duckdb
+docker run --rm -v $D:/d:ro --entrypoint /opt/venv/bin/python energynexus-chat \
+  -c "import duckdb; c=duckdb.connect('/d/placar.novo.duckdb', read_only=True); print(c.execute('select count(*) from esg_metas').fetchone())"
+cp -a $D/placar.duckdb $D/placar.anterior.duckdb && mv $D/placar.novo.duckdb $D/placar.duckdb
 ```
 
-Leva menos de um minuto e não reconstrói a imagem. Reconstruir só é necessário quando muda **código** (o `COPY . /app`
-do Dockerfile invalida o `npm ci` e o `vite build`, e aí são os vinte minutos de novo).
+O `placar.anterior.duckdb` é o caminho de volta: um `mv` no sentido contrário desfaz a troca. Reconstruir a imagem só é
+necessário quando muda **código** (o `COPY . /app` do Dockerfile invalida o `npm ci` e o `vite build`, e aí são os vinte
+minutos de novo).
 
 ## Acompanhar a partida
 
