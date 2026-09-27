@@ -14,9 +14,11 @@ CoppeZIP: chat de inteligência do setor elétrico. A raiz é o LibreChat v0.8.7
   vai para o git);
 - `instalar.sh`, `iniciar.sh`, `parar.sh`, `vllm.sh`;
 - `proper_mcps/` (dados, docs, relatorio), `proper_skills/`, `data/`, `researches/`, `eval/`;
-- `data/linha_do_tempo.py`: os dados da aba Timeline (eventos, trajetórias e gráficos de cada empresa), gerados do
-  `coppezip.duckdb` e da tabela `blocos` do `docs_titan.duckdb` em `.runtime/linha_do_tempo/` pelo `iniciar.sh` e a cada
-  publicação do `indexar_docs_titan.py`, e servidos em `/linha_do_tempo/`.
+- `data/linha_do_tempo.py`: biblioteca que monta os dados da aba Timeline (eventos, trajetórias e gráficos) do
+  `coppezip.duckdb` e do `docs_titan.duckdb`, **na hora**, para a empresa e o período que a pessoa escolhe; quem a chama
+  é o serviço da Busca (`/timeline_empresas` e `/timeline`, repassados pela rota `/api/busca`). Nada é gerado de
+  antemão. As páginas de relatório de cada tema saem de duas buscas somadas: BM25 nos parágrafos (`blocos`) e cosseno
+  entre o vetor da consulta do tema (tabela `temas`, gravada pelo `indexar_docs_titan.py`) e os vetores dos `trechos`.
 
 ## Regras
 
@@ -43,12 +45,13 @@ CoppeZIP: chat de inteligência do setor elétrico. A raiz é o LibreChat v0.8.7
 python3 eval/chat.py "Qual foi a receita líquida da Taesa em 2025?"          # modelo padrão (vLLM)
 python3 eval/chat.py --perfil coppezip-analista-claude "a mesma pergunta"     # Claude pelo Bedrock
 python3 eval/regressao.py                                # 27 perguntas com resposta conhecida
+.runtime/venv/bin/python eval/recuperacao.py             # busca nos relatórios: pares de eval/pares_relatorios.csv
 ```
 
 Mudou o banco (`data/construir.py` ou `data/indexar_docs_titan.py`)? Rode os testes das ferramentas, a regressão e
-`data/exportar_painel.py`; a linha do tempo se refaz no próximo `./iniciar.sh` e a cada publicação do indexador (ou com
-`.runtime/venv/bin/python data/linha_do_tempo.py`). Mudou o prompt ou o `librechat.yaml`? Reinicie
-(`./parar.sh && ./iniciar.sh`) e rode a regressão.
+`data/exportar_painel.py`. Mudou as consultas dos temas (`TEMAS`) ou o modelo de embedding? Regrave os vetores dos temas
+(`.runtime/venv/bin/python data/indexar_docs_titan.py --temas`) e rode o `eval/recuperacao.py` antes e depois, para saber
+se melhorou. Mudou o prompt ou o `librechat.yaml`? Reinicie (`./parar.sh && ./iniciar.sh`) e rode a regressão.
 
 ## Onde mexer
 
@@ -62,4 +65,5 @@ Mudou o banco (`data/construir.py` ou `data/indexar_docs_titan.py`)? Rode os tes
 | nova tabela na aba Painel | `CONJUNTOS` em `data/exportar_painel.py` |
 | aba Busca | `proper_mcps/docs/busca.py` (serviço) e `client/src/components/Coppezip/BuscaView.tsx` (tela) |
 | aba Grafo | `client/src/components/Coppezip/grafo/dados.ts` (nós a partir do `painel.json` e dos documentos), `modelo.ts` (layout), `GraphView.tsx` e `grafo.css` (tela); página em `GrafoView.tsx` |
-| aba Timeline | dados em `data/linha_do_tempo.py` (temas, eventos, trajetórias; teste em `data/test_linha_do_tempo.py`), tela em `client/src/components/Timeline/` (depois `npm run frontend`) |
+| aba Timeline | dados em `data/linha_do_tempo.py` (temas, eventos, trajetórias; teste em `data/test_linha_do_tempo.py`), rotas em `proper_mcps/docs/busca.py`, tela em `client/src/components/Timeline/` (depois `npm run frontend`) |
+| medir a busca nos relatórios | pares conferidos à mão em `eval/pares_relatorios.csv`, medida em `eval/recuperacao.py` |

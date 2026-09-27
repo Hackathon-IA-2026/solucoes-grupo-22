@@ -126,25 +126,37 @@ def melhor_frase(texto, rx, ano, empresa):
 def paginas_por_tema(docs, arquivos):
     """{(arquivo, tema): [páginas candidatas, da mais provável para a menos]}.
 
-    Duas buscas, fundidas por posição (RRF, o mesmo 1/(60 + posição) da Busca), porque as notas não são comparáveis:
+    Duas buscas, dentro de cada relatório:
     - palavras: BM25 na consulta do tema sobre os parágrafos do relatório (tabela blocos);
     - sentido: cosseno entre o vetor da consulta do tema (tabela temas, gravada pelo indexar_docs_titan.py) e os
-      vetores dos trechos da página (tabela trechos, Amazon Titan) - acha a página que fala do tema com outras palavras.
-    A comparação é sempre dentro do mesmo relatório, então o contexto que o indexador põe antes de cada trecho
-    ("empresa ano, título.") é igual em todos os candidatos e não distorce a ordem.
+      vetores dos trechos da página (tabela trechos, Amazon Titan) - acha a página que fala do tema com outras
+      palavras, que é o que a lista de sinônimos da consulta não alcança.
+    Cada busca entra com as suas POR_RELATORIO primeiras páginas: a lista é a união, não uma reordenação, porque
+    eval/recuperacao.py mostra que no nosso corpus as palavras acertam mais que o sentido - então o sentido acrescenta
+    páginas e nunca tira uma que o BM25 achou. A ordem entre elas é a fusão por posição (RRF, o mesmo 1/(60 + posição)
+    da Busca), que põe na frente o que os dois métodos apontaram; quem escolhe a frase depois é melhor_frase.
+    Comparar sempre dentro do mesmo relatório deixa constante o contexto que o indexador põe antes de cada trecho
+    ("empresa ano, título."), que assim não distorce a ordem.
     """
     if not arquivos:
         return {}
     if not docs.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = 'temas'").fetchone()[0]:
         raise RuntimeError(f"{DOCS} não tem a tabela temas: rode data/indexar_docs_titan.py --temas")
-    pontos = {}
+    pontos, escolhidas = {}, {}
+
+    def marcar(chave, pagina, posicao):
+        por_pagina = pontos.setdefault(chave, {})
+        por_pagina[pagina] = por_pagina.get(pagina, 0) + 1 / (K_RRF + posicao)
+        if posicao <= POR_RELATORIO:
+            escolhidas.setdefault(chave, set()).add(pagina)
+
     for tema, arquivo, pagina, posicao in docs.execute(f"""
             SELECT tema, arquivo, pagina, row_number() OVER (PARTITION BY tema, arquivo ORDER BY s DESC) AS posicao
             FROM (SELECT m.tema AS tema, t.arquivo AS arquivo, t.pagina AS pagina,
                          max(array_cosine_similarity(t.embedding, m.embedding)) AS s
                   FROM trechos t, temas m WHERE t.arquivo IN (SELECT unnest(?)) GROUP BY ALL)
             QUALIFY posicao <= {CANDIDATAS}""", [arquivos]).fetchall():
-        pontos.setdefault((arquivo, tema), {})[pagina] = 1 / (K_RRF + posicao)
+        marcar((arquivo, tema), pagina, posicao)
     for tema, (_, consulta, _) in TEMAS.items():
         for arquivo, pagina, posicao in docs.execute(f"""
                 SELECT arquivo, pagina, row_number() OVER (PARTITION BY arquivo ORDER BY s DESC) AS posicao
@@ -153,9 +165,9 @@ def paginas_por_tema(docs, arquivos):
                          WHERE arquivo IN (SELECT unnest(?)))
                       WHERE s IS NOT NULL GROUP BY ALL)
                 QUALIFY posicao <= {CANDIDATAS}""", [consulta, arquivos]).fetchall():
-            por_pagina = pontos.setdefault((arquivo, tema), {})
-            por_pagina[pagina] = por_pagina.get(pagina, 0) + 1 / (K_RRF + posicao)
-    return {chave: sorted(p, key=p.get, reverse=True)[:POR_RELATORIO] for chave, p in pontos.items()}
+            marcar((arquivo, tema), pagina, posicao)
+    return {chave: [p for p in sorted(pontos[chave], key=pontos[chave].get, reverse=True) if p in paginas]
+            for chave, paginas in escolhidas.items()}
 
 
 def trechos_dos_relatorios(docs, documentos):

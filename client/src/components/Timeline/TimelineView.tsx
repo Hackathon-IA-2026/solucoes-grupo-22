@@ -62,7 +62,8 @@ function Empresa({ id }: { id: string }) {
 
   const de = Number(params.get('de')) || undefined;
   const ate = Number(params.get('ate')) || undefined;
-  const { data, isLoading, isError, error } = useLinhaDoTempo(id, de, ate);
+  // isFetching, não isLoading: no react-query v4 uma query desabilitada (sem período) já tem isLoading true
+  const { data, isFetching, isError, error } = useLinhaDoTempo(id, de, ate);
 
   // o formulário começa no período sugerido da empresa (ou no que já está na URL)
   const [inicio, setInicio] = useState<number | undefined>(de);
@@ -166,10 +167,10 @@ function Empresa({ id }: { id: string }) {
           <button
             type="button"
             onClick={gerar}
-            disabled={!inicio || !fim || fim < inicio || isLoading}
+            disabled={!inicio || !fim || fim < inicio || isFetching}
             className="rounded-lg bg-text-primary px-3 py-1.5 text-sm text-presentation disabled:opacity-50"
           >
-            {isLoading ? 'Gerando…' : 'Gerar linha do tempo'}
+            {isFetching ? 'Gerando…' : 'Gerar linha do tempo'}
           </button>
           <p className="basis-full text-xs text-text-secondary">
             A linha do tempo é montada na hora, a partir das tabelas do período e dos relatórios da
@@ -179,7 +180,7 @@ function Empresa({ id }: { id: string }) {
         </div>
       </header>
 
-      {isLoading && (
+      {isFetching && (
         <div className="flex flex-col items-center gap-2 py-16">
           <Spinner className="text-text-secondary" aria-label="Gerando" />
           <p className="text-sm text-text-secondary">
@@ -192,7 +193,7 @@ function Empresa({ id }: { id: string }) {
           Não foi possível gerar a linha do tempo: {mensagemDeErro(error)}
         </p>
       )}
-      {!isLoading && !isError && !data && (
+      {!isFetching && !isError && !data && (
         <p className="text-sm text-text-secondary">
           Escolha o período e clique em <strong>Gerar linha do tempo</strong>.
         </p>

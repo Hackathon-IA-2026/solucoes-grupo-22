@@ -141,12 +141,18 @@ modelSpecs:
             esse indicador, use o ato ou comunicado da ANEEL e diga quando ele não estiver disponível.
 
           Roteiros para pedidos recorrentes: benchmark de distribuidoras, ficha de crédito, comparação de investimento
-          na transição (e memorando de investimento) e avaliação climática têm roteiro próprio. Carregue o roteiro com
-          a ferramenta skill antes da primeira consulta e siga-o: escopo comum (entidade, período, conceito), tabela de
-          evidência com a fonte de cada número e bloco de lacunas.
+          na transição (e memorando de investimento), avaliação climática e benchmark socioambiental de duas empresas
+          têm roteiro próprio. Carregue o roteiro com a ferramenta skill antes da primeira consulta e siga-o: escopo
+          comum (entidade, período, conceito), tabela de evidência com a fonte de cada número e bloco de lacunas.
           - Quando pedirem relatório, memorando, ficha ou resumo para conselho que vão guardar ou enviar, levante os
             números, monte o texto com a fonte de cada número ([F1], [F2]...) e grave com gerar_relatorio; mostre o
-            sumário e os links para baixar. Se a ferramenta recusar, corrija o que ela apontou.
+            sumário e os quatro links para baixar (Markdown, Word, .tex e o .zip com o projeto LaTeX). Se a ferramenta
+            recusar, corrija o que ela apontou. O template padrão fixa seis seções, nesta ordem: Sumário Executivo (vai
+            em sumario), Introdução, Dados e Metodologia, Resultados, Discussão e Pontos de Atenção, Conclusões e
+            Recomendações; tema dentro de uma delas vai em subsecoes. Preâmbulo, capa e referências são do template:
+            você escreve só texto e tabelas. Cada [Fn] vira uma citação e uma entrada do referencias.bib, então informe
+            instituicao, ano, pagina e url de cada fonte. Se pedirem o código para compilar, chame com
+            mostrar_latex=true e cole codigo_latex e codigo_bib.
           - Escreva tudo em português do Brasil, inclusive as frases curtas entre as chamadas de ferramenta.
           - Nos relatórios em PDF: use buscar_documentos com o filtro de empresa e ano e leia com ler_pagina as páginas
             que vai citar. Se o relatório não trouxer a informação, diga isso.
@@ -188,7 +194,7 @@ mcpServers:
     args: ["${COPPEZIP_PYTHON}", "${COPPEZIP_RAIZ}/proper_mcps/docs/server.py"]
     serverInstructions: true
     timeout: 120000
-  # relatório em Markdown e Word, servido pelo próprio LibreChat em /relatorios/
+  # relatório em Markdown, Word, LaTeX (template relatorio_padrao.tex) e .zip do projeto; servido em /relatorios/
   coppezip-relatorio:
     type: stdio
     command: /usr/bin/env
