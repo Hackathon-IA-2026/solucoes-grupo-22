@@ -3,6 +3,23 @@
 Comparação da **taxa de acertos** de dois modelos operando exatamente o mesmo conjunto de ferramentas do
 agente `energynexus-analista` do LibreChat, sobre 76 perguntas com gabarito conferido no próprio repositório.
 
+## Resumo
+
+| | Opus 5 (Bedrock) | Qwen3.8-27B-INT4 (vLLM, RTX 5090) |
+|---|---|---|
+| Perguntas respondidas | 76 de 76 (1 rodada) | 74 de 76 (2 rodadas, 148 execuções) |
+| **Taxa de acerto** | **88% (67/76)** | **81% (120/148)** |
+| Alucinação | 7% (5/76) | 7% (10/148) |
+| Latência mediana | 58,5 s | 45,6 s |
+| Custo da corrida | US$ 49,00 (US$ 0,645 por pergunta) | 3,63 h de GPU ≈ US$ 3,26 (US$ 0,021 por execução) |
+
+Os sete pontos de diferença saem de três lugares: o Qwen erra mais número financeiro estruturado (75% contra 92%),
+não entregou nenhum dos dois relatórios em PDF (duas tentativas terminaram sem o artefato e duas estouraram o
+contexto do servidor) e é menos consistente na citação de documento e página (79% contra 86%). Em compensação empata na
+busca web e nas contagens do índice, e custa ~30× menos por resposta. **As duas categorias fracas são as mesmas
+nos dois modelos**: "não está na base" (58% e 54%) — ou seja, quase metade das vezes qualquer um dos dois tenta
+responder o que a base não tem — e é aí, não na aritmética, que está o risco de usar o agente sem revisão.
+
 ## 1. O que foi medido
 
 Cada pergunta é respondida por um laço de ferramentas que reproduz o do LibreChat:
@@ -59,14 +76,104 @@ cache KV em fp8 em 262 mil tokens praticamente enchem a placa. Um nó só para o
 era a escritora do placar; nenhuma A100 e no máximo dois nós, como pedido.
 
 <!-- MEDIDA:INICIO -->
+
+**Contexto efetivo medido** (agulha no palheiro: o dado pedido fica enterrado no meio do prompt, então a tabela separa "aceitou o prompt" de "usou o prompt"):
+
+| Tokens de prompt | Achou a agulha | Segundos | Prefill (tok/s) | Saída (tok/s) |
+|---|---|---|---|---|
+| 3.245 | sim | 2.1 | 1565 | 51.1 |
+| 50.768 | sim | 19.1 | 2664 | 4.6 |
+| 158.443 | sim | 93.7 | 1692 | 1.2 |
+| 198.009 | sim | 126.9 | 1560 | 0.9 |
+| 205.966 | sim | 111.1 | 1854 | 0.8 |
+| 207.572 | sim | 100.2 | 2073 | 0.9 |
+| 261.373 | sim | 167.4 | 1562 | 0.8 |
+
+Geração curta (prompt de poucos tokens): 85.6 tokens de saída por segundo (600 tokens em 7.0 s).
+
 <!-- MEDIDA:FIM -->
+
+O contexto de 262.144 tokens é **usado**, não só aceito: a agulha foi encontrada com 261.373 tokens de prompt, a
+1.500 tokens de prefill por segundo. Em uma sondagem anterior, com 253.489 tokens, o modelo não achou a agulha uma
+vez — um único ponto, mas suficiente para não prometer recuperação perfeita no topo da janela. O preço do contexto
+longo é a vazão: 85,6 tokens de saída por segundo em prompt curto contra menos de 1 acima de 200 mil tokens.
 
 ## 3. Resultados
 
 <!-- TABELAS:INICIO -->
+
+### Taxa de acerto por categoria
+
+| Categoria | opus5 | qwen |
+|---|---|---|
+| (a) factual com citação (docs) | 86% (12/14) | 79% (22/28) |
+| (b) placar ESG | 100% (18/18) | 92% (33/36) |
+| (c) contagens e agregações | 91% (10/11) | 100% (20/20) +2 s/resp. |
+| (c') financeiro estruturado | 92% (11/12) | 75% (18/24) |
+| (d) busca web | 100% (7/7) | 100% (14/14) |
+| (e) não está na base | 58% (7/12) | 54% (13/24) |
+| (f) relatório em PDF | 100% (2/2) | 0% (0/2) +2 s/resp. |
+| **Total** | **88% (67/76)** | **81% (120/148) +4 s/resp.** |
+
+### Alucinação
+
+| Medida | opus5 | qwen |
+|---|---|---|
+| Admitiu a ausência (categoria e) | 58% (7/12) | 58% (14/24) |
+| Alucinação (qualquer categoria) | 7% (5/76) | 7% (10/148) |
+| Citou página que não confirma o valor | 0/26 | 0/52 |
+
+### Latência e consumo por pergunta
+
+| Medida | opus5 | qwen |
+|---|---|---|
+| Execuções contadas | 76 | 152 |
+| Perguntas distintas respondidas | 76 | 74 |
+| Falhas de execução (não contam como erro) | 0 | 4 |
+| Latência mediana (s) | 58.5 | 45.6 |
+| Latência p90 (s) | 103 | 193 |
+| Chamadas de ferramenta (mediana) | 4.0 | 3.0 |
+| Tokens de entrada (mediana) | 75632 | 47032 |
+| Tokens de saída (mediana) | 1813 | 1394 |
+
+### Custo
+
+| Modelo | Execuções | Tokens entrada | Tokens saída | Custo total | Custo por pergunta |
+|---|---|---|---|---|---|
+| opus5 (`us.anthropic.claude-opus-5`) | 76 | 8.769.130 | 206.120 | US$ 49.00 | US$ 0.645 |
+| qwen (`qwen3.8-27b`) | 152 | 16.458.050 | 477.804 | US$ 3.26 (3.63 h de GPU) | US$ 0.021 |
+
+### Variância entre rodadas
+
+| Modelo | Perguntas com 2 rodadas | Rodadas discordantes | Estabilidade |
+|---|---|---|---|
+| opus5 | 0 | — | — |
+| qwen | 74 | 4 | 95% |
+
+### Onde os modelos discordam (11 perguntas)
+
+| Pergunta | Categoria | opus5 | qwen |
+|---|---|---|---|
+| `ag10` Quantas distribuidoras entraram no ranking de continuidade da ANEEL de… | agregacao | erro | ok |
+| `au01` Qual foi a receita liquida da Light em 2018?… | ausente | ok | erro |
+| `au04` Qual foi o indice de rotatividade (turnover) dos empregados da Energis… | ausente | erro | ok |
+| `au09` Qual foi a receita da Iberdrola, a controladora da Neoenergia, em 2025… | ausente | ok | erro |
+| `au12` Qual e a tarifa de gas natural canalizado cobrada pelas distribuidoras… | ausente | ok | erro |
+| `fd13` Qual foi a receita liquida consolidada da Cemig em 2025 conforme o doc… | factual_docs | ok | erro |
+| `fi03` Compare a alavancagem (divida liquida sobre EBITDA) de 2025 da Equator… | financeiro | ok | erro |
+| `fi08` Qual a RAP ativa das concessoes em nome da propria Taesa (CNPJ 07.859.… | financeiro | ok | erro |
+| `pl13` Quanto a Eneva emitiu de escopo 1 em 2025 e quanto isso variou frente … | placar_esg | ok | erro |
+| `pl18` Em que ano a EDP promete ser Net Zero e qual a meta de producao renova… | placar_esg | ok | erro |
+| `re02` Gere um relatorio em PDF sobre a alavancagem das transmissoras e distr… | relatorio | ok | erro |
+
 <!-- TABELAS:FIM -->
 
 ## 4. Custo
+
+As 76 perguntas custaram **US$ 49,00** no Opus 5 — 8.769.130 tokens de entrada e 206.120 de saída, ou
+**US$ 0,645 por pergunta**. O Qwen consumiu 3,63 horas de parede de uma RTX 5090 para as 152 execuções das duas
+rodadas, o que a US$ 0,90 a hora dá **US$ 3,26**, ou **US$ 0,021 por execução**: cerca de **30 vezes mais barato
+por resposta**, com 7 pontos percentuais menos de acerto.
 
 Os preços de Opus 5 usados na tabela acima são os publicados pela Anthropic para o modelo
 (US$ 5,00 por milhão de tokens de entrada e US$ 25,00 por milhão de saída). O Bedrock é operado pela AWS com
@@ -109,10 +216,12 @@ Onde a avaliação **não** reproduz o LibreChat:
 6. **A busca web consome cota real do Serper** e a web muda: as 7 perguntas da categoria (d) foram escolhidas com
    resposta estável, mas não são reprodutíveis com garantia.
 7. **Uma rodada para Opus 5, duas para o Qwen.** As credenciais da AWS expiraram no meio da primeira corrida do
-   Opus 5 (`ExpiredTokenException` após 6 execuções) e a corrida foi retomada com credenciais novas, em uma
-   rodada só, para caber no prazo. Os 146 arquivos gravados com falha de token estão separados em
-   `opus5_token_expirado/` e **não** entram em nenhuma conta: não são erro do modelo, são pergunta não respondida.
-   A variância entre rodadas, portanto, só pode ser lida para o Qwen.
+   Opus 5 (`ExpiredTokenException` depois de 6 perguntas) e as 70 restantes foram gravadas como falha em segundos.
+   Com credenciais novas a corrida foi retomada — `rodar.py` pula pergunta que já tem arquivo — e completou as
+   76 perguntas em **uma** rodada, dividida em três processos por categoria para caber na janela da credencial.
+   Os 146 arquivos perdidos para o token vencido estão separados em `opus5_token_expirado/` e **não** entram em
+   nenhuma conta: não são erro do modelo, são pergunta não respondida. Consequências: a variância entre rodadas só
+   pode ser lida para o Qwen, e a taxa do Opus 5 vem de uma amostra de uma execução por pergunta.
 8. **Duas perguntas o Qwen não conseguiu responder por limite de contexto**, nas duas rodadas: `ag03` e `re01`
    acumularam ~230 mil tokens de entrada e, somados aos 32 mil de saída pedidos, passaram dos 262.144 do servidor
    (HTTP 400 do vLLM). Contam como falha de execução, não como resposta errada — e são exatamente o custo de
